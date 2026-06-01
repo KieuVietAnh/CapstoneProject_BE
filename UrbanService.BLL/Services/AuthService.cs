@@ -27,7 +27,7 @@ namespace UrbanService.BLL.Services
 
         public async Task<AuthResultDto> LoginAsync(LoginRequest req)
         {
-            var login = req.Username?.Trim();
+            var login = req.Email?.Trim();
 
             if (string.IsNullOrWhiteSpace(login) || string.IsNullOrWhiteSpace(req.Password))
             {
@@ -54,7 +54,7 @@ namespace UrbanService.BLL.Services
 
         public async Task<AuthResultDto> RegisterAsync(RegisterRequest req)
         {
-            var email = string.IsNullOrWhiteSpace(req.Email) ? req.Username?.Trim() : req.Email.Trim();
+            var email =  req.Email.Trim();
 
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(req.Password))
             {
@@ -128,7 +128,6 @@ namespace UrbanService.BLL.Services
             {
                 Token = _jwt.Generate(user),
                 UserId = user.UserId,
-                Username = user.Email,
                 Email = user.Email,
                 FullName = user.FullName,
                 Role = user.Role?.RoleName
