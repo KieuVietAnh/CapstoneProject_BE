@@ -1,29 +1,43 @@
-name: Deploy Urban Service Backend
+name: Deploy Urban Service API to VPS
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+env:
+  DOCKER_IMAGE: urban-service-api
+  CONTAINER_NAME: urban-service-api
+  APP_DIR: /var/www/urban-service
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Copy project to DigitalOcean VPS
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.DOCKER_IMAGE }}:latest .
+          docker save ${{ env.DOCKER_IMAGE }}:latest | gzip > image.tar.gz
+
+      - name: Copy image to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
           port: ${{ secrets.DO_PORT }}
-          source: "."
-          target: "/var/www/urban-service"
+          source: "image.tar.gz,docker-compose.prod.yml"
+          target: "${{ env.APP_DIR }}"
 
-      - name: Deploy with Docker Compose
+      - name: Deploy on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DO_HOST }}
@@ -31,15 +45,53 @@ jobs:
           key: ${{ secrets.DO_SSH_KEY }}
           port: ${{ secrets.DO_PORT }}
           script: |
-            cd /var/www/urban-service
+            set -e
 
-            cat > .env <<EOF
-            DEFAULT_CONNECTION=${{ secrets.DEFAULT_CONNECTION }}
+            mkdir -p ${{ env.APP_DIR }}
+            cd ${{ env.APP_DIR }}
+
+            echo "Loading Docker image..."
+            gunzip -c image.tar.gz | docker load
+
+            echo "Creating .env file..."
+            cat > .env << EOF
+            DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}
             JWT_KEY=${{ secrets.JWT_KEY }}
             JWT_ISSUER=${{ secrets.JWT_ISSUER }}
             JWT_AUDIENCE=${{ secrets.JWT_AUDIENCE }}
             EOF
 
-            docker compose down
-            docker compose up -d --build
+            echo "Stopping old container if exists..."
+            docker stop ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+            docker rm ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+
+            echo "Starting new container..."
+            docker compose -f docker-compose.prod.yml up -d
+
+            echo "Cleaning up..."
+            rm -f image.tar.gz
             docker image prune -f
+
+            echo "Current containers:"
+            docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Status}}"
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT }}
+          script: |
+            echo "Waiting for container to start..."
+            sleep 15
+
+            if docker ps | grep -q ${{ env.CONTAINER_NAME }}; then
+              echo "Container is running!"
+              docker logs --tail 50 ${{ env.CONTAINER_NAME }}
+              curl -I http://localhost:8080/swagger || true
+            else
+              echo "Container failed to start!"
+              docker logs ${{ env.CONTAINER_NAME }} || true
+              exit 1
+            fi

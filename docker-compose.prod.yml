@@ -1,0 +1,17 @@
+services:
+  backend:
+    image: urban-service-api:latest
+    container_name: urban-service-api
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+
+      ConnectionStrings__DefaultConnection: ${DB_CONNECTION_STRING}
+
+      Jwt__Key: ${JWT_KEY}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+
+    restart: unless-stopped
