@@ -1,0 +1,90 @@
+# UrbanService Backend
+
+UrbanService is an ASP.NET Core backend for an urban service feedback system. The project uses a layered structure with API controllers, business services, and Entity Framework Core data access.
+
+## Tech Stack
+
+- .NET 9
+- ASP.NET Core Web API
+- Entity Framework Core
+- PostgreSQL via Npgsql
+- JWT authentication
+- Swagger / OpenAPI
+- Cloudinary media upload
+- Docker / Docker Compose
+
+## Solution Layout
+
+```text
+UrbanService.sln
+UrbanService/          API layer: controllers, middleware, Program.cs, appsettings
+UrbanService.BLL/      Business layer: DTOs, interfaces, services, common helpers
+UrbanService.DAL/      Data layer: EF DbContext, entities, repositories, unit of work, migrations
+DAL/                   Legacy or placeholder class library
+.github/              GitHub workflow/config files
+Dockerfile
+docker-compose.yml
+docker-compose.prod.yml
+```
+
+## Main Features
+
+- User registration and login with JWT.
+- Role-based authorization using roles such as `SERVICEUSER`, `SYSTEMADMIN`, `SYSTEMSTAFF`, `INTERACTIONMANAGER`, and `SERVICEOPERATORSTAFF`.
+- Feedback CRUD for service users.
+- User feedback list/detail with pagination.
+- Feedback attachments stored through Cloudinary.
+- Feedback status update with status history.
+- Feedback comments.
+- Feedback support / unsupport.
+
+## Run Locally
+
+From the solution root:
+
+```powershell
+dotnet run --project .\UrbanService\UrbanService.csproj
+```
+
+Swagger is available at the URL printed by `dotnet run`, usually:
+
+```text
+http://localhost:5219/swagger
+```
+
+or the HTTPS URL shown in the terminal.
+
+## Configuration
+
+The API reads configuration from `UrbanService/appsettings.json`.
+
+Required sections:
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "..."
+  },
+  "Jwt": {
+    "Key": "...",
+    "Issuer": "UrbanService",
+    "Audience": "UrbanServiceClient",
+    "ExpireMinutes": 60
+  },
+  "Cloudinary": {
+    "CloudName": "...",
+    "ApiKey": "...",
+    "ApiSecret": "..."
+  }
+}
+```
+
+`CloudName` must be copied from the Cloudinary dashboard credentials. It is not the local project name.
+
+## Build
+
+```powershell
+dotnet build UrbanService.sln
+```
+
+Last verified build: `dotnet build UrbanService.sln` completed with `0 Warning(s)` and `0 Error(s)`.
