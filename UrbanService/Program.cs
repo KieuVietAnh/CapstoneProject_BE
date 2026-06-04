@@ -21,6 +21,8 @@ builder.Services.AddDbContext<UrbanServiceDbContext>(options =>
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
+builder.Services.AddScoped<IFeedbackService, FeedbackService>();
+builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Missing config: Jwt:Key");
 builder.Services
