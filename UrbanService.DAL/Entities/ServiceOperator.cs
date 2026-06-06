@@ -27,5 +27,7 @@ public partial class ServiceOperator
 
     public virtual ICollection<FeedbackResolution> FeedbackResolutions { get; set; } = new List<FeedbackResolution>();
 
+    public virtual ICollection<Service> Services { get; set; } = new List<Service>();
+
     public virtual ICollection<User> Users { get; set; } = new List<User>();
 }

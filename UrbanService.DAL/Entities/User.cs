@@ -58,4 +58,6 @@ public partial class User
     public virtual ServiceOperator? Operator { get; set; }
 
     public virtual Role Role { get; set; } = null!;
+
+    public virtual ICollection<ServicePayment> ServicePayments { get; set; } = new List<ServicePayment>();
 }

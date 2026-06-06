@@ -1,6 +1,6 @@
 # UrbanService Backend
 
-UrbanService is an ASP.NET Core backend for an urban service feedback system. The project uses a layered structure with API controllers, business services, and Entity Framework Core data access.
+UrbanService is an ASP.NET Core backend for an urban service provider platform. It offers services operated by the platform and connects users with services from external providers. The project uses a layered structure with API controllers, business services, and Entity Framework Core data access.
 
 ## Tech Stack
 
@@ -37,6 +37,9 @@ docker-compose.prod.yml
 - Feedback status update with status history.
 - Feedback comments.
 - Feedback support / unsupport.
+- Service catalog grouped by category and service operator.
+- Clear distinction between system-operated and external services.
+- Payment records for services operated by the system.
 
 ## Run Locally
 
@@ -86,5 +89,10 @@ Required sections:
 ```powershell
 dotnet build UrbanService.sln
 ```
+
+## Database update
+dotnet ef database update `
+  --project .\UrbanService.DAL\UrbanService.DAL.csproj `
+  --startup-project .\UrbanService\UrbanService.csproj
 
 Last verified build: `dotnet build UrbanService.sln` completed with `0 Warning(s)` and `0 Error(s)`.

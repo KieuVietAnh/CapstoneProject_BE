@@ -48,7 +48,11 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<Role> Roles { get; set; }
 
+    public virtual DbSet<Service> Services { get; set; }
+
     public virtual DbSet<ServiceOperator> ServiceOperators { get; set; }
+
+    public virtual DbSet<ServicePayment> ServicePayments { get; set; }
 
     public virtual DbSet<UrbanServiceCategory> UrbanServiceCategories { get; set; }
 
@@ -637,6 +641,101 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_service_operator_category");
+        });
+
+        modelBuilder.Entity<Service>(entity =>
+        {
+            entity.HasKey(e => e.ServiceId).HasName("services_pkey");
+
+            entity.ToTable("services");
+
+            entity.HasIndex(e => new { e.OperatorId, e.ServiceName }, "uq_service_operator_name").IsUnique();
+
+            entity.Property(e => e.ServiceId).HasColumnName("service_id");
+            entity.Property(e => e.BasePrice)
+                .HasPrecision(18, 2)
+                .HasColumnName("base_price");
+            entity.Property(e => e.CategoryId).HasColumnName("category_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+            entity.Property(e => e.Currency)
+                .HasMaxLength(3)
+                .HasDefaultValueSql("'VND'::character varying")
+                .HasColumnName("currency");
+            entity.Property(e => e.Description)
+                .HasMaxLength(1000)
+                .HasColumnName("description");
+            entity.Property(e => e.ExternalServiceUrl)
+                .HasMaxLength(500)
+                .HasColumnName("external_service_url");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+            entity.Property(e => e.IsSystemService).HasColumnName("is_system_service");
+            entity.Property(e => e.OperatorId).HasColumnName("operator_id");
+            entity.Property(e => e.ServiceName)
+                .HasMaxLength(200)
+                .HasColumnName("service_name");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Category).WithMany(p => p.Services)
+                .HasForeignKey(d => d.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_service_category");
+
+            entity.HasOne(d => d.Operator).WithMany(p => p.Services)
+                .HasForeignKey(d => d.OperatorId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_service_operator");
+        });
+
+        modelBuilder.Entity<ServicePayment>(entity =>
+        {
+            entity.HasKey(e => e.PaymentId).HasName("service_payments_pkey");
+
+            entity.ToTable("service_payments");
+
+            entity.HasIndex(e => e.TransactionReference, "uq_service_payment_transaction_reference")
+                .IsUnique();
+
+            entity.Property(e => e.PaymentId)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("payment_id");
+            entity.Property(e => e.Amount)
+                .HasPrecision(18, 2)
+                .HasColumnName("amount");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+            entity.Property(e => e.Currency)
+                .HasMaxLength(3)
+                .HasDefaultValueSql("'VND'::character varying")
+                .HasColumnName("currency");
+            entity.Property(e => e.PaidAt).HasColumnName("paid_at");
+            entity.Property(e => e.PaymentMethod)
+                .HasMaxLength(50)
+                .HasColumnName("payment_method");
+            entity.Property(e => e.ServiceId).HasColumnName("service_id");
+            entity.Property(e => e.Status)
+                .HasMaxLength(50)
+                .HasDefaultValueSql("'Pending'::character varying")
+                .HasColumnName("status");
+            entity.Property(e => e.TransactionReference)
+                .HasMaxLength(200)
+                .HasColumnName("transaction_reference");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+
+            entity.HasOne(d => d.Service).WithMany(p => p.ServicePayments)
+                .HasForeignKey(d => d.ServiceId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_service_payment_service");
+
+            entity.HasOne(d => d.User).WithMany(p => p.ServicePayments)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_service_payment_user");
         });
 
         modelBuilder.Entity<UrbanServiceCategory>(entity =>

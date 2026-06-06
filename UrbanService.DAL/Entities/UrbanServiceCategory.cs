@@ -22,4 +22,6 @@ public partial class UrbanServiceCategory
     public virtual ICollection<Feedback> Feedbacks { get; set; } = new List<Feedback>();
 
     public virtual ICollection<ServiceOperator> ServiceOperators { get; set; } = new List<ServiceOperator>();
+
+    public virtual ICollection<Service> Services { get; set; } = new List<Service>();
 }
