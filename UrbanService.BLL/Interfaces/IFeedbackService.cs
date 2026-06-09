@@ -13,7 +13,13 @@ public interface IFeedbackService
 
     Task<FeedbackDetailDto> GetMyFeedbackDetailAsync(Guid userId, Guid feedbackId);
 
+    Task<PagedResultDto<FeedbackListItemDto>> GetAllFeedbacksAsync(FeedbackQueryParameters query);
+
+    Task<FeedbackDetailDto> GetFeedbackDetailAsync(Guid currentUserId, Guid feedbackId);
+
     Task<FeedbackDetailDto> UpdateAsync(Guid userId, Guid feedbackId, FeedbackUpdateRequest request);
+
+    Task<FeedbackDetailDto> UpdateByStaffAsync(Guid currentUserId, Guid feedbackId, StaffFeedbackUpdateRequest request);
 
     Task DeleteAsync(Guid userId, Guid feedbackId);
 
@@ -24,7 +30,10 @@ public interface IFeedbackService
 
     Task DeleteAttachmentAsync(Guid userId, Guid feedbackId, int attachmentId);
 
-    Task<FeedbackStatusHistoryDto> UpdateStatusAsync(Guid userId, Guid feedbackId, UpdateFeedbackStatusRequest request);
+    Task<FeedbackStatusHistoryDto> UpdateStatusByStaffOrAdminAsync(
+        Guid currentUserId,
+        Guid feedbackId,
+        UpdateFeedbackStatusRequest request);
 
     Task<FeedbackCommentDto> AddCommentAsync(Guid userId, Guid feedbackId, FeedbackCommentCreateRequest request);
 

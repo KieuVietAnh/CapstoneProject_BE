@@ -9,7 +9,6 @@ UrbanService/
 .github/
 UrbanService.BLL/
 UrbanService.DAL/
-DAL/
 Dockerfile
 docker-compose.yml
 docker-compose.prod.yml

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
@@ -10,10 +11,12 @@ public class FeedbackService : IFeedbackService
 {
     private const int MaxPageSize = 100;
     private readonly IUnitOfWork _uow;
+    private readonly INotificationService _notificationService;
 
-    public FeedbackService(IUnitOfWork uow)
+    public FeedbackService(IUnitOfWork uow, INotificationService notificationService)
     {
         _uow = uow;
+        _notificationService = notificationService;
     }
 
     public async Task<FeedbackDetailDto> CreateAsync(
@@ -36,7 +39,7 @@ public class FeedbackService : IFeedbackService
             Latitude = request.Latitude,
             Longitude = request.Longitude,
             Priority = NormalizeOrDefault(request.Priority, "Medium"),
-            Status = "Submitted",
+            Status = FeedbackStatus.Submitted,
             DueDate = request.DueDate,
             IsMasterTicket = false,
             CreatedAt = now,
@@ -105,6 +108,8 @@ public class FeedbackService : IFeedbackService
             .Select(f => new FeedbackListItemDto
             {
                 FeedbackId = f.FeedbackId,
+                UserId = f.UserId,
+                UserName = f.User.FullName,
                 CategoryId = f.CategoryId,
                 CategoryName = f.Category.CategoryName,
                 Title = f.Title,
@@ -133,6 +138,73 @@ public class FeedbackService : IFeedbackService
     {
         var feedback = await GetOwnedFeedbackWithDetailsAsync(userId, feedbackId, asNoTracking: true);
         return MapDetail(feedback, userId);
+    }
+
+    public async Task<PagedResultDto<FeedbackListItemDto>> GetAllFeedbacksAsync(FeedbackQueryParameters query)
+    {
+        var pageNumber = query.PageNumber < 1 ? 1 : query.PageNumber;
+        var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
+        var search = query.Search?.Trim().ToLower();
+        var status = query.Status?.Trim().ToLower();
+
+        var feedbacks = _uow.GetRepository<Feedback>().Entities.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            feedbacks = feedbacks.Where(f => f.Status.ToLower() == status);
+        }
+
+        if (query.CategoryId.HasValue)
+        {
+            feedbacks = feedbacks.Where(f => f.CategoryId == query.CategoryId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            feedbacks = feedbacks.Where(f =>
+                f.Title.ToLower().Contains(search) ||
+                f.Description.ToLower().Contains(search) ||
+                f.LocationText.ToLower().Contains(search));
+        }
+
+        var totalItems = await feedbacks.CountAsync();
+        var items = await feedbacks
+            .OrderByDescending(f => f.CreatedAt)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .Select(f => new FeedbackListItemDto
+            {
+                FeedbackId = f.FeedbackId,
+                UserId = f.UserId,
+                UserName = f.User.FullName,
+                CategoryId = f.CategoryId,
+                CategoryName = f.Category.CategoryName,
+                Title = f.Title,
+                LocationText = f.LocationText,
+                Priority = f.Priority,
+                Status = f.Status,
+                CreatedAt = f.CreatedAt,
+                UpdatedAt = f.UpdatedAt,
+                AttachmentCount = f.FeedbackAttachments.Count,
+                CommentCount = f.FeedbackComments.Count,
+                SupportCount = f.FeedbackSupports.Count
+            })
+            .ToListAsync();
+
+        return new PagedResultDto<FeedbackListItemDto>
+        {
+            Items = items,
+            PageNumber = pageNumber,
+            PageSize = pageSize,
+            TotalItems = totalItems,
+            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize)
+        };
+    }
+
+    public async Task<FeedbackDetailDto> GetFeedbackDetailAsync(Guid currentUserId, Guid feedbackId)
+    {
+        var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: true);
+        return MapDetail(feedback, currentUserId);
     }
 
     public async Task<FeedbackDetailDto> UpdateAsync(Guid userId, Guid feedbackId, FeedbackUpdateRequest request)
@@ -168,6 +240,69 @@ public class FeedbackService : IFeedbackService
 
         await _uow.SaveAsync();
         return await GetMyFeedbackDetailAsync(userId, feedbackId);
+    }
+
+    public async Task<FeedbackDetailDto> UpdateByStaffAsync(
+        Guid currentUserId,
+        Guid feedbackId,
+        StaffFeedbackUpdateRequest request)
+    {
+        var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: false);
+
+        if (request.CategoryId.HasValue && request.CategoryId.Value != feedback.CategoryId)
+        {
+            await EnsureCategoryExistsAsync(request.CategoryId.Value);
+            feedback.CategoryId = request.CategoryId.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Title))
+        {
+            feedback.Title = request.Title.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Description))
+        {
+            feedback.Description = request.Description.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.LocationText))
+        {
+            feedback.LocationText = request.LocationText.Trim();
+        }
+
+        feedback.Latitude = request.Latitude ?? feedback.Latitude;
+        feedback.Longitude = request.Longitude ?? feedback.Longitude;
+        feedback.Priority = string.IsNullOrWhiteSpace(request.Priority) ? feedback.Priority : request.Priority.Trim();
+        feedback.DueDate = request.DueDate ?? feedback.DueDate;
+        feedback.UpdatedAt = DateTime.UtcNow;
+
+        FeedbackStatusHistory? statusHistory = null;
+        if (!string.IsNullOrWhiteSpace(request.Status) &&
+            !string.Equals(feedback.Status, request.Status.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            var newStatus = FeedbackStatus.Normalize(request.Status);
+            statusHistory = new FeedbackStatusHistory
+            {
+                FeedbackId = feedbackId,
+                ChangedByUserId = currentUserId,
+                OldStatus = feedback.Status,
+                NewStatus = newStatus,
+                Note = request.StatusNote?.Trim(),
+                ChangedAt = DateTime.UtcNow
+            };
+
+            feedback.Status = statusHistory.NewStatus;
+            feedback.FeedbackStatusHistories.Add(statusHistory);
+        }
+
+        await _uow.SaveAsync();
+
+        if (statusHistory != null)
+        {
+            await SendStatusUpdatedNotificationAsync(feedback, statusHistory);
+        }
+
+        return await GetFeedbackDetailAsync(currentUserId, feedbackId);
     }
 
     public async Task DeleteAsync(Guid userId, Guid feedbackId)
@@ -222,21 +357,30 @@ public class FeedbackService : IFeedbackService
         await _uow.SaveAsync();
     }
 
-    public async Task<FeedbackStatusHistoryDto> UpdateStatusAsync(Guid userId, Guid feedbackId, UpdateFeedbackStatusRequest request)
+    public async Task<FeedbackStatusHistoryDto> UpdateStatusByStaffOrAdminAsync(
+        Guid currentUserId,
+        Guid feedbackId,
+        UpdateFeedbackStatusRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Status))
         {
             throw new Exception("Status là bắt buộc.");
         }
 
-        var feedback = await GetOwnedFeedbackWithDetailsAsync(userId, feedbackId, asNoTracking: false);
-        var newStatus = request.Status.Trim();
+        var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: false);
+        var newStatus = FeedbackStatus.Normalize(request.Status);
+
+        if (string.Equals(feedback.Status, newStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception($"Feedback đã ở trạng thái {newStatus}.");
+        }
+
         var now = DateTime.UtcNow;
 
         var history = new FeedbackStatusHistory
         {
             FeedbackId = feedbackId,
-            ChangedByUserId = userId,
+            ChangedByUserId = currentUserId,
             OldStatus = feedback.Status,
             NewStatus = newStatus,
             Note = request.Note?.Trim(),
@@ -248,6 +392,8 @@ public class FeedbackService : IFeedbackService
         feedback.FeedbackStatusHistories.Add(history);
 
         await _uow.SaveAsync();
+
+        await SendStatusUpdatedNotificationAsync(feedback, history);
 
         return new FeedbackStatusHistoryDto
         {
@@ -326,6 +472,39 @@ public class FeedbackService : IFeedbackService
         await _uow.SaveAsync();
     }
 
+    private async Task<Feedback> GetFeedbackWithDetailsAsync(Guid feedbackId, bool asNoTracking)
+    {
+        IQueryable<Feedback> query = _uow.GetRepository<Feedback>().Entities;
+
+        if (asNoTracking)
+        {
+            query = query.AsNoTracking();
+        }
+
+        var feedback = await query
+            .Include(f => f.User)
+            .Include(f => f.Category)
+            .Include(f => f.FeedbackAttachments)
+            .Include(f => f.FeedbackComments)
+                .ThenInclude(c => c.User)
+            .Include(f => f.FeedbackStatusHistories)
+                .ThenInclude(h => h.ChangedByUser)
+            .Include(f => f.FeedbackSupports)
+            .FirstOrDefaultAsync(f => f.FeedbackId == feedbackId);
+
+        return feedback ?? throw new Exception("Không tìm thấy feedback.");
+    }
+
+    private async Task SendStatusUpdatedNotificationAsync(Feedback feedback, FeedbackStatusHistory history)
+    {
+        await _notificationService.SendAsync(
+            feedback.UserId,
+            "Trạng thái feedback đã được cập nhật",
+            $"Feedback \"{feedback.Title}\" đã chuyển từ \"{history.OldStatus}\" sang \"{history.NewStatus}\".",
+            NotificationType.TicketUpdated,
+            $"/feedbacks/{feedback.FeedbackId}");
+    }
+
     private async Task<Feedback> GetOwnedFeedbackWithDetailsAsync(Guid userId, Guid feedbackId, bool asNoTracking)
     {
         IQueryable<Feedback> query = _uow.GetRepository<Feedback>().Entities;
@@ -336,6 +515,7 @@ public class FeedbackService : IFeedbackService
         }
 
         var feedback = await query
+            .Include(f => f.User)
             .Include(f => f.Category)
             .Include(f => f.FeedbackAttachments)
             .Include(f => f.FeedbackComments)
@@ -377,6 +557,8 @@ public class FeedbackService : IFeedbackService
         return new FeedbackDetailDto
         {
             FeedbackId = feedback.FeedbackId,
+            UserId = feedback.UserId,
+            UserName = feedback.User?.FullName,
             CategoryId = feedback.CategoryId,
             CategoryName = feedback.Category?.CategoryName,
             Title = feedback.Title,
