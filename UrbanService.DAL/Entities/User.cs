@@ -25,6 +25,8 @@ public partial class User
 
     public bool IsActive { get; set; }
 
+    public bool IsVerified { get; set; }
+
     public string? RefreshToken { get; set; }
 
     public bool IsRefreshTokenRevoked { get; set; }

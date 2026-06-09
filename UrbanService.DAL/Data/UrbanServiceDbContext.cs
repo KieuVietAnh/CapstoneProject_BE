@@ -788,6 +788,9 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.IsActive)
                 .HasDefaultValue(true)
                 .HasColumnName("is_active");
+            entity.Property(e => e.IsVerified)
+                .HasDefaultValue(false)
+                .HasColumnName("is_verified");
             entity.Property(e => e.IsRefreshTokenRevoked)
                 .HasDefaultValue(false)
                 .HasColumnName("is_refresh_token_revoked");

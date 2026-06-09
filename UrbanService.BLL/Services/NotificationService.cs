@@ -1,28 +1,27 @@
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
-using UrbanService.Hubs;
 
-namespace UrbanService.Services;
+namespace UrbanService.BLL.Services;
 
 public class NotificationService : INotificationService
 {
     private const int MaxPageSize = 100;
     private readonly IUnitOfWork _uow;
-    private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly IRealtimeNotificationSender _realtimeSender;
     private readonly ILogger<NotificationService> _logger;
 
     public NotificationService(
         IUnitOfWork uow,
-        IHubContext<NotificationHub> hubContext,
+        IRealtimeNotificationSender realtimeSender,
         ILogger<NotificationService> logger)
     {
         _uow = uow;
-        _hubContext = hubContext;
+        _realtimeSender = realtimeSender;
         _logger = logger;
     }
 
@@ -54,11 +53,7 @@ public class NotificationService : INotificationService
             dto.UserId,
             dto.Type);
 
-        await _hubContext.Clients.User(userId.ToString()).SendAsync("NotificationReceived", dto);
-        _logger.LogInformation(
-            "SignalR event NotificationReceived sent to user {UserId}",
-            dto.UserId);
-
+        await _realtimeSender.SendToUserAsync(userId, dto);
         return dto;
     }
 

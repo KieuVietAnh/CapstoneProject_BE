@@ -1,5 +1,8 @@
+using Google.Apis.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Caching.Memory;
+using System.Security.Cryptography;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Common.Securities;
 using UrbanService.BLL.Dtos;
@@ -14,15 +17,23 @@ namespace UrbanService.BLL.Services
         private readonly IUnitOfWork _uow;
         private readonly IConfiguration _cfg;
         private readonly IJwtTokenGenerator _jwt;
+        private readonly IEmailSender _emailSender;
+        private readonly IMemoryCache _cache;
+        private const int VerificationOtpMinutes = 5;
+        private const int VerificationOtpCooldownSeconds = 60;
 
         public AuthService(
             IUnitOfWork uow,
             IConfiguration cfg,
-            IJwtTokenGenerator jwt)
+            IJwtTokenGenerator jwt,
+            IEmailSender emailSender,
+            IMemoryCache cache)
         {
             _uow = uow;
             _cfg = cfg;
             _jwt = jwt;
+            _emailSender = emailSender;
+            _cache = cache;
         }
 
         public async Task<AuthResultDto> LoginAsync(LoginRequest req)
@@ -87,6 +98,7 @@ namespace UrbanService.BLL.Services
                 PasswordHash = PasswordHasher.Hash(req.Password),
                 PhoneNumber = req.Phone,
                 IsActive = true,
+                IsVerified = false,
                 IsRefreshTokenRevoked = false,
                 CreatedAt = now,
                 UpdatedAt = now,
@@ -97,6 +109,127 @@ namespace UrbanService.BLL.Services
             await _uow.SaveAsync();
 
             return ToAuthResult(user);
+        }
+
+        public async Task<AuthResultDto> GoogleLoginAsync(GoogleLoginRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(req.IdToken))
+            {
+                throw new Exception("Google ID token là bắt buộc.");
+            }
+
+            var clientId = _cfg["GoogleAuth:ClientId"];
+            if (string.IsNullOrWhiteSpace(clientId))
+            {
+                throw new InvalidOperationException("Missing config: GoogleAuth:ClientId");
+            }
+
+            GoogleJsonWebSignature.Payload payload;
+            try
+            {
+                payload = await GoogleJsonWebSignature.ValidateAsync(
+                    req.IdToken.Trim(),
+                    new GoogleJsonWebSignature.ValidationSettings
+                    {
+                        Audience = [clientId]
+                    });
+            }
+            catch (InvalidJwtException)
+            {
+                throw new UnauthorizedAccessException("Google ID token không hợp lệ hoặc đã hết hạn.");
+            }
+
+            if (!payload.EmailVerified || string.IsNullOrWhiteSpace(payload.Email))
+            {
+                throw new UnauthorizedAccessException("Google chưa xác thực email này.");
+            }
+
+            var email = payload.Email.Trim().ToLower();
+            var user = await _uow.GetRepository<User>().FindAsync(
+                u => u.Email.ToLower() == email,
+                q => q.Include(u => u.Role));
+
+            if (user == null)
+            {
+                throw new UnauthorizedAccessException("Tài khoản chưa tồn tại trong UrbanService.");
+            }
+
+            if (!user.IsVerified)
+            {
+                throw new UnauthorizedAccessException("Tài khoản UrbanService chưa xác thực email.");
+            }
+
+            if (!user.IsActive)
+            {
+                throw new UnauthorizedAccessException("Tài khoản đã bị khóa.");
+            }
+
+            return ToAuthResult(user);
+        }
+
+        public async Task RequestEmailVerificationOtpAsync(Guid userId)
+        {
+            var user = await _uow.GetRepository<User>().GetByIdAsync(userId)
+                ?? throw new Exception("Không tìm thấy người dùng.");
+
+            if (user.IsVerified)
+            {
+                throw new Exception("Email đã được xác thực.");
+            }
+
+            if (_cache.TryGetValue(GetVerificationOtpCooldownKey(userId), out _))
+            {
+                throw new Exception($"Vui lòng chờ {VerificationOtpCooldownSeconds} giây trước khi gửi lại OTP.");
+            }
+
+            var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+
+            var body = $"""
+                <h2>Xác thực email UrbanService</h2>
+                <p>Xin chào {System.Net.WebUtility.HtmlEncode(user.FullName)},</p>
+                <p>Mã OTP xác thực email của bạn là:</p>
+                <h1 style="letter-spacing: 6px">{otp}</h1>
+                <p>Mã có hiệu lực trong {VerificationOtpMinutes} phút.</p>
+                """;
+
+            await _emailSender.SendAsync(new EmailMessageDto
+            {
+                To = [user.Email],
+                Subject = "Mã OTP xác thực email UrbanService",
+                Body = body
+            });
+            _cache.Set(GetVerificationOtpKey(userId), otp, TimeSpan.FromMinutes(VerificationOtpMinutes));
+            _cache.Set(
+                GetVerificationOtpCooldownKey(userId),
+                true,
+                TimeSpan.FromSeconds(VerificationOtpCooldownSeconds));
+        }
+
+        public async Task VerifyEmailAsync(Guid userId, VerifyEmailRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(req.Otp))
+            {
+                throw new Exception("OTP là bắt buộc.");
+            }
+
+            var user = await _uow.GetRepository<User>().GetByIdAsync(userId)
+                ?? throw new Exception("Không tìm thấy người dùng.");
+
+            if (user.IsVerified)
+            {
+                return;
+            }
+
+            if (!_cache.TryGetValue<string>(GetVerificationOtpKey(userId), out var otp) ||
+                !string.Equals(otp, req.Otp.Trim(), StringComparison.Ordinal))
+            {
+                throw new Exception("OTP không đúng hoặc đã hết hạn.");
+            }
+
+            user.IsVerified = true;
+            user.UpdatedAt = DateTime.UtcNow;
+            await _uow.SaveAsync();
+            _cache.Remove(GetVerificationOtpKey(userId));
         }
 
         private async Task<Role> GetOrCreateDefaultRoleAsync()
@@ -130,8 +263,14 @@ namespace UrbanService.BLL.Services
                 UserId = user.UserId,
                 Email = user.Email,
                 FullName = user.FullName,
-                Role = user.Role?.RoleName
+                Role = user.Role?.RoleName,
+                IsVerified = user.IsVerified
             };
         }
+
+        private static string GetVerificationOtpKey(Guid userId) => $"email-verification:{userId}";
+
+        private static string GetVerificationOtpCooldownKey(Guid userId) =>
+            $"email-verification-cooldown:{userId}";
     }
 }

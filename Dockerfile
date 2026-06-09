@@ -17,6 +17,16 @@ WORKDIR /app
 
 COPY --from=build /app/publish .
 
+ENV ASPNETCORE_URLS=http://+:8080 \
+    Smtp__Host="" \
+    Smtp__Port=587 \
+    Smtp__EnableSsl=true \
+    Smtp__Username="" \
+    Smtp__Password="" \
+    Smtp__FromEmail="" \
+    Smtp__FromName=UrbanService \
+    GoogleAuth__ClientId=""
+
 EXPOSE 8080
 
 ENTRYPOINT ["dotnet", "UrbanService.dll"]
