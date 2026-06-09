@@ -9,6 +9,7 @@ UrbanService is an ASP.NET Core backend for an urban service provider platform. 
 - Entity Framework Core
 - PostgreSQL via Npgsql
 - JWT authentication
+- SignalR realtime notifications
 - Swagger / OpenAPI
 - Cloudinary media upload
 - Docker / Docker Compose
@@ -35,6 +36,7 @@ docker-compose.prod.yml
 - User feedback list/detail with pagination.
 - Feedback attachments stored through Cloudinary.
 - Feedback status update with status history.
+- Realtime notification to the feedback owner when staff or admin updates its status.
 - Feedback comments.
 - Feedback support / unsupport.
 - Service catalog grouped by category and service operator.
@@ -89,6 +91,42 @@ Required sections:
 ```powershell
 dotnet build UrbanService.sln
 ```
+
+## SignalR Notifications
+
+Authenticated clients connect to:
+
+```text
+/hubs/notifications
+```
+
+Pass the JWT through SignalR's `accessTokenFactory` and listen for the
+`NotificationReceived` event:
+
+```javascript
+const connection = new signalR.HubConnectionBuilder()
+  .withUrl("/hubs/notifications", {
+    accessTokenFactory: () => token
+  })
+  .withAutomaticReconnect()
+  .build();
+
+connection.on("NotificationReceived", notification => {
+  console.log(notification);
+});
+
+await connection.start();
+```
+
+When `SYSTEMSTAFF` or `SYSTEMADMIN` calls
+`PATCH /api/management/feedbacks/{feedbackId}/status`, the feedback owner
+receives the event and the notification is stored in the database.
+
+Notification REST APIs:
+
+- `GET /api/notifications`: list the current user's notifications.
+- `PATCH /api/notifications/{notificationId}/read`: mark one as read.
+- `PATCH /api/notifications/read-all`: mark all as read.
 
 ## Database update
 dotnet ef database update `

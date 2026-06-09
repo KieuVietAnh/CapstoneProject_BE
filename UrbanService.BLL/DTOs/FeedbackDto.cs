@@ -51,10 +51,29 @@ public class FeedbackUpdateRequest
     public DateTime? DueDate { get; set; }
 }
 
+public class StaffFeedbackUpdateRequest : FeedbackUpdateRequest
+{
+    /// <summary>
+    /// Trạng thái mới. Giá trị hợp lệ: Submitted, Verified, Assigned, InProgress,
+    /// Resolved, SubmittedForApproval, Approved, Rejected, NeedRework, Closed, Cancelled.
+    /// </summary>
+    /// <example>InProgress</example>
+    public string? Status { get; set; }
+
+    /// <summary>Ghi chú cho lần thay đổi trạng thái.</summary>
+    public string? StatusNote { get; set; }
+}
+
 public class UpdateFeedbackStatusRequest
 {
+    /// <summary>
+    /// Trạng thái mới. Giá trị hợp lệ: Submitted, Verified, Assigned, InProgress,
+    /// Resolved, SubmittedForApproval, Approved, Rejected, NeedRework, Closed, Cancelled.
+    /// </summary>
+    /// <example>InProgress</example>
     public string Status { get; set; } = null!;
 
+    /// <summary>Ghi chú cho lần thay đổi trạng thái.</summary>
     public string? Note { get; set; }
 }
 
@@ -73,6 +92,10 @@ public class UploadedFeedbackAttachmentDto
 public class FeedbackListItemDto
 {
     public Guid FeedbackId { get; set; }
+
+    public Guid UserId { get; set; }
+
+    public string? UserName { get; set; }
 
     public int CategoryId { get; set; }
 

@@ -2,13 +2,16 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Reflection;
 using System.Text;
 using UrbanService.BLL.Interfaces;
 using UrbanService.BLL.Services;
 using UrbanService.DAL.Data;
 using UrbanService.DAL.Interfaces;
 using UrbanService.DAL.UnitOfWork;
+using UrbanService.Hubs;
 using UrbanService.Middlewares;
+using UrbanService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +26,8 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddSignalR();
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Missing config: Jwt:Key");
 builder.Services
@@ -39,6 +44,22 @@ builder.Services
             ValidAudience = builder.Configuration["Jwt:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
         };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/notifications"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -47,8 +68,15 @@ builder.Services.AddSwaggerGen(options =>
     options.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "UrbanService API",
-        Version = "v1"
+        Version = "v1",
+        Description = """
+            API quản lý dịch vụ đô thị.
+            Các endpoint yêu cầu xác thực JWT sẽ trả về 401 nếu token không hợp lệ hoặc hết hạn, và 403 nếu người dùng không có quyền truy cập.
+            """
     });
+
+    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFile));
 
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -93,5 +121,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();
