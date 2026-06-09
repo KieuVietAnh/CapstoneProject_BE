@@ -73,8 +73,8 @@ namespace UrbanService.Controllers
 
         /// <summary>Gửi OTP xác thực email tới email của người dùng hiện tại.</summary>
         /// <remarks>
-        /// Yêu cầu JWT hợp lệ. OTP có hiệu lực trong 5 phút. SMTP phải được cấu
-        /// hình trong section `Smtp`.
+        /// Yêu cầu JWT hợp lệ. OTP có hiệu lực trong 5 phút. Brevo API phải được
+        /// cấu hình trong section `Brevo`.
         /// </remarks>
         [HttpPost("email-verification/send-otp")]
         [Authorize]

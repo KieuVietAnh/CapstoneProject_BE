@@ -18,14 +18,11 @@ services:
       Cloudinary__ApiKey: ${CLOUDINARY_API_KEY}
       Cloudinary__ApiSecret: ${CLOUDINARY_API_SECRET}
 
-      Smtp__Host: ${SMTP_HOST}
-      Smtp__Port: ${SMTP_PORT:-587}
-      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
-      Smtp__Username: ${SMTP_USERNAME}
-      Smtp__Password: ${SMTP_PASSWORD}
-      Smtp__FromEmail: ${SMTP_FROM_EMAIL}
-      Smtp__FromName: ${SMTP_FROM_NAME:-UrbanService}
+      Brevo__ApiKey: ${BREVO_API_KEY}
+      Brevo__SenderEmail: ${BREVO_SENDER_EMAIL}
+      Brevo__SenderName: ${BREVO_SENDER_NAME:-UrbanService}
 
       GoogleAuth__ClientId: ${GOOGLE_AUTH_CLIENT_ID}
+      Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS}
 
     restart: unless-stopped
