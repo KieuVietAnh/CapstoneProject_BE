@@ -8,6 +8,9 @@ namespace UrbanService.BLL.Interfaces
         //Task<AuthResultDto> VerifyRegisterOtpAsync(VerifyOtpRequest req);
         Task<AuthResultDto> RegisterAsync(RegisterRequest req);
         Task<AuthResultDto> LoginAsync(LoginRequest req);
+        Task<AuthResultDto> GoogleLoginAsync(GoogleLoginRequest req);
+        Task RequestEmailVerificationOtpAsync(Guid userId);
+        Task VerifyEmailAsync(Guid userId, VerifyEmailRequest req);
 
         // --- 2 PHƯƠNG THỨC MỚI CHO FORGET PASSWORD ---
 

@@ -16,4 +16,12 @@ services:
       Cloudinary__CloudName: ${CLOUDINARY_CLOUD_NAME}
       Cloudinary__ApiKey: ${CLOUDINARY_API_KEY}
       Cloudinary__ApiSecret: ${CLOUDINARY_API_SECRET}
+      Smtp__Host: ${SMTP_HOST}
+      Smtp__Port: ${SMTP_PORT:-587}
+      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
+      Smtp__Username: ${SMTP_USERNAME}
+      Smtp__Password: ${SMTP_PASSWORD}
+      Smtp__FromEmail: ${SMTP_FROM_EMAIL}
+      Smtp__FromName: ${SMTP_FROM_NAME:-UrbanService}
+      GoogleAuth__ClientId: ${GOOGLE_AUTH_CLIENT_ID}
     restart: unless-stopped

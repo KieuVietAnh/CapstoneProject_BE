@@ -62,6 +62,14 @@ jobs:
             CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }}
             CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }}
             CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_PORT=${{ secrets.SMTP_PORT }}
+            SMTP_ENABLE_SSL=${{ secrets.SMTP_ENABLE_SSL }}
+            SMTP_USERNAME=${{ secrets.SMTP_USERNAME }}
+            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+            SMTP_FROM_EMAIL=${{ secrets.SMTP_FROM_EMAIL }}
+            SMTP_FROM_NAME=${{ secrets.SMTP_FROM_NAME }}
+            GOOGLE_AUTH_CLIENT_ID=${{ secrets.GOOGLE_AUTH_CLIENT_ID }}
             EOF
 
             echo "Stopping old container if exists..."

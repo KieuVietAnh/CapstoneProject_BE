@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
@@ -49,6 +51,68 @@ namespace UrbanService.Controllers
         {
             var result = await _auth.LoginAsync(req);
             return Ok(result);
+        }
+
+        /// <summary>Đăng nhập bằng tài khoản Google đã xác thực.</summary>
+        /// <remarks>
+        /// Frontend gửi Google ID token nhận từ Google Identity Services.
+        /// Backend xác minh token và chỉ đăng nhập khi email đã tồn tại trong
+        /// UrbanService, `isVerified = true` và tài khoản đang hoạt động.
+        ///
+        /// API không tự động tạo tài khoản mới.
+        /// </remarks>
+        [HttpPost("google-login")]
+        [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginRequest req)
+        {
+            var result = await _auth.GoogleLoginAsync(req);
+            return Ok(result);
+        }
+
+        /// <summary>Gửi OTP xác thực email tới email của người dùng hiện tại.</summary>
+        /// <remarks>
+        /// Yêu cầu JWT hợp lệ. OTP có hiệu lực trong 5 phút. SMTP phải được cấu
+        /// hình trong section `Smtp`.
+        /// </remarks>
+        [HttpPost("email-verification/send-otp")]
+        [Authorize]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> SendEmailVerificationOtp()
+        {
+            await _auth.RequestEmailVerificationOtpAsync(GetCurrentUserId());
+            return NoContent();
+        }
+
+        /// <summary>Xác thực email bằng OTP.</summary>
+        /// <remarks>
+        /// Yêu cầu JWT hợp lệ. Sau khi OTP đúng, trường `isVerified` của người
+        /// dùng được cập nhật thành `true`.
+        /// </remarks>
+        [HttpPost("email-verification/verify")]
+        [Authorize]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailRequest req)
+        {
+            await _auth.VerifyEmailAsync(GetCurrentUserId(), req);
+            return NoContent();
+        }
+
+        private Guid GetCurrentUserId()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (!Guid.TryParse(userId, out var parsedUserId))
+            {
+                throw new UnauthorizedAccessException();
+            }
+
+            return parsedUserId;
         }
     }
 }

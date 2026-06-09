@@ -11,7 +11,6 @@ using UrbanService.DAL.Interfaces;
 using UrbanService.DAL.UnitOfWork;
 using UrbanService.Hubs;
 using UrbanService.Middlewares;
-using UrbanService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +26,9 @@ builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<IRealtimeNotificationSender, SignalRNotificationSender>();
+builder.Services.AddMemoryCache();
 builder.Services.AddSignalR();
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Missing config: Jwt:Key");

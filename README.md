@@ -80,6 +80,18 @@ Required sections:
     "CloudName": "...",
     "ApiKey": "...",
     "ApiSecret": "..."
+  },
+  "Smtp": {
+    "Host": "smtp.example.com",
+    "Port": 587,
+    "EnableSsl": true,
+    "Username": "...",
+    "Password": "...",
+    "FromEmail": "...",
+    "FromName": "UrbanService"
+  },
+  "GoogleAuth": {
+    "ClientId": "your-google-oauth-client-id.apps.googleusercontent.com"
   }
 }
 ```

@@ -14,10 +14,21 @@
         public string Otp { get; set; } = "";
     }
 
+    public class VerifyEmailRequest
+    {
+        public string Otp { get; set; } = "";
+    }
+
     public class LoginRequest
     {
         public string Email { get; set; } = "";
         public string Password { get; set; } = "";
+    }
+
+    public class GoogleLoginRequest
+    {
+        /// <summary>Google ID token nhận từ Google Identity Services ở frontend.</summary>
+        public string IdToken { get; set; } = "";
     }
 
     public class AuthResultDto
@@ -27,6 +38,7 @@
         public string Email { get; set; } = "";
         public string? FullName { get; set; }
         public string? Role { get; set; }
+        public bool IsVerified { get; set; }
     }
 
     // --- CẬP NHẬT CHO FORGET PASSWORD (XỬ LÝ TRÙNG EMAIL) ---
