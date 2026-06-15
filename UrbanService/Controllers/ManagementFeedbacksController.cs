@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
+using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
 
 namespace UrbanService.Controllers;
@@ -92,6 +93,102 @@ public class ManagementFeedbacksController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Staff verify feedback
+    /// </summary>
+    [HttpPut("{feedbackId:guid}/verify")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    public async Task<IActionResult> VerifyFeedback(
+        Guid feedbackId)
+    {
+        await _feedbackService.VerifyFeedbackAsync(
+            feedbackId,
+            GetCurrentUserId());
+
+        return Ok(new
+        {
+            Message = "Feedback verified successfully."
+        });
+    }
+
+    /// <summary>
+    /// Staff assign feedback cho operator
+    /// </summary>
+    [HttpPost("assign")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    public async Task<IActionResult> AssignFeedback(
+        [FromBody] AssignFeedbackRequest request)
+    {
+        request.StaffUserId =
+            GetCurrentUserId();
+
+        await _feedbackService.AssignFeedbackAsync(
+            request);
+
+        return Ok(new
+        {
+            Message = "Feedback assigned successfully."
+        });
+    }
+
+    /// <summary>
+    /// Operator gửi kết quả xử lý
+    /// </summary>
+    [HttpPost("submit-resolution")]
+    [Authorize(Roles = UserRole.SERVICEOPERATORSTAFF)]
+    public async Task<IActionResult> SubmitResolution(
+        [FromBody] SubmitResolutionRequest request)
+    {
+        request.OperatorUserId =
+            GetCurrentUserId();
+
+        await _feedbackService
+            .SubmitResolutionAsync(request);
+
+        return Ok(new
+        {
+            Message = "Resolution submitted successfully."
+        });
+    }
+
+    /// <summary>
+    /// Manager duyệt kết quả xử lý
+    /// </summary>
+    [HttpPut("{feedbackId:guid}/approve")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
+    public async Task<IActionResult> ApproveResolution(
+        Guid feedbackId,
+        [FromQuery] string? note)
+    {
+        await _feedbackService
+            .ApproveResolutionAsync(
+                feedbackId,
+                GetCurrentUserId(),
+                note);
+
+        return Ok(new
+        {
+            Message = "Resolution approved successfully."
+        });
+    }
+
+    [HttpPut("{feedbackId:guid}/need-rework")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
+    public async Task<IActionResult> NeedRework(
+    Guid feedbackId,
+    [FromBody] string reason)
+    {
+        await _feedbackService.RequireReworkAsync(
+            feedbackId,
+            GetCurrentUserId(),
+            reason);
+
+        return Ok(new
+        {
+            Message = "Feedback marked as NeedRework."
+        });
+    }
+
     private Guid GetCurrentUserId()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -103,4 +200,6 @@ public class ManagementFeedbacksController : ControllerBase
 
         return parsedUserId;
     }
+
+    
 }

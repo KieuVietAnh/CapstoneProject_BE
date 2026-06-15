@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
+using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
+using UrbanService.DAL.UnitOfWork;
 
 namespace UrbanService.BLL.Services;
 
@@ -645,5 +647,295 @@ public class FeedbackService : IFeedbackService
     private static string NormalizeOrDefault(string? value, string fallback)
     {
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    private async Task ChangeStatusAsync(
+    Feedback feedback,
+    string newStatus,
+    Guid userId,
+    string? note = null)
+    {
+        var oldStatus = feedback.Status;
+
+        feedback.Status = FeedbackStatus.Normalize(newStatus);
+        feedback.UpdatedAt = DateTime.UtcNow;
+
+        await _uow
+            .GetRepository<FeedbackStatusHistory>()
+            .AddAsync(new FeedbackStatusHistory
+            {
+                FeedbackId = feedback.FeedbackId,
+                ChangedByUserId = userId,
+                OldStatus = oldStatus,
+                NewStatus = feedback.Status,
+                Note = note,
+                ChangedAt = DateTime.UtcNow
+            });
+    }
+
+    public async Task VerifyFeedbackAsync(
+    Guid feedbackId,
+    Guid staffUserId)
+    {
+        var feedback =
+            await GetFeedbackWithDetailsAsync(
+                feedbackId,
+                false);
+
+        if (feedback.Status != FeedbackStatus.Submitted)
+            throw new Exception(
+                "Feedback must be Submitted.");
+
+        await ChangeStatusAsync(
+            feedback,
+            FeedbackStatus.Verified,
+            staffUserId,
+            "Verified by staff");
+
+        await _uow.SaveAsync();
+    }
+
+    public async Task AssignFeedbackAsync(
+    AssignFeedbackRequest request)
+    {
+        _uow.BeginTransaction();
+
+        try
+        {
+            var feedback =
+                await GetFeedbackWithDetailsAsync(
+                    request.FeedbackId,
+                    false);
+
+            if (feedback.Status != FeedbackStatus.Verified)
+                throw new Exception(
+                    "Feedback must be Verified.");
+
+            await _uow
+                .GetRepository<FeedbackAssignment>()
+                .AddAsync(
+                    new FeedbackAssignment
+                    {
+                        FeedbackId =
+                            request.FeedbackId,
+
+                        OperatorId =
+                            request.OperatorId,
+
+                        AssignedByUserId =
+                            request.StaffUserId,
+
+                        AssignmentStatus =
+                            "Assigned",
+
+                        Note =
+                            request.Note,
+
+                        AssignedAt =
+                            DateTime.UtcNow
+                    });
+
+            await ChangeStatusAsync(
+                feedback,
+                FeedbackStatus.Assigned,
+                request.StaffUserId);
+
+            await _uow.SaveAsync();
+
+            _uow.CommitTransaction();
+        }
+        catch
+        {
+            _uow.RollBack();
+            throw;
+        }
+    }
+
+    public async Task SubmitResolutionAsync(
+    SubmitResolutionRequest request)
+    {
+        var feedback =
+            await GetFeedbackWithDetailsAsync(
+                request.FeedbackId,
+                false);
+
+        var user =
+            await _uow.GetRepository<User>()
+                .GetByIdAsync(
+                    request.OperatorUserId);
+
+        var resolution =
+            new FeedbackResolution
+            {
+                FeedbackId =
+                    request.FeedbackId,
+
+                OperatorId =
+                    user!.OperatorId!.Value,
+
+                ResolvedByUserId =
+                    request.OperatorUserId,
+
+                ResolutionSummary =
+                    request.ResolutionSummary,
+
+                ActionTaken =
+                    request.ActionTaken,
+
+                ResultNote =
+                    request.ResultNote,
+
+                Status =
+                    FeedbackStatus.SubmittedForApproval,
+
+                ResolvedAt =
+                    DateTime.UtcNow
+            };
+
+        await _uow
+            .GetRepository<FeedbackResolution>()
+            .AddAsync(resolution);
+
+        await _uow.SaveAsync();
+
+        foreach (var image in request.ImageUrls)
+        {
+            await _uow
+                .GetRepository<
+                    FeedbackResolutionAttachment>()
+                .AddAsync(
+                    new FeedbackResolutionAttachment
+                    {
+                        ResolutionId =
+                            resolution.ResolutionId,
+
+                        FileUrl = image,
+
+                        FileType = "image",
+
+                        UploadedAt =
+                            DateTime.UtcNow
+                    });
+        }
+
+        await ChangeStatusAsync(
+            feedback,
+            FeedbackStatus.SubmittedForApproval,
+            request.OperatorUserId);
+
+        await _uow.SaveAsync();
+    }
+
+    public async Task ApproveResolutionAsync(
+    Guid feedbackId,
+    Guid managerId,
+    string? note)
+    {
+        var feedback =
+            await GetFeedbackWithDetailsAsync(
+                feedbackId,
+                false);
+
+        var resolution =
+            (await _uow
+                .GetRepository<FeedbackResolution>()
+                .GetAllAsync(
+                    x => x.FeedbackId ==
+                         feedbackId))
+            .OrderByDescending(
+                x => x.ResolvedAt)
+            .First();
+
+        resolution.Status =
+            FeedbackStatus.Approved;
+
+        await ChangeStatusAsync(
+            feedback,
+            FeedbackStatus.Approved,
+            managerId,
+            note);
+
+        await _uow.SaveAsync();
+    }
+
+    public async Task RequireReworkAsync(
+    Guid feedbackId,
+    Guid managerId,
+    string reason)
+    {
+        var feedback =
+            await GetFeedbackWithDetailsAsync(
+                feedbackId,
+                false);
+
+        var resolution =
+            (await _uow
+                .GetRepository<FeedbackResolution>()
+                .GetAllAsync(
+                    x => x.FeedbackId ==
+                         feedbackId))
+            .OrderByDescending(
+                x => x.ResolvedAt)
+            .First();
+
+        resolution.Status =
+            FeedbackStatus.NeedRework;
+
+        resolution.ResultNote =
+            reason;
+
+        await ChangeStatusAsync(
+            feedback,
+            FeedbackStatus.NeedRework,
+            managerId,
+            reason);
+
+        await _uow.SaveAsync();
+    }
+
+    public async Task CitizenReviewAsync(
+    CitizenReviewRequest request)
+    {
+        var feedback =
+            await GetFeedbackWithDetailsAsync(
+                request.FeedbackId,
+                false);
+
+        if (feedback.Status !=
+            FeedbackStatus.Approved)
+            throw new Exception(
+                "Feedback must be Approved.");
+
+        await _uow
+            .GetRepository<
+                FeedbackResolutionReview>()
+            .AddAsync(
+                new FeedbackResolutionReview
+                {
+                    FeedbackId =
+                        request.FeedbackId,
+
+                    UserId =
+                        request.UserId,
+
+                    Rating =
+                        request.Rating,
+
+                    IsSatisfied =
+                        request.IsSatisfied,
+
+                    Comment =
+                        request.Comment,
+
+                    CreatedAt =
+                        DateTime.UtcNow
+                });
+
+        await ChangeStatusAsync(
+            feedback,
+            FeedbackStatus.Closed,
+            request.UserId);
+
+        await _uow.SaveAsync();
     }
 }
