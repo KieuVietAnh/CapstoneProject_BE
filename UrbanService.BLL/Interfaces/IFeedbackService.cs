@@ -1,4 +1,5 @@
 using UrbanService.BLL.Dtos;
+using UrbanService.BLL.DTOs;
 
 namespace UrbanService.BLL.Interfaces;
 
@@ -40,4 +41,28 @@ public interface IFeedbackService
     Task SupportAsync(Guid userId, Guid feedbackId);
 
     Task UnsupportAsync(Guid userId, Guid feedbackId);
+
+    Task VerifyFeedbackAsync(
+        Guid feedbackId,
+        Guid staffUserId);
+
+    Task AssignFeedbackAsync(
+        AssignFeedbackRequest request);
+
+
+    Task SubmitResolutionAsync(
+        SubmitResolutionRequest request);
+
+    Task ApproveResolutionAsync(
+        Guid feedbackId,
+        Guid managerId,
+        string? note);
+
+    Task RequireReworkAsync(
+        Guid feedbackId,
+        Guid managerId,
+        string reason);
+
+    Task CitizenReviewAsync(
+        CitizenReviewRequest request);
 }
