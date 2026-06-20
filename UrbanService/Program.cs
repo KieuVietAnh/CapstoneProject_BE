@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Reflection;
 using System.Text;
+using UrbanService.BackgroundServices;
 using UrbanService.BLL.Interfaces;
 using UrbanService.BLL.Services;
 using UrbanService.DAL.Data;
@@ -27,6 +28,8 @@ builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IServiceOperatorService, ServiceOperatorService>();
+builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+builder.Services.AddSingleton<IAiFeedbackReviewQueue, AiFeedbackReviewQueue>();
 builder.Services.AddHttpClient<IAiClient, AiClient>(client =>
 {
     var baseUrl = builder.Configuration["AI:BaseUrl"];
@@ -42,6 +45,7 @@ builder.Services.AddHttpClient<IAiClient, AiClient>(client =>
 });
 builder.Services.AddScoped<IAiFeedbackAnalysisService, AiFeedbackAnalysisService>();
 builder.Services.AddScoped<IAiChatService, AiChatService>();
+builder.Services.AddHostedService<AiFeedbackReviewWorker>();
 builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
 {
     client.BaseAddress = new Uri("https://api.brevo.com/v3/");

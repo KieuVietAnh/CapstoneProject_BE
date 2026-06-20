@@ -16,6 +16,8 @@ public interface IFeedbackService
 
     Task<PagedResultDto<FeedbackListItemDto>> GetAllFeedbacksAsync(FeedbackQueryParameters query);
 
+    Task<PagedResultDto<FeedbackListItemDto>> GetAiReviewedFeedbacksAsync(FeedbackQueryParameters query);
+
     Task<FeedbackDetailDto> GetFeedbackDetailAsync(Guid currentUserId, Guid feedbackId);
 
     Task<FeedbackDetailDto> UpdateAsync(Guid userId, Guid feedbackId, FeedbackUpdateRequest request);

@@ -46,6 +46,42 @@ public class AiChatResponse
     public DateTime CreatedAt { get; set; }
 }
 
+public class AiConversationDto
+{
+    public int ConversationId { get; set; }
+
+    public Guid? FeedbackId { get; set; }
+
+    public string? FeedbackTitle { get; set; }
+
+    public string? Title { get; set; }
+
+    public string Status { get; set; } = null!;
+
+    public DateTime StartedAt { get; set; }
+
+    public DateTime? EndedAt { get; set; }
+
+    public DateTime? LastMessageAt { get; set; }
+
+    public string? LastMessage { get; set; }
+
+    public int MessageCount { get; set; }
+}
+
+public class AiMessageDto
+{
+    public int MessageId { get; set; }
+
+    public int ConversationId { get; set; }
+
+    public string SenderType { get; set; } = null!;
+
+    public string MessageText { get; set; } = null!;
+
+    public DateTime CreatedAt { get; set; }
+}
+
 public class AiHealthResponse
 {
     public bool IsAvailable { get; set; }

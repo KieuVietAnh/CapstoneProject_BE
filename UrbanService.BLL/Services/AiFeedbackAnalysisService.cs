@@ -31,6 +31,11 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
             .FirstOrDefaultAsync(f => f.FeedbackId == feedbackId, cancellationToken)
             ?? throw new Exception("Khong tim thay feedback.");
 
+        if (!string.Equals(feedback.Status, FeedbackStatus.Submitted, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception("Only Submitted feedback can be reviewed by AI.");
+        }
+
         var images = new List<string>();
         foreach (var attachment in feedback.FeedbackAttachments.Where(IsImageAttachment).Take(3))
         {
@@ -66,10 +71,10 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
 
             await _uow.GetRepository<AnalysisResult>().AddAsync(analysisResult);
 
-            if (!string.Equals(feedback.Status, FeedbackStatus.Verified, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(feedback.Status, FeedbackStatus.AiReviewed, StringComparison.OrdinalIgnoreCase))
             {
                 var oldStatus = feedback.Status;
-                feedback.Status = FeedbackStatus.Verified;
+                feedback.Status = FeedbackStatus.AiReviewed;
                 feedback.UpdatedAt = now;
 
                 await _uow.GetRepository<FeedbackStatusHistory>().AddAsync(new FeedbackStatusHistory
@@ -77,7 +82,7 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
                     FeedbackId = feedback.FeedbackId,
                     ChangedByUserId = reviewedByUserId,
                     OldStatus = oldStatus,
-                    NewStatus = FeedbackStatus.Verified,
+                    NewStatus = FeedbackStatus.AiReviewed,
                     Note = $"Reviewed by AI using {_aiClient.ModelName}",
                     ChangedAt = now
                 });

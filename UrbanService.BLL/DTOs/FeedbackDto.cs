@@ -54,7 +54,7 @@ public class FeedbackUpdateRequest
 public class StaffFeedbackUpdateRequest : FeedbackUpdateRequest
 {
     /// <summary>
-    /// Trạng thái mới. Giá trị hợp lệ: Submitted, Verified, Assigned, InProgress,
+    /// Trạng thái mới. Giá trị hợp lệ: Submitted, AiReviewed, Verified, Assigned, InProgress,
     /// Resolved, SubmittedForApproval, Approved, Rejected, NeedRework, Closed, Cancelled.
     /// </summary>
     /// <example>InProgress</example>
@@ -67,7 +67,7 @@ public class StaffFeedbackUpdateRequest : FeedbackUpdateRequest
 public class UpdateFeedbackStatusRequest
 {
     /// <summary>
-    /// Trạng thái mới. Giá trị hợp lệ: Submitted, Verified, Assigned, InProgress,
+    /// Trạng thái mới. Giá trị hợp lệ: Submitted, AiReviewed, Verified, Assigned, InProgress,
     /// Resolved, SubmittedForApproval, Approved, Rejected, NeedRework, Closed, Cancelled.
     /// </summary>
     /// <example>InProgress</example>

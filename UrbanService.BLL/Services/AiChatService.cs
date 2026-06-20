@@ -17,6 +17,65 @@ public class AiChatService : IAiChatService
         _aiClient = aiClient;
     }
 
+    public async Task<IReadOnlyCollection<AiConversationDto>> GetMyConversationsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _uow.GetRepository<AiConversation>().Entities
+            .AsNoTracking()
+            .Where(c => c.UserId == userId)
+            .Select(c => new AiConversationDto
+            {
+                ConversationId = c.AiConversationId,
+                FeedbackId = c.FeedbackId,
+                FeedbackTitle = c.Feedback != null ? c.Feedback.Title : null,
+                Title = c.Title,
+                Status = c.Status,
+                StartedAt = c.StartedAt,
+                EndedAt = c.EndedAt,
+                LastMessageAt = c.AiMessages
+                    .OrderByDescending(m => m.CreatedAt)
+                    .Select(m => (DateTime?)m.CreatedAt)
+                    .FirstOrDefault(),
+                LastMessage = c.AiMessages
+                    .OrderByDescending(m => m.CreatedAt)
+                    .Select(m => m.MessageText)
+                    .FirstOrDefault(),
+                MessageCount = c.AiMessages.Count
+            })
+            .OrderByDescending(c => c.LastMessageAt ?? c.StartedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<AiMessageDto>> GetConversationMessagesAsync(
+        Guid userId,
+        int conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        var exists = await _uow.GetRepository<AiConversation>().Entities
+            .AsNoTracking()
+            .AnyAsync(c => c.AiConversationId == conversationId && c.UserId == userId, cancellationToken);
+
+        if (!exists)
+        {
+            throw new Exception("Khong tim thay conversation cua nguoi dung.");
+        }
+
+        return await _uow.GetRepository<AiMessage>().Entities
+            .AsNoTracking()
+            .Where(m => m.AiConversationId == conversationId)
+            .OrderBy(m => m.CreatedAt)
+            .Select(m => new AiMessageDto
+            {
+                MessageId = m.AiMessageId,
+                ConversationId = m.AiConversationId,
+                SenderType = m.SenderType,
+                MessageText = m.MessageText,
+                CreatedAt = m.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<AiChatResponse> SendAsync(
         Guid userId,
         AiChatRequest request,

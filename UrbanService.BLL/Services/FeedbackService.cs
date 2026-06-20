@@ -14,11 +14,16 @@ public class FeedbackService : IFeedbackService
     private const int MaxPageSize = 100;
     private readonly IUnitOfWork _uow;
     private readonly INotificationService _notificationService;
+    private readonly IAiFeedbackReviewQueue _aiFeedbackReviewQueue;
 
-    public FeedbackService(IUnitOfWork uow, INotificationService notificationService)
+    public FeedbackService(
+        IUnitOfWork uow,
+        INotificationService notificationService,
+        IAiFeedbackReviewQueue aiFeedbackReviewQueue)
     {
         _uow = uow;
         _notificationService = notificationService;
+        _aiFeedbackReviewQueue = aiFeedbackReviewQueue;
     }
 
     public async Task<FeedbackDetailDto> CreateAsync(
@@ -69,6 +74,8 @@ public class FeedbackService : IFeedbackService
 
         await _uow.GetRepository<Feedback>().AddAsync(feedback);
         await _uow.SaveAsync();
+
+        await _aiFeedbackReviewQueue.EnqueueAsync(feedback.FeedbackId, userId);
 
         return await GetMyFeedbackDetailAsync(userId, feedback.FeedbackId);
     }
@@ -201,6 +208,12 @@ public class FeedbackService : IFeedbackService
             TotalItems = totalItems,
             TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize)
         };
+    }
+
+    public async Task<PagedResultDto<FeedbackListItemDto>> GetAiReviewedFeedbacksAsync(FeedbackQueryParameters query)
+    {
+        query.Status = FeedbackStatus.AiReviewed;
+        return await GetAllFeedbacksAsync(query);
     }
 
     public async Task<FeedbackDetailDto> GetFeedbackDetailAsync(Guid currentUserId, Guid feedbackId)
@@ -682,9 +695,10 @@ public class FeedbackService : IFeedbackService
                 feedbackId,
                 false);
 
-        if (feedback.Status != FeedbackStatus.Submitted)
+        if (feedback.Status != FeedbackStatus.Submitted &&
+            feedback.Status != FeedbackStatus.AiReviewed)
             throw new Exception(
-                "Feedback must be Submitted.");
+                "Feedback must be Submitted or AiReviewed.");
 
         await ChangeStatusAsync(
             feedback,

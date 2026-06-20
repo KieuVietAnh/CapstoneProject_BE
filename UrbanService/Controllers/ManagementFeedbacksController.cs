@@ -5,7 +5,6 @@ using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.DTOs;
-using UrbanService.BLL.DTOs.AI;
 using UrbanService.BLL.Interfaces;
 
 namespace UrbanService.Controllers;
@@ -16,14 +15,10 @@ namespace UrbanService.Controllers;
 public class ManagementFeedbacksController : ControllerBase
 {
     private readonly IFeedbackService _feedbackService;
-    private readonly IAiFeedbackAnalysisService _aiFeedbackAnalysisService;
 
-    public ManagementFeedbacksController(
-        IFeedbackService feedbackService,
-        IAiFeedbackAnalysisService aiFeedbackAnalysisService)
+    public ManagementFeedbacksController(IFeedbackService feedbackService)
     {
         _feedbackService = feedbackService;
-        _aiFeedbackAnalysisService = aiFeedbackAnalysisService;
     }
 
     /// <summary>Xem danh sách tất cả feedback trong hệ thống.</summary>
@@ -41,6 +36,18 @@ public class ManagementFeedbacksController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Xem danh sach feedback da duoc AI review.</summary>
+    /// <remarks>Role duoc phep: SYSTEMADMIN, SYSTEMSTAFF, INTERACTIONMANAGER.</remarks>
+    [HttpGet("ai-reviewed")]
+    [ProducesResponseType(typeof(PagedResultDto<FeedbackListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetAiReviewedFeedbacks([FromQuery] FeedbackQueryParameters query)
+    {
+        var result = await _feedbackService.GetAiReviewedFeedbacksAsync(query);
+        return Ok(result);
+    }
+
     /// <summary>Xem chi tiết một feedback bất kỳ.</summary>
     /// <remarks>Role được phép: `SYSTEMADMIN`, `SYSTEMSTAFF`, `INTERACTIONMANAGER`.</remarks>
     [HttpGet("{feedbackId:guid}")]
@@ -51,25 +58,6 @@ public class ManagementFeedbacksController : ControllerBase
     public async Task<IActionResult> GetFeedbackDetail(Guid feedbackId)
     {
         var result = await _feedbackService.GetFeedbackDetailAsync(GetCurrentUserId(), feedbackId);
-        return Ok(result);
-    }
-
-    /// <summary>Phan tich feedback bang AI va luu ket qua.</summary>
-    /// <remarks>Role duoc phep: SYSTEMADMIN, SYSTEMSTAFF, INTERACTIONMANAGER.</remarks>
-    [HttpPost("{feedbackId:guid}/ai-analysis")]
-    [ProducesResponseType(typeof(AiAnalysisResponseDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> AnalyzeFeedbackWithAi(
-        Guid feedbackId,
-        CancellationToken cancellationToken)
-    {
-        var result = await _aiFeedbackAnalysisService.AnalyzeFeedbackAsync(
-            feedbackId,
-            GetCurrentUserId(),
-            cancellationToken);
-
         return Ok(result);
     }
 
@@ -98,7 +86,7 @@ public class ManagementFeedbacksController : ControllerBase
     /// Sau khi cập nhật thành công, hệ thống lưu notification và gửi realtime
     /// event `NotificationReceived` qua SignalR tới người tạo feedback.
     ///
-    /// Status hợp lệ: `Submitted`, `Verified`, `Assigned`, `InProgress`, `Resolved`,
+    /// Status hợp lệ: `Submitted`, `AiReviewed`, `Verified`, `Assigned`, `InProgress`, `Resolved`,
     /// `SubmittedForApproval`, `Approved`, `Rejected`, `NeedRework`, `Closed`,
     /// `Cancelled`.
     /// </remarks>

@@ -3,6 +3,7 @@ namespace UrbanService.BLL.Common.Constraint;
 public static class FeedbackStatus
 {
     public const string Submitted = "Submitted";
+    public const string AiReviewed = "AiReviewed";
     public const string Verified = "Verified";
     public const string Assigned = "Assigned";
     public const string InProgress = "InProgress";
@@ -17,6 +18,7 @@ public static class FeedbackStatus
     public static readonly IReadOnlyCollection<string> Allowed =
     [
         Submitted,
+        AiReviewed,
         Verified,
         Assigned,
         InProgress,

@@ -60,6 +60,7 @@ File hien tai: `UrbanService.BLL/Common/Constraint/FeedbackStatus.cs`.
 Status hop le:
 
 - `Submitted`
+- `AiReviewed`
 - `Verified`
 - `Assigned`
 - `InProgress`
@@ -71,15 +72,7 @@ Status hop le:
 - `Closed`
 - `Cancelled`
 
-Hien chua co status rieng ten `AIReviewed`. Neu yeu cau la "da duoc AI review" nhung khong muon them migration, nen dung `Verified` va tao lich su status voi note `Reviewed by AI`. Neu muon phan biet ro AI review voi staff verify, hay them status moi:
-
-```csharp
-public const string AIReviewed = "AIReviewed";
-```
-
-Sau do them vao `Allowed`, tao migration neu database co constraint lien quan status, va cap nhat cac flow dang yeu cau `Verified` neu can.
-
-Khuyen nghi ngan han: dung `Verified` sau khi AI phan tich xong, vi flow assign hien tai dang yeu cau feedback phai o status `Verified`.
+Status `AiReviewed` duoc dung cho feedback da duoc AI phan tich xong nhung chua duoc staff verify. Staff xem danh sach nay, kiem tra ket qua AI va verify sang `Verified` truoc khi assign operator.
 
 ## 3. Mo API tren AI VPS
 
@@ -211,18 +204,31 @@ AI_TIMEOUT_SECONDS=120
 
 ## 5. API phan tich feedback text + anh
 
-### Endpoint de xuat
+### Flow hien tai
 
-Them controller:
+AI review duoc goi tu dong sau khi citizen tao feedback thanh cong:
 
 ```text
-POST /api/management/feedbacks/{feedbackId}/ai-analysis
-Role: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER
+POST /api/user/feedbacks
+  -> tao feedback Submitted
+  -> BE dua feedback vao AI review queue
+  -> response tra ve cho citizen
+
+Background worker
+  -> lay tung feedback trong queue, xu ly lan luot tung cai mot
+  -> goi AI review
+  -> luu AnalysisResult
+  -> doi Feedback.Status sang AiReviewed neu AI thanh cong
 ```
 
-Hoac neu muon tu dong phan tich ngay sau khi citizen tao feedback, goi service AI o cuoi `FeedbackService.CreateAsync`.
+Feedback chua toi luot hoac AI review loi se giu status `Submitted`. Background worker se quet lai cac feedback `Submitted` theo chu ky de dua vao queue, nen neu app restart thi hang doi co the duoc phuc hoi tu DB.
 
-Khuyen nghi giai doan dau: dung endpoint rieng de test on dinh truoc, sau do moi tu dong hoa.
+Staff lay danh sach feedback da duoc AI review:
+
+```text
+GET /api/management/feedbacks/ai-reviewed
+Role: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER
+```
 
 ### Service/file nen them
 
@@ -321,10 +327,10 @@ Map ket qua AI vao entity hien co:
 
 Sau khi luu `AnalysisResult`, cap nhat `Feedback.Status`:
 
-- Khuyen nghi: `Verified`
+- `AiReviewed`
 - Tao `FeedbackStatusHistory`:
   - `OldStatus`: status cu
-  - `NewStatus`: `Verified`
+  - `NewStatus`: `AiReviewed`
   - `ChangedByUserId`: user dang goi API, hoac system AI user neu co
   - `Note`: `Reviewed by AI using qwen2.5vl:3b`
   - `ChangedAt`: `DateTime.UtcNow`
@@ -436,8 +442,9 @@ Co the chua can them:
 1. Kiem tra Ollama tren AI VPS bang `/api/tags`.
 2. Them config `AI__BaseUrl`, `AI__Model`, `AI__TimeoutSeconds` vao BE deploy.
 3. Tao `IAiClient` va test endpoint health.
-4. Tao endpoint phan tich feedback, chi luu `AnalysisResult` truoc.
-5. Sau khi parse JSON on dinh, cap nhat status sang `Verified` va them `FeedbackStatusHistory`.
-6. Tao endpoint chatbot, luu `AiConversation` va `AiMessage`.
-7. Seed du lieu `AiKnowledgeSource` de chatbot co ngu canh.
-8. Sau khi on dinh, can nhac auto-run AI analysis ngay sau `CreateFeedback`.
+4. Dua feedback moi vao AI review queue sau khi tao thanh cong.
+5. Background worker xu ly queue tung feedback mot, luu `AnalysisResult`.
+6. Sau khi parse JSON on dinh, cap nhat status sang `AiReviewed` va them `FeedbackStatusHistory`.
+7. Tao endpoint chatbot, luu `AiConversation` va `AiMessage`.
+8. Seed du lieu `AiKnowledgeSource` de chatbot co ngu canh.
+9. Staff verify feedback `AiReviewed` sang `Verified` truoc khi assign operator.
