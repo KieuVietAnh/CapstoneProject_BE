@@ -5,6 +5,7 @@ using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.DTOs;
+using UrbanService.BLL.DTOs.AI;
 using UrbanService.BLL.Interfaces;
 
 namespace UrbanService.Controllers;
@@ -15,10 +16,14 @@ namespace UrbanService.Controllers;
 public class ManagementFeedbacksController : ControllerBase
 {
     private readonly IFeedbackService _feedbackService;
+    private readonly IAiFeedbackAnalysisService _aiFeedbackAnalysisService;
 
-    public ManagementFeedbacksController(IFeedbackService feedbackService)
+    public ManagementFeedbacksController(
+        IFeedbackService feedbackService,
+        IAiFeedbackAnalysisService aiFeedbackAnalysisService)
     {
         _feedbackService = feedbackService;
+        _aiFeedbackAnalysisService = aiFeedbackAnalysisService;
     }
 
     /// <summary>Xem danh sách tất cả feedback trong hệ thống.</summary>
@@ -46,6 +51,25 @@ public class ManagementFeedbacksController : ControllerBase
     public async Task<IActionResult> GetFeedbackDetail(Guid feedbackId)
     {
         var result = await _feedbackService.GetFeedbackDetailAsync(GetCurrentUserId(), feedbackId);
+        return Ok(result);
+    }
+
+    /// <summary>Phan tich feedback bang AI va luu ket qua.</summary>
+    /// <remarks>Role duoc phep: SYSTEMADMIN, SYSTEMSTAFF, INTERACTIONMANAGER.</remarks>
+    [HttpPost("{feedbackId:guid}/ai-analysis")]
+    [ProducesResponseType(typeof(AiAnalysisResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> AnalyzeFeedbackWithAi(
+        Guid feedbackId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _aiFeedbackAnalysisService.AnalyzeFeedbackAsync(
+            feedbackId,
+            GetCurrentUserId(),
+            cancellationToken);
+
         return Ok(result);
     }
 

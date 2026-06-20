@@ -1,0 +1,248 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using UrbanService.BLL.Common.Constraint;
+using UrbanService.BLL.DTOs.AI;
+using UrbanService.BLL.Interfaces;
+using UrbanService.DAL.Entities;
+using UrbanService.DAL.Interfaces;
+
+namespace UrbanService.BLL.Services;
+
+public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
+{
+    private readonly IUnitOfWork _uow;
+    private readonly IAiClient _aiClient;
+
+    public AiFeedbackAnalysisService(IUnitOfWork uow, IAiClient aiClient)
+    {
+        _uow = uow;
+        _aiClient = aiClient;
+    }
+
+    public async Task<AiAnalysisResponseDto> AnalyzeFeedbackAsync(
+        Guid feedbackId,
+        Guid reviewedByUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var feedback = await _uow.GetRepository<Feedback>().Entities
+            .Include(f => f.Category)
+            .Include(f => f.FeedbackAttachments)
+            .Include(f => f.AnalysisResults)
+            .FirstOrDefaultAsync(f => f.FeedbackId == feedbackId, cancellationToken)
+            ?? throw new Exception("Khong tim thay feedback.");
+
+        var images = new List<string>();
+        foreach (var attachment in feedback.FeedbackAttachments.Where(IsImageAttachment).Take(3))
+        {
+            var base64 = await _aiClient.DownloadImageAsBase64Async(attachment.FileUrl, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(base64))
+            {
+                images.Add(base64);
+            }
+        }
+
+        var prompt = BuildAnalysisPrompt(feedback);
+        var rawResponse = await _aiClient.ChatAsync(prompt, images, jsonFormat: true, cancellationToken);
+        var parsed = ParseAnalysis(rawResponse);
+        var detectedCategory = await FindDetectedCategoryAsync(parsed.DetectedCategoryName, cancellationToken);
+
+        _uow.BeginTransaction();
+        try
+        {
+            var now = DateTime.UtcNow;
+            var analysisResult = new AnalysisResult
+            {
+                FeedbackId = feedback.FeedbackId,
+                ModelName = _aiClient.ModelName,
+                DetectedCategoryId = detectedCategory?.CategoryId,
+                Sentiment = parsed.Sentiment,
+                UrgencyLevel = parsed.UrgencyLevel,
+                Summary = Truncate(parsed.Summary, 500),
+                Keywords = Truncate(JsonSerializer.Serialize(parsed.Keywords ?? []), 500),
+                ConfidenceScore = parsed.ConfidenceScore,
+                RawResponse = NormalizeJsonForJsonb(rawResponse),
+                CreatedAt = now
+            };
+
+            await _uow.GetRepository<AnalysisResult>().AddAsync(analysisResult);
+
+            if (!string.Equals(feedback.Status, FeedbackStatus.Verified, StringComparison.OrdinalIgnoreCase))
+            {
+                var oldStatus = feedback.Status;
+                feedback.Status = FeedbackStatus.Verified;
+                feedback.UpdatedAt = now;
+
+                await _uow.GetRepository<FeedbackStatusHistory>().AddAsync(new FeedbackStatusHistory
+                {
+                    FeedbackId = feedback.FeedbackId,
+                    ChangedByUserId = reviewedByUserId,
+                    OldStatus = oldStatus,
+                    NewStatus = FeedbackStatus.Verified,
+                    Note = $"Reviewed by AI using {_aiClient.ModelName}",
+                    ChangedAt = now
+                });
+            }
+
+            await _uow.SaveAsync();
+            _uow.CommitTransaction();
+
+            return new AiAnalysisResponseDto
+            {
+                AnalysisResultId = analysisResult.AnalysisResultId,
+                FeedbackId = analysisResult.FeedbackId,
+                ModelName = analysisResult.ModelName,
+                DetectedCategoryId = analysisResult.DetectedCategoryId,
+                DetectedCategoryName = detectedCategory?.CategoryName,
+                Sentiment = analysisResult.Sentiment,
+                UrgencyLevel = analysisResult.UrgencyLevel,
+                Summary = analysisResult.Summary,
+                Keywords = parsed.Keywords ?? [],
+                ConfidenceScore = analysisResult.ConfidenceScore,
+                CreatedAt = analysisResult.CreatedAt
+            };
+        }
+        catch
+        {
+            _uow.RollBack();
+            throw;
+        }
+    }
+
+    private async Task<UrbanServiceCategory?> FindDetectedCategoryAsync(
+        string? categoryName,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(categoryName))
+        {
+            return null;
+        }
+
+        var normalized = categoryName.Trim().ToLower();
+        return await _uow.GetRepository<UrbanServiceCategory>().Entities
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .FirstOrDefaultAsync(c => c.CategoryName.ToLower() == normalized, cancellationToken);
+    }
+
+    private static bool IsImageAttachment(FeedbackAttachment attachment)
+    {
+        if (attachment.FileType?.StartsWith("image", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return true;
+        }
+
+        var url = attachment.FileUrl.ToLower();
+        return url.EndsWith(".jpg") || url.EndsWith(".jpeg") || url.EndsWith(".png") || url.EndsWith(".webp");
+    }
+
+    private static string BuildAnalysisPrompt(Feedback feedback)
+    {
+        return $$"""
+        Ban la he thong phan tich phan anh do thi cho UrbanService.
+        Hay phan tich feedback cua nguoi dan dua tren text va anh dinh kem.
+
+        Feedback:
+        - Tieu de: {{feedback.Title}}
+        - Mo ta: {{feedback.Description}}
+        - Dia diem: {{feedback.LocationText}}
+        - Muc uu tien hien tai: {{feedback.Priority}}
+        - Category hien tai: {{feedback.Category.CategoryName}}
+
+        Tra ve dung JSON:
+        {
+          "detectedCategoryName": string | null,
+          "sentiment": "Positive" | "Neutral" | "Negative",
+          "urgencyLevel": "Low" | "Medium" | "High" | "Critical",
+          "summary": string,
+          "keywords": string[],
+          "confidenceScore": number,
+          "riskNotes": string[]
+        }
+
+        Khong duoc them giai thich ngoai JSON.
+        Neu anh khong ro hoac khong lien quan, ghi ro trong riskNotes.
+        """;
+    }
+
+    private static ParsedAnalysis ParseAnalysis(string rawResponse)
+    {
+        var json = ExtractJson(rawResponse);
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        return new ParsedAnalysis
+        {
+            DetectedCategoryName = GetString(root, "detectedCategoryName"),
+            Sentiment = GetString(root, "sentiment"),
+            UrgencyLevel = GetString(root, "urgencyLevel"),
+            Summary = GetString(root, "summary"),
+            Keywords = root.TryGetProperty("keywords", out var keywords) && keywords.ValueKind == JsonValueKind.Array
+                ? keywords.EnumerateArray()
+                    .Select(k => k.GetString())
+                    .Where(k => !string.IsNullOrWhiteSpace(k))
+                    .Select(k => k!)
+                    .ToList()
+                : [],
+            ConfidenceScore = GetDecimal(root, "confidenceScore")
+        };
+    }
+
+    private static string NormalizeJsonForJsonb(string rawResponse)
+    {
+        var json = ExtractJson(rawResponse);
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.GetRawText();
+    }
+
+    private static string ExtractJson(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith("```", StringComparison.Ordinal))
+        {
+            var firstBrace = trimmed.IndexOf('{');
+            var lastBrace = trimmed.LastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace)
+            {
+                return trimmed[firstBrace..(lastBrace + 1)];
+            }
+        }
+
+        return trimmed;
+    }
+
+    private static string? GetString(JsonElement root, string propertyName)
+    {
+        return root.TryGetProperty(propertyName, out var value) && value.ValueKind != JsonValueKind.Null
+            ? value.GetString()
+            : null;
+    }
+
+    private static decimal? GetDecimal(JsonElement root, string propertyName)
+    {
+        return root.TryGetProperty(propertyName, out var value) && value.TryGetDecimal(out var result)
+            ? Math.Clamp(result, 0m, 1m)
+            : null;
+    }
+
+    private static string? Truncate(string? value, int maxLength)
+    {
+        return string.IsNullOrEmpty(value) || value.Length <= maxLength
+            ? value
+            : value[..maxLength];
+    }
+
+    private sealed class ParsedAnalysis
+    {
+        public string? DetectedCategoryName { get; set; }
+
+        public string? Sentiment { get; set; }
+
+        public string? UrgencyLevel { get; set; }
+
+        public string? Summary { get; set; }
+
+        public List<string>? Keywords { get; set; }
+
+        public decimal? ConfidenceScore { get; set; }
+    }
+}
