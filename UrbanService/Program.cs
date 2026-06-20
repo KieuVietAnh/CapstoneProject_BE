@@ -27,6 +27,21 @@ builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IServiceOperatorService, ServiceOperatorService>();
+builder.Services.AddHttpClient<IAiClient, AiClient>(client =>
+{
+    var baseUrl = builder.Configuration["AI:BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(baseUrl))
+    {
+        client.BaseAddress = new Uri(baseUrl);
+    }
+
+    client.Timeout = TimeSpan.FromSeconds(
+        int.TryParse(builder.Configuration["AI:TimeoutSeconds"], out var timeoutSeconds)
+            ? timeoutSeconds
+            : 120);
+});
+builder.Services.AddScoped<IAiFeedbackAnalysisService, AiFeedbackAnalysisService>();
+builder.Services.AddScoped<IAiChatService, AiChatService>();
 builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
 {
     client.BaseAddress = new Uri("https://api.brevo.com/v3/");

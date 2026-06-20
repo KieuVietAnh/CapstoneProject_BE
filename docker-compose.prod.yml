@@ -25,4 +25,8 @@ services:
       GoogleAuth__ClientId: ${GOOGLE_AUTH_CLIENT_ID}
       Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS}
 
+      AI__BaseUrl: ${AI_BASE_URL}
+      AI__Model: ${AI_MODEL:-qwen2.5vl:3b}
+      AI__TimeoutSeconds: ${AI_TIMEOUT_SECONDS:-120}
+
     restart: unless-stopped
