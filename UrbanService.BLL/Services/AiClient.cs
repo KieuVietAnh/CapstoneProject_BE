@@ -11,6 +11,9 @@ public class AiClient : IAiClient
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiClient> _logger;
     private readonly long _maxImageBytes;
+    private readonly int _numPredict;
+    private readonly int _numContext;
+    private readonly double _temperature;
 
     public AiClient(HttpClient httpClient, IConfiguration configuration, ILogger<AiClient> logger)
     {
@@ -20,6 +23,15 @@ public class AiClient : IAiClient
         _maxImageBytes = int.TryParse(configuration["AI:MaxImageBytes"], out var maxImageBytes)
             ? maxImageBytes
             : 2 * 1024 * 1024;
+        _numPredict = int.TryParse(configuration["AI:NumPredict"], out var numPredict)
+            ? numPredict
+            : 512;
+        _numContext = int.TryParse(configuration["AI:NumContext"], out var numContext)
+            ? numContext
+            : 4096;
+        _temperature = double.TryParse(configuration["AI:Temperature"], out var temperature)
+            ? temperature
+            : 0.1d;
     }
 
     public string ModelName { get; }
@@ -64,7 +76,13 @@ public class AiClient : IAiClient
         {
             ["model"] = ModelName,
             ["stream"] = false,
-            ["messages"] = new[] { message }
+            ["messages"] = new[] { message },
+            ["options"] = new Dictionary<string, object?>
+            {
+                ["num_predict"] = _numPredict,
+                ["num_ctx"] = _numContext,
+                ["temperature"] = _temperature
+            }
         };
 
         if (jsonFormat)
@@ -118,7 +136,8 @@ public class AiClient : IAiClient
         string imageUrl,
         CancellationToken cancellationToken = default)
     {
-        if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri) ||
+        var optimizedImageUrl = OptimizeCloudinaryImageUrl(imageUrl);
+        if (!Uri.TryCreate(optimizedImageUrl, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
             return null;
@@ -172,6 +191,35 @@ public class AiClient : IAiClient
             _logger.LogWarning(ex, "Failed to download AI analysis image.");
             return null;
         }
+    }
+
+    private static string OptimizeCloudinaryImageUrl(string imageUrl)
+    {
+        if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri) ||
+            !uri.Host.Contains("res.cloudinary.com", StringComparison.OrdinalIgnoreCase) ||
+            !uri.AbsolutePath.Contains("/image/upload/", StringComparison.OrdinalIgnoreCase))
+        {
+            return imageUrl;
+        }
+
+        const string marker = "/image/upload/";
+        const string transform = "f_jpg,q_auto:eco,w_768,c_limit/";
+        var absolutePath = uri.AbsolutePath;
+        var markerIndex = absolutePath.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+
+        if (markerIndex < 0)
+        {
+            return imageUrl;
+        }
+
+        var insertIndex = markerIndex + marker.Length;
+        var newPath = absolutePath.Insert(insertIndex, transform);
+        var builder = new UriBuilder(uri)
+        {
+            Path = newPath
+        };
+
+        return builder.Uri.ToString();
     }
 
     private static string Truncate(string value, int maxLength)

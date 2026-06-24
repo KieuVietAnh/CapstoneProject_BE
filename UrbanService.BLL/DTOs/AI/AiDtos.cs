@@ -95,6 +95,10 @@ public class AiFeedbackReviewQueueStatusResponse
 {
     public int PendingSubmittedCount { get; set; }
 
+    public int QueuedInMemoryCount { get; set; }
+
+    public int RetryCooldownMinutes { get; set; }
+
     public int AiReviewedCount { get; set; }
 
     public int AnalysisResultCount { get; set; }

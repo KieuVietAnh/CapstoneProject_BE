@@ -76,6 +76,10 @@ jobs:
             AI_TIMEOUT_SECONDS=${{ secrets.AI_TIMEOUT_SECONDS }}
             AI_MAX_IMAGES_PER_FEEDBACK=${{ secrets.AI_MAX_IMAGES_PER_FEEDBACK }}
             AI_MAX_IMAGE_BYTES=${{ secrets.AI_MAX_IMAGE_BYTES }}
+            AI_REVIEW_FAILURE_RETRY_DELAY_MINUTES=${{ secrets.AI_REVIEW_FAILURE_RETRY_DELAY_MINUTES }}
+            AI_NUM_PREDICT=${{ secrets.AI_NUM_PREDICT }}
+            AI_NUM_CONTEXT=${{ secrets.AI_NUM_CONTEXT }}
+            AI_TEMPERATURE=${{ secrets.AI_TEMPERATURE }}
             EOF
 
             echo "Stopping old container if exists..."

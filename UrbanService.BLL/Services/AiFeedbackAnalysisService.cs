@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs.AI;
 using UrbanService.BLL.Interfaces;
@@ -13,18 +14,21 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
 {
     private readonly IUnitOfWork _uow;
     private readonly IAiClient _aiClient;
+    private readonly ILogger<AiFeedbackAnalysisService> _logger;
     private readonly int _maxImagesPerFeedback;
 
     public AiFeedbackAnalysisService(
         IUnitOfWork uow,
         IAiClient aiClient,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ILogger<AiFeedbackAnalysisService> logger)
     {
         _uow = uow;
         _aiClient = aiClient;
+        _logger = logger;
         _maxImagesPerFeedback = int.TryParse(configuration["AI:MaxImagesPerFeedback"], out var maxImages)
             ? Math.Clamp(maxImages, 0, 3)
-            : 1;
+            : 0;
     }
 
     public async Task<AiAnalysisResponseDto> AnalyzeFeedbackAsync(
@@ -54,8 +58,8 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
             }
         }
 
-        var prompt = BuildAnalysisPrompt(feedback);
-        var rawResponse = await _aiClient.ChatAsync(prompt, images, jsonFormat: true, cancellationToken);
+        var prompt = BuildAnalysisPrompt(feedback, images.Count > 0);
+        var rawResponse = await ChatWithFallbackAsync(feedback.FeedbackId, prompt, images, cancellationToken);
         var parsed = ParseAnalysis(rawResponse);
         var detectedCategory = await FindDetectedCategoryAsync(parsed.DetectedCategoryName, cancellationToken);
 
@@ -148,11 +152,40 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         return url.EndsWith(".jpg") || url.EndsWith(".jpeg") || url.EndsWith(".png") || url.EndsWith(".webp");
     }
 
-    private static string BuildAnalysisPrompt(Feedback feedback)
+    private async Task<string> ChatWithFallbackAsync(
+        Guid feedbackId,
+        string prompt,
+        IReadOnlyCollection<string> images,
+        CancellationToken cancellationToken)
+    {
+        if (images.Count == 0)
+        {
+            return await _aiClient.ChatAsync(prompt, jsonFormat: true, cancellationToken: cancellationToken);
+        }
+
+        try
+        {
+            return await _aiClient.ChatAsync(prompt, images, jsonFormat: true, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "AI vision review failed for feedback {FeedbackId}. Retrying with text-only prompt.",
+                feedbackId);
+
+            return await _aiClient.ChatAsync(
+                prompt,
+                jsonFormat: true,
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private static string BuildAnalysisPrompt(Feedback feedback, bool hasImages)
     {
         return $$"""
         Ban la he thong phan tich phan anh do thi cho UrbanService.
-        Hay phan tich feedback cua nguoi dan dua tren text va anh dinh kem.
+        Hay phan tich feedback cua nguoi dan dua tren text{{(hasImages ? " va anh dinh kem" : "")}}.
 
         Feedback:
         - Tieu de: {{feedback.Title}}
@@ -173,7 +206,7 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         }
 
         Khong duoc them giai thich ngoai JSON.
-        Neu anh khong ro hoac khong lien quan, ghi ro trong riskNotes.
+        {{(hasImages ? "Neu anh khong ro hoac khong lien quan, ghi ro trong riskNotes." : "Khong co anh dinh kem trong request nay, chi phan tich dua tren text.")}}
         """;
     }
 
