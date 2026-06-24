@@ -4,7 +4,9 @@ public sealed record AiFeedbackReviewQueueItem(Guid FeedbackId, Guid RequestedBy
 
 public interface IAiFeedbackReviewQueue
 {
-    ValueTask EnqueueAsync(
+    int QueuedCount { get; }
+
+    ValueTask<bool> EnqueueAsync(
         Guid feedbackId,
         Guid requestedByUserId,
         CancellationToken cancellationToken = default);

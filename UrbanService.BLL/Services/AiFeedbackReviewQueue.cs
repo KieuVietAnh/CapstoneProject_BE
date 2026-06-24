@@ -18,19 +18,23 @@ public class AiFeedbackReviewQueue : IAiFeedbackReviewQueue
         });
     }
 
-    public ValueTask EnqueueAsync(
+    public int QueuedCount => _queuedFeedbackIds.Count;
+
+    public async ValueTask<bool> EnqueueAsync(
         Guid feedbackId,
         Guid requestedByUserId,
         CancellationToken cancellationToken = default)
     {
         if (!_queuedFeedbackIds.TryAdd(feedbackId, 0))
         {
-            return ValueTask.CompletedTask;
+            return false;
         }
 
-        return _queue.Writer.WriteAsync(
+        await _queue.Writer.WriteAsync(
             new AiFeedbackReviewQueueItem(feedbackId, requestedByUserId),
             cancellationToken);
+
+        return true;
     }
 
     public IAsyncEnumerable<AiFeedbackReviewQueueItem> DequeueAllAsync(CancellationToken cancellationToken)

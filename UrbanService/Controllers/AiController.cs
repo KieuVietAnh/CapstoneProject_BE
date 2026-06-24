@@ -18,15 +18,21 @@ public class AiController : ControllerBase
     private readonly IAiClient _aiClient;
     private readonly IAiChatService _aiChatService;
     private readonly IUnitOfWork _uow;
+    private readonly IAiFeedbackReviewQueue _aiFeedbackReviewQueue;
+    private readonly IConfiguration _configuration;
 
     public AiController(
         IAiClient aiClient,
         IAiChatService aiChatService,
-        IUnitOfWork uow)
+        IUnitOfWork uow,
+        IAiFeedbackReviewQueue aiFeedbackReviewQueue,
+        IConfiguration configuration)
     {
         _aiClient = aiClient;
         _aiChatService = aiChatService;
         _uow = uow;
+        _aiFeedbackReviewQueue = aiFeedbackReviewQueue;
+        _configuration = configuration;
     }
 
     /// <summary>Kiem tra BE co ket noi duoc AI server khong.</summary>
@@ -57,6 +63,12 @@ public class AiController : ControllerBase
         {
             PendingSubmittedCount = await feedbacks
                 .CountAsync(f => f.Status == FeedbackStatus.Submitted, cancellationToken),
+            QueuedInMemoryCount = _aiFeedbackReviewQueue.QueuedCount,
+            RetryCooldownMinutes = int.TryParse(
+                _configuration["AI:ReviewFailureRetryDelayMinutes"],
+                out var retryDelayMinutes)
+                ? retryDelayMinutes
+                : 15,
             AiReviewedCount = await feedbacks
                 .CountAsync(f => f.Status == FeedbackStatus.AiReviewed, cancellationToken),
             AnalysisResultCount = await _uow.GetRepository<AnalysisResult>().Entities

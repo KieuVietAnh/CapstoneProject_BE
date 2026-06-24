@@ -24,6 +24,10 @@ services:
       AI__BaseUrl: ${AI_BASE_URL}
       AI__Model: ${AI_MODEL:-qwen2.5vl:3b}
       AI__TimeoutSeconds: ${AI_TIMEOUT_SECONDS:-600}
-      AI__MaxImagesPerFeedback: ${AI_MAX_IMAGES_PER_FEEDBACK:-1}
+      AI__MaxImagesPerFeedback: ${AI_MAX_IMAGES_PER_FEEDBACK:-0}
       AI__MaxImageBytes: ${AI_MAX_IMAGE_BYTES:-2097152}
+      AI__ReviewFailureRetryDelayMinutes: ${AI_REVIEW_FAILURE_RETRY_DELAY_MINUTES:-15}
+      AI__NumPredict: ${AI_NUM_PREDICT:-512}
+      AI__NumContext: ${AI_NUM_CONTEXT:-4096}
+      AI__Temperature: ${AI_TEMPERATURE:-0.1}
     restart: unless-stopped

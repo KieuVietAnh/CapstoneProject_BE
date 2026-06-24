@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Concurrent;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
@@ -12,15 +13,22 @@ public class AiFeedbackReviewWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAiFeedbackReviewQueue _queue;
     private readonly ILogger<AiFeedbackReviewWorker> _logger;
+    private readonly ConcurrentDictionary<Guid, DateTime> _retryAfterUtcByFeedbackId = new();
+    private readonly TimeSpan _failureRetryDelay;
 
     public AiFeedbackReviewWorker(
         IServiceScopeFactory scopeFactory,
         IAiFeedbackReviewQueue queue,
-        ILogger<AiFeedbackReviewWorker> logger)
+        ILogger<AiFeedbackReviewWorker> logger,
+        IConfiguration configuration)
     {
         _scopeFactory = scopeFactory;
         _queue = queue;
         _logger = logger;
+        _failureRetryDelay = TimeSpan.FromMinutes(
+            int.TryParse(configuration["AI:ReviewFailureRetryDelayMinutes"], out var retryDelayMinutes)
+                ? Math.Clamp(retryDelayMinutes, 1, 1440)
+                : 15);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -70,16 +78,37 @@ public class AiFeedbackReviewWorker : BackgroundService
             .Take(1000)
             .ToListAsync(stoppingToken);
 
-        if (pendingFeedbacks.Count > 0)
-        {
-            _logger.LogInformation(
-                "Found {Count} Submitted feedbacks for AI review queue.",
-                pendingFeedbacks.Count);
-        }
+        var now = DateTime.UtcNow;
+        var newlyQueuedCount = 0;
+        var cooldownSkippedCount = 0;
 
         foreach (var feedback in pendingFeedbacks)
         {
-            await _queue.EnqueueAsync(feedback.FeedbackId, feedback.UserId, stoppingToken);
+            if (_retryAfterUtcByFeedbackId.TryGetValue(feedback.FeedbackId, out var retryAfterUtc))
+            {
+                if (retryAfterUtc > now)
+                {
+                    cooldownSkippedCount++;
+                    continue;
+                }
+
+                _retryAfterUtcByFeedbackId.TryRemove(feedback.FeedbackId, out _);
+            }
+
+            if (await _queue.EnqueueAsync(feedback.FeedbackId, feedback.UserId, stoppingToken))
+            {
+                newlyQueuedCount++;
+            }
+        }
+
+        if (pendingFeedbacks.Count > 0)
+        {
+            _logger.LogInformation(
+                "AI review scan found {SubmittedCount} Submitted feedbacks; queued {NewlyQueuedCount} new items; skipped {CooldownSkippedCount} items in retry cooldown; in-memory queue count is {QueueCount}.",
+                pendingFeedbacks.Count,
+                newlyQueuedCount,
+                cooldownSkippedCount,
+                _queue.QueuedCount);
         }
     }
 
@@ -105,6 +134,7 @@ public class AiFeedbackReviewWorker : BackgroundService
                 _logger.LogInformation(
                     "Finished AI review for feedback {FeedbackId}.",
                     item.FeedbackId);
+                _retryAfterUtcByFeedbackId.TryRemove(item.FeedbackId, out _);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -112,10 +142,14 @@ public class AiFeedbackReviewWorker : BackgroundService
             }
             catch (Exception ex)
             {
+                _retryAfterUtcByFeedbackId[item.FeedbackId] = DateTime.UtcNow.Add(_failureRetryDelay);
+
                 _logger.LogWarning(
                     ex,
-                    "AI review failed for feedback {FeedbackId}. It will remain Submitted and be retried by the next scan.",
-                    item.FeedbackId);
+                    "AI review failed for feedback {FeedbackId}. Error: {ErrorMessage}. It will remain Submitted and be retried after {RetryDelayMinutes} minutes.",
+                    item.FeedbackId,
+                    ex.Message,
+                    _failureRetryDelay.TotalMinutes);
             }
             finally
             {
