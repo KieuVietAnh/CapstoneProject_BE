@@ -70,6 +70,13 @@ public class AiFeedbackReviewWorker : BackgroundService
             .Take(1000)
             .ToListAsync(stoppingToken);
 
+        if (pendingFeedbacks.Count > 0)
+        {
+            _logger.LogInformation(
+                "Found {Count} Submitted feedbacks for AI review queue.",
+                pendingFeedbacks.Count);
+        }
+
         foreach (var feedback in pendingFeedbacks)
         {
             await _queue.EnqueueAsync(feedback.FeedbackId, feedback.UserId, stoppingToken);

@@ -74,6 +74,8 @@ jobs:
             AI_BASE_URL=${{ secrets.AI_BASE_URL }}
             AI_MODEL=${{ secrets.AI_MODEL }}
             AI_TIMEOUT_SECONDS=${{ secrets.AI_TIMEOUT_SECONDS }}
+            AI_MAX_IMAGES_PER_FEEDBACK=${{ secrets.AI_MAX_IMAGES_PER_FEEDBACK }}
+            AI_MAX_IMAGE_BYTES=${{ secrets.AI_MAX_IMAGE_BYTES }}
             EOF
 
             echo "Stopping old container if exists..."

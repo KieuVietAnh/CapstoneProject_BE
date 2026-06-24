@@ -41,7 +41,7 @@ builder.Services.AddHttpClient<IAiClient, AiClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(
         int.TryParse(builder.Configuration["AI:TimeoutSeconds"], out var timeoutSeconds)
             ? timeoutSeconds
-            : 120);
+            : 600);
 });
 builder.Services.AddScoped<IAiFeedbackAnalysisService, AiFeedbackAnalysisService>();
 builder.Services.AddScoped<IAiChatService, AiChatService>();

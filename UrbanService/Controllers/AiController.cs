@@ -1,10 +1,13 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs.AI;
 using UrbanService.BLL.Interfaces;
+using UrbanService.DAL.Entities;
+using UrbanService.DAL.Interfaces;
 
 namespace UrbanService.Controllers;
 
@@ -14,11 +17,16 @@ public class AiController : ControllerBase
 {
     private readonly IAiClient _aiClient;
     private readonly IAiChatService _aiChatService;
+    private readonly IUnitOfWork _uow;
 
-    public AiController(IAiClient aiClient, IAiChatService aiChatService)
+    public AiController(
+        IAiClient aiClient,
+        IAiChatService aiChatService,
+        IUnitOfWork uow)
     {
         _aiClient = aiClient;
         _aiChatService = aiChatService;
+        _uow = uow;
     }
 
     /// <summary>Kiem tra BE co ket noi duoc AI server khong.</summary>
@@ -34,6 +42,36 @@ public class AiController : ControllerBase
             Model = _aiClient.ModelName,
             Error = isAvailable ? null : "AI server is not available."
         });
+    }
+
+    /// <summary>Kiem tra hang doi AI review feedback.</summary>
+    [HttpGet("feedback-review-queue/status")]
+    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF + "," + UserRole.INTERACTIONMANAGER)]
+    [ProducesResponseType(typeof(AiFeedbackReviewQueueStatusResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> FeedbackReviewQueueStatus(CancellationToken cancellationToken)
+    {
+        var feedbacks = _uow.GetRepository<Feedback>().Entities.AsNoTracking();
+        var isAiAvailable = await _aiClient.IsAvailableAsync(cancellationToken);
+
+        var result = new AiFeedbackReviewQueueStatusResponse
+        {
+            PendingSubmittedCount = await feedbacks
+                .CountAsync(f => f.Status == FeedbackStatus.Submitted, cancellationToken),
+            AiReviewedCount = await feedbacks
+                .CountAsync(f => f.Status == FeedbackStatus.AiReviewed, cancellationToken),
+            AnalysisResultCount = await _uow.GetRepository<AnalysisResult>().Entities
+                .AsNoTracking()
+                .CountAsync(cancellationToken),
+            OldestSubmittedAt = await feedbacks
+                .Where(f => f.Status == FeedbackStatus.Submitted)
+                .OrderBy(f => f.CreatedAt)
+                .Select(f => (DateTime?)f.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken),
+            IsAiAvailable = isAiAvailable,
+            Model = _aiClient.ModelName
+        };
+
+        return Ok(result);
     }
 
     /// <summary>Chatbot UrbanService cho nguoi dan.</summary>

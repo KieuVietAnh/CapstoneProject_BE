@@ -8,15 +8,18 @@ namespace UrbanService.BLL.Services;
 
 public class AiClient : IAiClient
 {
-    private const int MaxImageBytes = 5 * 1024 * 1024;
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiClient> _logger;
+    private readonly long _maxImageBytes;
 
     public AiClient(HttpClient httpClient, IConfiguration configuration, ILogger<AiClient> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
         ModelName = configuration["AI:Model"] ?? "qwen2.5vl:3b";
+        _maxImageBytes = int.TryParse(configuration["AI:MaxImageBytes"], out var maxImageBytes)
+            ? maxImageBytes
+            : 2 * 1024 * 1024;
     }
 
     public string ModelName { get; }
@@ -91,7 +94,7 @@ public class AiClient : IAiClient
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("AI chat request failed with status {StatusCode}: {Body}", response.StatusCode, body);
-            throw new Exception("AI server khong phan hoi thanh cong.");
+            throw new Exception($"AI server khong phan hoi thanh cong ({(int)response.StatusCode} {response.StatusCode}): {Truncate(body, 500)}");
         }
 
         try
@@ -133,9 +136,9 @@ public class AiClient : IAiClient
                 return null;
             }
 
-            if (response.Content.Headers.ContentLength > MaxImageBytes)
+            if (response.Content.Headers.ContentLength > _maxImageBytes)
             {
-                _logger.LogWarning("Skipped AI image because it is larger than {MaxImageBytes} bytes.", MaxImageBytes);
+                _logger.LogWarning("Skipped AI image because it is larger than {MaxImageBytes} bytes.", _maxImageBytes);
                 return null;
             }
 
@@ -153,9 +156,9 @@ public class AiClient : IAiClient
                 }
 
                 totalBytes += read;
-                if (totalBytes > MaxImageBytes)
+                if (totalBytes > _maxImageBytes)
                 {
-                    _logger.LogWarning("Skipped AI image because downloaded bytes exceeded {MaxImageBytes}.", MaxImageBytes);
+                    _logger.LogWarning("Skipped AI image because downloaded bytes exceeded {MaxImageBytes}.", _maxImageBytes);
                     return null;
                 }
 
@@ -169,5 +172,10 @@ public class AiClient : IAiClient
             _logger.LogWarning(ex, "Failed to download AI analysis image.");
             return null;
         }
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        return value.Length <= maxLength ? value : value[..maxLength];
     }
 }
