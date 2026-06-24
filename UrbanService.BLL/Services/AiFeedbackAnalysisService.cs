@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs.AI;
 using UrbanService.BLL.Interfaces;
@@ -12,11 +13,18 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
 {
     private readonly IUnitOfWork _uow;
     private readonly IAiClient _aiClient;
+    private readonly int _maxImagesPerFeedback;
 
-    public AiFeedbackAnalysisService(IUnitOfWork uow, IAiClient aiClient)
+    public AiFeedbackAnalysisService(
+        IUnitOfWork uow,
+        IAiClient aiClient,
+        IConfiguration configuration)
     {
         _uow = uow;
         _aiClient = aiClient;
+        _maxImagesPerFeedback = int.TryParse(configuration["AI:MaxImagesPerFeedback"], out var maxImages)
+            ? Math.Clamp(maxImages, 0, 3)
+            : 1;
     }
 
     public async Task<AiAnalysisResponseDto> AnalyzeFeedbackAsync(
@@ -37,7 +45,7 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         }
 
         var images = new List<string>();
-        foreach (var attachment in feedback.FeedbackAttachments.Where(IsImageAttachment).Take(3))
+        foreach (var attachment in feedback.FeedbackAttachments.Where(IsImageAttachment).Take(_maxImagesPerFeedback))
         {
             var base64 = await _aiClient.DownloadImageAsBase64Async(attachment.FileUrl, cancellationToken);
             if (!string.IsNullOrWhiteSpace(base64))

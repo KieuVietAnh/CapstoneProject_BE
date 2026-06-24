@@ -90,3 +90,18 @@ public class AiHealthResponse
 
     public string? Error { get; set; }
 }
+
+public class AiFeedbackReviewQueueStatusResponse
+{
+    public int PendingSubmittedCount { get; set; }
+
+    public int AiReviewedCount { get; set; }
+
+    public int AnalysisResultCount { get; set; }
+
+    public DateTime? OldestSubmittedAt { get; set; }
+
+    public bool IsAiAvailable { get; set; }
+
+    public string Model { get; set; } = null!;
+}
