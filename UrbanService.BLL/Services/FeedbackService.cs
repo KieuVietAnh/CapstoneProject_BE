@@ -1,7 +1,9 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.DTOs;
+using UrbanService.BLL.DTOs.AI;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
@@ -210,10 +212,108 @@ public class FeedbackService : IFeedbackService
         };
     }
 
-    public async Task<PagedResultDto<FeedbackListItemDto>> GetAiReviewedFeedbacksAsync(FeedbackQueryParameters query)
+    public async Task<PagedResultDto<FeedbackWithAnalysisResultDto>> GetAiReviewedFeedbacksAsync(FeedbackQueryParameters query)
     {
-        query.Status = FeedbackStatus.AiReviewed;
-        return await GetAllFeedbacksAsync(query);
+        var pageNumber = query.PageNumber < 1 ? 1 : query.PageNumber;
+        var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
+        var search = query.Search?.Trim().ToLower();
+
+        var feedbacks = _uow.GetRepository<Feedback>().Entities
+            .AsNoTracking()
+            .Where(f => f.Status.ToLower() == FeedbackStatus.AiReviewed.ToLower());
+
+        if (query.CategoryId.HasValue)
+        {
+            feedbacks = feedbacks.Where(f => f.CategoryId == query.CategoryId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            feedbacks = feedbacks.Where(f =>
+                f.Title.ToLower().Contains(search) ||
+                f.Description.ToLower().Contains(search) ||
+                f.LocationText.ToLower().Contains(search));
+        }
+
+        var totalItems = await feedbacks.CountAsync();
+        var rows = await feedbacks
+            .OrderByDescending(f => f.CreatedAt)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .Select(f => new
+            {
+                Feedback = new FeedbackListItemDto
+                {
+                    FeedbackId = f.FeedbackId,
+                    UserId = f.UserId,
+                    UserName = f.User.FullName,
+                    CategoryId = f.CategoryId,
+                    CategoryName = f.Category.CategoryName,
+                    Title = f.Title,
+                    LocationText = f.LocationText,
+                    Priority = f.Priority,
+                    Status = f.Status,
+                    CreatedAt = f.CreatedAt,
+                    UpdatedAt = f.UpdatedAt,
+                    AttachmentCount = f.FeedbackAttachments.Count,
+                    CommentCount = f.FeedbackComments.Count,
+                    SupportCount = f.FeedbackSupports.Count
+                },
+                AnalysisResult = f.AnalysisResults
+                    .OrderByDescending(a => a.CreatedAt)
+                    .Select(a => new
+                    {
+                        a.AnalysisResultId,
+                        a.FeedbackId,
+                        a.ModelName,
+                        a.DetectedCategoryId,
+                        DetectedCategoryName = a.DetectedCategory == null
+                            ? null
+                            : a.DetectedCategory.CategoryName,
+                        a.Sentiment,
+                        a.UrgencyLevel,
+                        a.Summary,
+                        a.Keywords,
+                        a.ConfidenceScore,
+                        a.RawResponse,
+                        a.CreatedAt
+                    })
+                    .FirstOrDefault()
+            })
+            .ToListAsync();
+
+        var items = rows
+            .Select(row => new FeedbackWithAnalysisResultDto
+            {
+                Feedback = row.Feedback,
+                AnalysisResult = row.AnalysisResult == null
+                    ? null
+                    : new AiAnalysisResponseDto
+                    {
+                        AnalysisResultId = row.AnalysisResult.AnalysisResultId,
+                        FeedbackId = row.AnalysisResult.FeedbackId,
+                        ModelName = row.AnalysisResult.ModelName,
+                        DetectedCategoryId = row.AnalysisResult.DetectedCategoryId,
+                        DetectedCategoryName = row.AnalysisResult.DetectedCategoryName,
+                        Sentiment = row.AnalysisResult.Sentiment,
+                        UrgencyLevel = row.AnalysisResult.UrgencyLevel,
+                        Summary = row.AnalysisResult.Summary,
+                        Keywords = ParseAnalysisKeywords(row.AnalysisResult.Keywords),
+                        ConfidenceScore = row.AnalysisResult.ConfidenceScore,
+                        RawResponse = row.AnalysisResult.RawResponse,
+                        CreatedAt = row.AnalysisResult.CreatedAt
+                    }
+            })
+            .ToList();
+
+        return new PagedResultDto<FeedbackWithAnalysisResultDto>
+        {
+            Items = items,
+            PageNumber = pageNumber,
+            PageSize = pageSize,
+            TotalItems = totalItems,
+            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize)
+        };
     }
 
     public async Task<FeedbackDetailDto> GetFeedbackDetailAsync(Guid currentUserId, Guid feedbackId)
@@ -632,6 +732,24 @@ public class FeedbackService : IFeedbackService
             Content = comment.Content,
             CreatedAt = comment.CreatedAt
         };
+    }
+
+    private static IReadOnlyCollection<string> ParseAnalysisKeywords(string? keywords)
+    {
+        if (string.IsNullOrWhiteSpace(keywords))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(keywords) ?? [];
+        }
+        catch (JsonException)
+        {
+            return keywords
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
     }
 
     private static void ValidateCreate(FeedbackCreateRequest request)

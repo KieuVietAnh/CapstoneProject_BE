@@ -8,6 +8,9 @@ namespace UrbanService.BLL.Services;
 
 public class AiClient : IAiClient
 {
+    private const string VietnameseSystemInstruction =
+        "Luôn trả lời bằng tiếng Việt có dấu. Nếu response là JSON, giữ nguyên tên field/schema được yêu cầu, nhưng mọi giá trị dạng text do AI sinh ra phải bằng tiếng Việt.";
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<AiClient> _logger;
     private readonly long _maxImageBytes;
@@ -61,7 +64,13 @@ public class AiClient : IAiClient
             throw new Exception("Chua cau hinh AI:BaseUrl cho AI server.");
         }
 
-        var message = new Dictionary<string, object?>
+        var systemMessage = new Dictionary<string, object?>
+        {
+            ["role"] = "system",
+            ["content"] = VietnameseSystemInstruction
+        };
+
+        var userMessage = new Dictionary<string, object?>
         {
             ["role"] = "user",
             ["content"] = prompt
@@ -69,14 +78,14 @@ public class AiClient : IAiClient
 
         if (base64Images is { Count: > 0 })
         {
-            message["images"] = base64Images;
+            userMessage["images"] = base64Images;
         }
 
         var payload = new Dictionary<string, object?>
         {
             ["model"] = ModelName,
             ["stream"] = false,
-            ["messages"] = new[] { message },
+            ["messages"] = new[] { systemMessage, userMessage },
             ["options"] = new Dictionary<string, object?>
             {
                 ["num_predict"] = _numPredict,

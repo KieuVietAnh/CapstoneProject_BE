@@ -1,3 +1,5 @@
+using UrbanService.BLL.DTOs.AI;
+
 namespace UrbanService.BLL.Dtos;
 
 public class FeedbackQueryParameters
@@ -137,6 +139,13 @@ public class FeedbackDetailDto : FeedbackListItemDto
     public IReadOnlyCollection<FeedbackCommentDto> Comments { get; set; } = [];
 
     public IReadOnlyCollection<FeedbackStatusHistoryDto> StatusHistories { get; set; } = [];
+}
+
+public class FeedbackWithAnalysisResultDto
+{
+    public FeedbackListItemDto Feedback { get; set; } = null!;
+
+    public AiAnalysisResponseDto? AnalysisResult { get; set; }
 }
 
 public class FeedbackAttachmentDto
