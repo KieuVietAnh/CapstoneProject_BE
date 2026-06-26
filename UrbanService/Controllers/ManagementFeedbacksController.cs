@@ -39,7 +39,7 @@ public class ManagementFeedbacksController : ControllerBase
     /// <summary>Xem danh sach feedback da duoc AI review.</summary>
     /// <remarks>Role duoc phep: SYSTEMADMIN, SYSTEMSTAFF, INTERACTIONMANAGER.</remarks>
     [HttpGet("ai-reviewed")]
-    [ProducesResponseType(typeof(PagedResultDto<FeedbackListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PagedResultDto<FeedbackWithAnalysisResultDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetAiReviewedFeedbacks([FromQuery] FeedbackQueryParameters query)

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.Collections.Concurrent;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Interfaces;
@@ -143,12 +144,17 @@ public class AiFeedbackReviewWorker : BackgroundService
             catch (Exception ex)
             {
                 _retryAfterUtcByFeedbackId[item.FeedbackId] = DateTime.UtcNow.Add(_failureRetryDelay);
+                var root = ex.GetBaseException();
+                var databaseError = root is PostgresException postgresException
+                    ? $" PostgreSQL {postgresException.SqlState}; Constraint={postgresException.ConstraintName}; Detail={postgresException.Detail}; Message={postgresException.MessageText}"
+                    : string.Empty;
 
                 _logger.LogWarning(
                     ex,
-                    "AI review failed for feedback {FeedbackId}. Error: {ErrorMessage}. It will remain Submitted and be retried after {RetryDelayMinutes} minutes.",
+                    "AI review failed for feedback {FeedbackId}. Error: {ErrorMessage}.{DatabaseError} It will remain Submitted and be retried after {RetryDelayMinutes} minutes.",
                     item.FeedbackId,
-                    ex.Message,
+                    root.Message,
+                    databaseError,
                     _failureRetryDelay.TotalMinutes);
             }
             finally

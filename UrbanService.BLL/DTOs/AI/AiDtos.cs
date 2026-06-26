@@ -24,6 +24,8 @@ public class AiAnalysisResponseDto
 
     public decimal? ConfidenceScore { get; set; }
 
+    public string? RawResponse { get; set; }
+
     public DateTime CreatedAt { get; set; }
 }
 

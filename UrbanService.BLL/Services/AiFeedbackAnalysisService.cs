@@ -115,6 +115,7 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
                 Summary = analysisResult.Summary,
                 Keywords = parsed.Keywords ?? [],
                 ConfidenceScore = analysisResult.ConfidenceScore,
+                RawResponse = analysisResult.RawResponse,
                 CreatedAt = analysisResult.CreatedAt
             };
         }
@@ -186,6 +187,7 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         return $$"""
         Ban la he thong phan tich phan anh do thi cho UrbanService.
         Hay phan tich feedback cua nguoi dan dua tren text{{(hasImages ? " va anh dinh kem" : "")}}.
+        Tat ca noi dung text do AI sinh ra phai bang tieng Viet co dau.
 
         Feedback:
         - Tieu de: {{feedback.Title}}
@@ -206,6 +208,7 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         }
 
         Khong duoc them giai thich ngoai JSON.
+        Cac field summary, keywords va riskNotes phai viet bang tieng Viet.
         {{(hasImages ? "Neu anh khong ro hoac khong lien quan, ghi ro trong riskNotes." : "Khong co anh dinh kem trong request nay, chi phan tich dua tren text.")}}
         """;
     }
