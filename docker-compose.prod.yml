@@ -25,6 +25,12 @@ services:
       GoogleAuth__ClientId: ${GOOGLE_AUTH_CLIENT_ID}
       Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS}
 
+      PayOS__ClientId: ${PAYOS_CLIENT_ID}
+      PayOS__ApiKey: ${PAYOS_API_KEY}
+      PayOS__ChecksumKey: ${PAYOS_CHECKSUM_KEY}
+      PayOS__ReturnUrl: ${PAYOS_RETURN_URL}
+      PayOS__CancelUrl: ${PAYOS_CANCEL_URL}
+
       AI__BaseUrl: ${AI_BASE_URL}
       AI__Model: ${AI_MODEL:-qwen2.5vl:3b}
       AI__TimeoutSeconds: ${AI_TIMEOUT_SECONDS:-600}
