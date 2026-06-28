@@ -61,5 +61,12 @@ public partial class User
 
     public virtual Role Role { get; set; } = null!;
 
-    public virtual ICollection<ServicePayment> ServicePayments { get; set; } = new List<ServicePayment>();
+    public virtual ICollection<Booking> Bookings { get; set; }
+    = new List<Booking>();
+
+    public virtual ICollection<ServicePayment> ServicePayments { get; set; }
+        = new List<ServicePayment>();
+
+    public virtual ICollection<ServiceReview> ServiceReviews { get; set; }
+        = new List<ServiceReview>();
 }

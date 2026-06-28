@@ -277,5 +277,27 @@ namespace UrbanService.DAL.Repositories
 
             return await query.ToListAsync();
         }
+
+        public IQueryable<T> Query()
+        {
+            return _dbSet.AsQueryable();
+        }
+
+        public IQueryable<T> Query(
+    Func<IQueryable<T>, IQueryable<T>> include)
+        {
+            return include(_dbSet.AsQueryable());
+        }
+
+        public async Task<int> CountAsync(
+    Expression<Func<T, bool>>? predicate = null)
+        {
+            IQueryable<T> query = _dbSet;
+
+            if (predicate != null)
+                query = query.Where(predicate);
+
+            return await query.CountAsync();
+        }
     }
 }

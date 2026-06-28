@@ -47,8 +47,6 @@ public partial class Feedback
 
     public virtual UrbanServiceCategory Category { get; set; } = null!;
 
-    public virtual ICollection<Channel> Channels { get; set; } = new List<Channel>();
-
     public virtual ICollection<FeedbackAssignment> FeedbackAssignments { get; set; } = new List<FeedbackAssignment>();
 
     public virtual ICollection<FeedbackAttachment> FeedbackAttachments { get; set; } = new List<FeedbackAttachment>();

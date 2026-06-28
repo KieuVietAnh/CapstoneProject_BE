@@ -20,8 +20,6 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<AnalysisResult> AnalysisResults { get; set; }
 
-    public virtual DbSet<Channel> Channels { get; set; }
-
     public virtual DbSet<Feedback> Feedbacks { get; set; }
 
     public virtual DbSet<FeedbackAssignment> FeedbackAssignments { get; set; }
@@ -57,6 +55,15 @@ public partial class UrbanServiceDbContext : DbContext
     public virtual DbSet<UrbanServiceCategory> UrbanServiceCategories { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
+    public virtual DbSet<Booking> Bookings { get; set; }
+    public virtual DbSet<BookingAssignmentHistory> BookingAssignmentHistories { get; set; }
+    public virtual DbSet<ServiceExecution> ServiceExecutions { get; set; }
+
+    public virtual DbSet<ServiceExecutionAttachment> ServiceExecutionAttachments { get; set; }
+
+    public virtual DbSet<ServiceReview> ServiceReviews { get; set; }
+
+    public virtual DbSet<BookingDetail> BookingDetails { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -188,34 +195,7 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasConstraintName("fk_analysis_result_feedback");
         });
 
-        modelBuilder.Entity<Channel>(entity =>
-        {
-            entity.HasKey(e => e.ChannelId).HasName("channels_pkey");
-
-            entity.ToTable("channels");
-
-            entity.Property(e => e.ChannelId).HasColumnName("channel_id");
-            entity.Property(e => e.ChannelName)
-                .HasMaxLength(100)
-                .HasColumnName("channel_name");
-            entity.Property(e => e.ExternalConversationId)
-                .HasMaxLength(200)
-                .HasColumnName("external_conversation_id");
-            entity.Property(e => e.ExternalMessageId)
-                .HasMaxLength(200)
-                .HasColumnName("external_message_id");
-            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
-            entity.Property(e => e.ReceivedAt)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("received_at");
-            entity.Property(e => e.SourceUserExternalId)
-                .HasMaxLength(200)
-                .HasColumnName("source_user_external_id");
-
-            entity.HasOne(d => d.Feedback).WithMany(p => p.Channels)
-                .HasForeignKey(d => d.FeedbackId)
-                .HasConstraintName("fk_channel_feedback");
-        });
+       
 
         modelBuilder.Entity<Feedback>(entity =>
         {
@@ -688,6 +668,7 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.OperatorId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_service_operator");
+
         });
 
         modelBuilder.Entity<ServicePayment>(entity =>
@@ -702,37 +683,60 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.PaymentId)
                 .HasDefaultValueSql("gen_random_uuid()")
                 .HasColumnName("payment_id");
+
+            entity.Property(e => e.BookingId)
+                .HasColumnName("booking_id");
+
+            entity.Property(e => e.UserId)
+                .HasColumnName("user_id");
+
             entity.Property(e => e.Amount)
                 .HasPrecision(18, 2)
                 .HasColumnName("amount");
-            entity.Property(e => e.CreatedAt)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("created_at");
+
             entity.Property(e => e.Currency)
                 .HasMaxLength(3)
                 .HasDefaultValueSql("'VND'::character varying")
                 .HasColumnName("currency");
-            entity.Property(e => e.PaidAt).HasColumnName("paid_at");
+
             entity.Property(e => e.PaymentMethod)
                 .HasMaxLength(50)
                 .HasColumnName("payment_method");
-            entity.Property(e => e.ServiceId).HasColumnName("service_id");
+
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasDefaultValueSql("'Pending'::character varying")
                 .HasColumnName("status");
+
+            entity.Property(e => e.OrderCode)
+    .HasColumnName("order_code");
+
+            entity.Property(e => e.PaymentLinkId)
+                .HasMaxLength(200)
+                .HasColumnName("payment_link_id");
+
             entity.Property(e => e.TransactionReference)
                 .HasMaxLength(200)
                 .HasColumnName("transaction_reference");
-            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
-            entity.Property(e => e.UserId).HasColumnName("user_id");
 
-            entity.HasOne(d => d.Service).WithMany(p => p.ServicePayments)
-                .HasForeignKey(d => d.ServiceId)
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.PaidAt)
+                .HasColumnName("paid_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Booking)
+                .WithMany(p => p.ServicePayments)
+                .HasForeignKey(d => d.BookingId)
                 .OnDelete(DeleteBehavior.Restrict)
-                .HasConstraintName("fk_service_payment_service");
+                .HasConstraintName("fk_service_payment_booking");
 
-            entity.HasOne(d => d.User).WithMany(p => p.ServicePayments)
+            entity.HasOne(d => d.User)
+                .WithMany(p => p.ServicePayments)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_service_payment_user");
@@ -816,6 +820,324 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasConstraintName("fk_user_role");
         });
 
+        modelBuilder.Entity<Booking>(entity =>
+        {
+            entity.HasKey(e => e.BookingId)
+                .HasName("bookings_pkey");
+
+            entity.ToTable("bookings");
+
+            entity.HasIndex(e => e.BookingCode)
+                .IsUnique();
+
+            entity.Property(e => e.BookingId)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("booking_id");
+
+            entity.Property(e => e.BookingCode)
+                .HasMaxLength(50)
+                .HasColumnName("booking_code");
+
+            entity.Property(e => e.UserId)
+                .HasColumnName("user_id");
+
+            entity.Property(e => e.AssignedServiceStaffId)
+                .HasColumnName("assigned_service_staff_id");
+
+            entity.Property(e => e.ContactName)
+                .HasMaxLength(150)
+                .HasColumnName("contact_name");
+
+            entity.Property(e => e.ContactPhone)
+                .HasMaxLength(20)
+                .HasColumnName("contact_phone");
+
+            entity.Property(e => e.ServiceAddress)
+                .HasMaxLength(255)
+                .HasColumnName("service_address");
+
+            entity.Property(e => e.Latitude)
+                .HasPrecision(10, 7)
+                .HasColumnName("latitude");
+
+            entity.Property(e => e.Longitude)
+                .HasPrecision(10, 7)
+                .HasColumnName("longitude");
+
+            entity.Property(e => e.ScheduleAt)
+                .HasColumnName("schedule_at");
+
+            entity.Property(e => e.Status)
+                .HasMaxLength(50)
+                .HasColumnName("status");
+
+            entity.Property(e => e.TotalAmount)
+                .HasPrecision(18, 2)
+                .HasColumnName("total_amount");
+
+            entity.Property(e => e.Currency)
+                .HasMaxLength(3)
+                .HasDefaultValueSql("'VND'::character varying")
+                .HasColumnName("currency");
+
+            entity.Property(e => e.Note)
+                .HasMaxLength(1000)
+                .HasColumnName("note");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.User)
+                .WithMany(p => p.Bookings)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_booking_user");
+
+            entity.HasOne(d => d.AssignedServiceStaff)
+                .WithMany()
+                .HasForeignKey(d => d.AssignedServiceStaffId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_booking_service_staff");
+        });
+
+        modelBuilder.Entity<BookingDetail>(entity =>
+        {
+            entity.HasKey(e => e.BookingDetailId)
+                .HasName("booking_details_pkey");
+
+            entity.ToTable("booking_details");
+
+            entity.Property(e => e.BookingDetailId)
+                .HasColumnName("booking_detail_id");
+
+            entity.Property(e => e.BookingId)
+                .HasColumnName("booking_id");
+
+            entity.Property(e => e.ServiceId)
+                .HasColumnName("service_id");
+
+            entity.Property(e => e.Quantity)
+                .HasColumnName("quantity");
+
+            entity.Property(e => e.UnitPrice)
+                .HasPrecision(18, 2)
+                .HasColumnName("unit_price");
+
+            entity.Property(e => e.LineTotal)
+                .HasPrecision(18, 2)
+                .HasColumnName("line_total");
+
+            entity.Property(e => e.Note)
+                .HasMaxLength(500)
+                .HasColumnName("note");
+
+            entity.HasOne(d => d.Booking)
+                .WithMany(p => p.BookingDetails)
+                .HasForeignKey(d => d.BookingId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_booking_detail_booking");
+
+            entity.HasOne(d => d.Service)
+                .WithMany(p => p.BookingDetails)
+                .HasForeignKey(d => d.ServiceId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_booking_detail_service");
+        });
+
+        modelBuilder.Entity<BookingAssignmentHistory>(entity =>
+        {
+            entity.HasKey(e => e.HistoryId)
+                .HasName("booking_assignment_histories_pkey");
+
+            entity.ToTable("booking_assignment_histories");
+
+            entity.Property(e => e.HistoryId)
+                .HasColumnName("history_id");
+
+            entity.Property(e => e.BookingId)
+                .HasColumnName("booking_id");
+
+            entity.Property(e => e.OldServiceStaffId)
+                .HasColumnName("old_service_staff_id");
+
+            entity.Property(e => e.NewServiceStaffId)
+                .HasColumnName("new_service_staff_id");
+
+            entity.Property(e => e.AssignedByUserId)
+                .HasColumnName("assigned_by_user_id");
+
+            entity.Property(e => e.AssignedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("assigned_at");
+
+            entity.Property(e => e.Note)
+                .HasMaxLength(500)
+                .HasColumnName("note");
+
+            entity.HasOne(d => d.Booking)
+                .WithMany(p => p.BookingAssignmentHistories)
+                .HasForeignKey(d => d.BookingId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_booking_assignment_history_booking");
+
+            entity.HasOne(d => d.OldServiceStaff)
+                .WithMany()
+                .HasForeignKey(d => d.OldServiceStaffId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(d => d.NewServiceStaff)
+                .WithMany()
+                .HasForeignKey(d => d.NewServiceStaffId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(d => d.AssignedByUser)
+                .WithMany()
+                .HasForeignKey(d => d.AssignedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ServiceExecution>(entity =>
+        {
+            entity.HasKey(e => e.ExecutionId)
+                .HasName("service_executions_pkey");
+
+            entity.ToTable("service_executions");
+
+            entity.HasIndex(e => e.BookingId)
+                .IsUnique();
+
+            entity.Property(e => e.ExecutionId)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("execution_id");
+
+            entity.Property(e => e.BookingId)
+                .HasColumnName("booking_id");
+
+            entity.Property(e => e.ExecutedByServiceStaffId)
+                .HasColumnName("executed_by_service_staff_id");
+
+            entity.Property(e => e.ExecutionSummary)
+                .HasMaxLength(500)
+                .HasColumnName("execution_summary");
+
+            entity.Property(e => e.ActionTaken)
+                .HasColumnName("action_taken");
+
+            entity.Property(e => e.ResultNote)
+                .HasColumnName("result_note");
+
+            entity.Property(e => e.Status)
+                .HasMaxLength(50)
+                .HasColumnName("status");
+
+            entity.Property(e => e.ExecutedAt)
+                .HasColumnName("executed_at");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Booking)
+                .WithOne(p => p.ServiceExecution)
+                .HasForeignKey<ServiceExecution>(d => d.BookingId)
+                .HasConstraintName("fk_service_execution_booking");
+
+            entity.HasOne(d => d.ExecutedByServiceStaff)
+                .WithMany()
+                .HasForeignKey(d => d.ExecutedByServiceStaffId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_service_execution_staff");
+        });
+
+        modelBuilder.Entity<ServiceExecutionAttachment>(entity =>
+        {
+            entity.HasKey(e => e.ServiceExecutionAttachmentId)
+                .HasName("service_execution_attachments_pkey");
+
+            entity.ToTable("service_execution_attachments");
+
+            entity.Property(e => e.ServiceExecutionAttachmentId)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("service_execution_attachment_id");
+
+            entity.Property(e => e.ExecutionId)
+                .HasColumnName("execution_id");
+
+            entity.Property(e => e.FileUrl)
+                .HasMaxLength(500)
+                .HasColumnName("file_url");
+
+            entity.Property(e => e.FileType)
+                .HasMaxLength(50)
+                .HasColumnName("file_type");
+
+            entity.Property(e => e.Description)
+                .HasMaxLength(500)
+                .HasColumnName("description");
+
+            entity.Property(e => e.UploadedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("uploaded_at");
+
+            entity.HasOne(d => d.ServiceExecution)
+                .WithMany(p => p.ServiceExecutionAttachments)
+                .HasForeignKey(d => d.ExecutionId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_service_execution_attachment");
+        });
+
+        modelBuilder.Entity<ServiceReview>(entity =>
+        {
+            entity.HasKey(e => e.ReviewId)
+                .HasName("service_reviews_pkey");
+
+            entity.ToTable("service_reviews");
+
+            entity.HasIndex(e => e.BookingId)
+                .IsUnique();
+
+            entity.Property(e => e.ReviewId)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("review_id");
+
+            entity.Property(e => e.BookingId)
+                .HasColumnName("booking_id");
+
+            entity.Property(e => e.UserId)
+                .HasColumnName("user_id");
+
+            entity.Property(e => e.Rating)
+                .HasColumnName("rating");
+
+            entity.Property(e => e.IsSatisfied)
+                .HasColumnName("is_satisfied");
+
+            entity.Property(e => e.Comment)
+                .HasMaxLength(1000)
+                .HasColumnName("comment");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Booking)
+                .WithOne(p => p.ServiceReview)
+                .HasForeignKey<ServiceReview>(d => d.BookingId)
+                .HasConstraintName("fk_service_review_booking");
+
+            entity.HasOne(d => d.User)
+                .WithMany(p => p.ServiceReviews)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_service_review_user");
+        });
         OnModelCreatingPartial(modelBuilder);
     }
 

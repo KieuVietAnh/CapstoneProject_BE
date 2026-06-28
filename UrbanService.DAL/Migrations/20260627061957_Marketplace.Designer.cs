@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using UrbanService.DAL.Data;
@@ -11,9 +12,11 @@ using UrbanService.DAL.Data;
 namespace UrbanService.DAL.Migrations
 {
     [DbContext(typeof(UrbanServiceDbContext))]
-    partial class UrbanServiceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260627061957_Marketplace")]
+    partial class Marketplace
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1336,18 +1339,9 @@ namespace UrbanService.DAL.Migrations
                         .HasColumnName("currency")
                         .HasDefaultValueSql("'VND'::character varying");
 
-                    b.Property<long>("OrderCode")
-                        .HasColumnType("bigint")
-                        .HasColumnName("order_code");
-
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("paid_at");
-
-                    b.Property<string>("PaymentLinkId")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("payment_link_id");
 
                     b.Property<string>("PaymentMethod")
                         .IsRequired()
