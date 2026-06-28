@@ -240,5 +240,11 @@ namespace UrbanService.DAL.Interfaces
         /// <returns>A task that represents the asynchronous operation.</returns>
         Task DeleteRangeAsync(IEnumerable<T> entities);
         #endregion
+
+        IQueryable<T> Query();
+        IQueryable<T> Query(
+    Func<IQueryable<T>, IQueryable<T>> include);
+
+        Task<int> CountAsync(Expression<Func<T, bool>>? predicate = null);
     }
 }

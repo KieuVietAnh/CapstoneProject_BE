@@ -5,6 +5,7 @@ using Microsoft.OpenApi.Models;
 using System.Reflection;
 using System.Text;
 using UrbanService.BackgroundServices;
+using UrbanService.BLL.Common;
 using UrbanService.BLL.Interfaces;
 using UrbanService.BLL.Services;
 using UrbanService.DAL.Data;
@@ -29,6 +30,13 @@ builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IServiceOperatorService, ServiceOperatorService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+builder.Services.AddScoped<IBookingService, BookingService>();
+
+builder.Services.Configure<PayOSConfig>(
+    builder.Configuration.GetSection("PayOS"));
+
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+
 builder.Services.AddSingleton<IAiFeedbackReviewQueue, AiFeedbackReviewQueue>();
 builder.Services.AddHttpClient<IAiClient, AiClient>(client =>
 {

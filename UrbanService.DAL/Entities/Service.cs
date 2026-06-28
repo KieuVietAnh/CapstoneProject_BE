@@ -33,5 +33,6 @@ public partial class Service
 
     public virtual ServiceOperator Operator { get; set; } = null!;
 
-    public virtual ICollection<ServicePayment> ServicePayments { get; set; } = new List<ServicePayment>();
+    public virtual ICollection<BookingDetail> BookingDetails { get; set; }
+    = new List<BookingDetail>();
 }
