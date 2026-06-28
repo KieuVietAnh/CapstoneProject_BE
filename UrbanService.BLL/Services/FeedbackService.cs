@@ -151,6 +151,71 @@ public class FeedbackService : IFeedbackService
         return MapDetail(feedback, userId);
     }
 
+    public async Task<PagedResultDto<FeedbackListItemDto>> GetResidentFeedFeedbacksAsync(FeedbackQueryParameters query)
+    {
+        var pageNumber = query.PageNumber < 1 ? 1 : query.PageNumber;
+        var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
+        var search = query.Search?.Trim().ToLower();
+        var status = query.Status?.Trim().ToLower();
+
+        var feedbacks = _uow.GetRepository<Feedback>().Entities
+            .AsNoTracking()
+            .Where(f =>
+                f.Status.ToLower() != FeedbackStatus.Submitted.ToLower() &&
+                f.Status.ToLower() != FeedbackStatus.AiReviewed.ToLower());
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            feedbacks = feedbacks.Where(f => f.Status.ToLower() == status);
+        }
+
+        if (query.CategoryId.HasValue)
+        {
+            feedbacks = feedbacks.Where(f => f.CategoryId == query.CategoryId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            feedbacks = feedbacks.Where(f =>
+                f.Title.ToLower().Contains(search) ||
+                f.Description.ToLower().Contains(search) ||
+                f.LocationText.ToLower().Contains(search));
+        }
+
+        var totalItems = await feedbacks.CountAsync();
+        var items = await feedbacks
+            .OrderByDescending(f => f.CreatedAt)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .Select(f => new FeedbackListItemDto
+            {
+                FeedbackId = f.FeedbackId,
+                UserId = f.UserId,
+                UserName = f.User.FullName,
+                CategoryId = f.CategoryId,
+                CategoryName = f.Category.CategoryName,
+                Title = f.Title,
+                LocationText = f.LocationText,
+                Priority = f.Priority,
+                Status = f.Status,
+                CreatedAt = f.CreatedAt,
+                UpdatedAt = f.UpdatedAt,
+                AttachmentCount = f.FeedbackAttachments.Count,
+                CommentCount = f.FeedbackComments.Count,
+                SupportCount = f.FeedbackSupports.Count
+            })
+            .ToListAsync();
+
+        return new PagedResultDto<FeedbackListItemDto>
+        {
+            Items = items,
+            PageNumber = pageNumber,
+            PageSize = pageSize,
+            TotalItems = totalItems,
+            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize)
+        };
+    }
+
     public async Task<PagedResultDto<FeedbackListItemDto>> GetAllFeedbacksAsync(FeedbackQueryParameters query)
     {
         var pageNumber = query.PageNumber < 1 ? 1 : query.PageNumber;

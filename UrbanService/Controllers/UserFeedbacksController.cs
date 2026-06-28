@@ -37,6 +37,22 @@ public class UserFeedbacksController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Xem bang tin feedback cua nguoi dan.</summary>
+    /// <remarks>
+    /// Yeu cau role `SERVICEUSER`. Tra ve tat ca feedback da qua buoc noi bo,
+    /// loai cac feedback dang `Submitted` hoac `AiReviewed`.
+    /// Ho tro phan trang va loc theo `status`, `categoryId`, `search`.
+    /// </remarks>
+    [HttpGet("feed")]
+    [ProducesResponseType(typeof(PagedResultDto<FeedbackListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetResidentFeedFeedbacks([FromQuery] FeedbackQueryParameters query)
+    {
+        var result = await _feedbackService.GetResidentFeedFeedbacksAsync(query);
+        return Ok(result);
+    }
+
     /// <summary>Xem chi tiết một feedback của người dân hiện tại.</summary>
     /// <remarks>Chỉ chủ sở hữu feedback có role `SERVICEUSER` được xem.</remarks>
     [HttpGet("{feedbackId:guid}")]
