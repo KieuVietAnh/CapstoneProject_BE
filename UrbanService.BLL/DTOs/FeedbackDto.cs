@@ -17,6 +17,8 @@ public class FeedbackQueryParameters
 
 public class FeedbackCreateRequest
 {
+    public int AreaId { get; set; }
+
     public int CategoryId { get; set; }
 
     public string Title { get; set; } = null!;
@@ -29,6 +31,10 @@ public class FeedbackCreateRequest
 
     public decimal? Longitude { get; set; }
 
+    public int? LocationAccuracyMeters { get; set; }
+
+    public string? GeoSource { get; set; }
+
     public string? Priority { get; set; }
 
     public DateTime? DueDate { get; set; }
@@ -36,6 +42,8 @@ public class FeedbackCreateRequest
 
 public class FeedbackUpdateRequest
 {
+    public int? AreaId { get; set; }
+
     public int? CategoryId { get; set; }
 
     public string? Title { get; set; }
@@ -47,6 +55,10 @@ public class FeedbackUpdateRequest
     public decimal? Latitude { get; set; }
 
     public decimal? Longitude { get; set; }
+
+    public int? LocationAccuracyMeters { get; set; }
+
+    public string? GeoSource { get; set; }
 
     public string? Priority { get; set; }
 
@@ -99,6 +111,10 @@ public class FeedbackListItemDto
 
     public string? UserName { get; set; }
 
+    public int AreaId { get; set; }
+
+    public string? AreaName { get; set; }
+
     public int CategoryId { get; set; }
 
     public string? CategoryName { get; set; }
@@ -129,6 +145,12 @@ public class FeedbackDetailDto : FeedbackListItemDto
     public decimal? Latitude { get; set; }
 
     public decimal? Longitude { get; set; }
+
+    public int? LocationAccuracyMeters { get; set; }
+
+    public string? GeoSource { get; set; }
+
+    public bool IsLocationVerified { get; set; }
 
     public DateTime? DueDate { get; set; }
 

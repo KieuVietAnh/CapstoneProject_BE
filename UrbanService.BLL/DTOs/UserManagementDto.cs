@@ -25,10 +25,6 @@ public class AdminUserDto
 
     public string RoleName { get; set; } = null!;
 
-    public int? OperatorId { get; set; }
-
-    public string? OperatorName { get; set; }
-
     public string FullName { get; set; } = null!;
 
     public string Email { get; set; } = null!;
@@ -54,8 +50,6 @@ public class AdminCreateUserRequest
 {
     public int RoleId { get; set; }
 
-    public int? OperatorId { get; set; }
-
     public string FullName { get; set; } = null!;
 
     public string Email { get; set; } = null!;
@@ -76,8 +70,6 @@ public class AdminCreateUserRequest
 public class AdminUpdateUserRequest
 {
     public int? RoleId { get; set; }
-
-    public int? OperatorId { get; set; }
 
     public string? FullName { get; set; }
 

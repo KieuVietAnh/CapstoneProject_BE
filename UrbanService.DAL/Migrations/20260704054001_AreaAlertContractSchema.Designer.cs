@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using UrbanService.DAL.Data;
@@ -11,9 +12,11 @@ using UrbanService.DAL.Data;
 namespace UrbanService.DAL.Migrations
 {
     [DbContext(typeof(UrbanServiceDbContext))]
-    partial class UrbanServiceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260704054001_AreaAlertContractSchema")]
+    partial class AreaAlertContractSchema
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

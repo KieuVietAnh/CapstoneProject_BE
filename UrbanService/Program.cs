@@ -28,14 +28,7 @@ builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
-builder.Services.AddScoped<IServiceOperatorService, ServiceOperatorService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
-builder.Services.AddScoped<IBookingService, BookingService>();
-
-builder.Services.Configure<PayOSConfig>(
-    builder.Configuration.GetSection("PayOS"));
-
-builder.Services.AddScoped<IPaymentService, PaymentService>();
 
 builder.Services.AddSingleton<IAiFeedbackReviewQueue, AiFeedbackReviewQueue>();
 builder.Services.AddHttpClient<IAiClient, AiClient>(client =>

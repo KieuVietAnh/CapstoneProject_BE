@@ -9,6 +9,8 @@ public partial class Feedback
 
     public Guid UserId { get; set; }
 
+    public int AreaId { get; set; }
+
     public int CategoryId { get; set; }
 
     public string Title { get; set; } = null!;
@@ -20,6 +22,12 @@ public partial class Feedback
     public decimal? Latitude { get; set; }
 
     public decimal? Longitude { get; set; }
+
+    public int? LocationAccuracyMeters { get; set; }
+
+    public string? GeoSource { get; set; }
+
+    public bool IsLocationVerified { get; set; }
 
     public string Priority { get; set; } = null!;
 
@@ -43,11 +51,15 @@ public partial class Feedback
 
     public virtual ICollection<AnalysisResult> AnalysisResults { get; set; } = new List<AnalysisResult>();
 
+    public virtual OperatingArea Area { get; set; } = null!;
+
     public virtual User? ApprovedByManager { get; set; }
 
     public virtual UrbanServiceCategory Category { get; set; } = null!;
 
-    public virtual ICollection<FeedbackAssignment> FeedbackAssignments { get; set; } = new List<FeedbackAssignment>();
+    public virtual ICollection<Channel> Channels { get; set; } = new List<Channel>();
+
+    public virtual ICollection<CompletionDocument> CompletionDocuments { get; set; } = new List<CompletionDocument>();
 
     public virtual ICollection<FeedbackAttachment> FeedbackAttachments { get; set; } = new List<FeedbackAttachment>();
 
@@ -56,6 +68,8 @@ public partial class Feedback
     public virtual ICollection<FeedbackResolutionReview> FeedbackResolutionReviews { get; set; } = new List<FeedbackResolutionReview>();
 
     public virtual ICollection<FeedbackResolution> FeedbackResolutions { get; set; } = new List<FeedbackResolution>();
+
+    public virtual ICollection<FeedbackProviderReport> FeedbackProviderReports { get; set; } = new List<FeedbackProviderReport>();
 
     public virtual ICollection<FeedbackStatusHistory> FeedbackStatusHistories { get; set; } = new List<FeedbackStatusHistory>();
 

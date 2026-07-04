@@ -65,8 +65,6 @@ public class UserManagementService : IUserManagementService
                 UserId = u.UserId,
                 RoleId = u.RoleId,
                 RoleName = u.Role.RoleName,
-                OperatorId = u.OperatorId,
-                OperatorName = u.Operator != null ? u.Operator.OperatorName : null,
                 FullName = u.FullName,
                 Email = u.Email,
                 PhoneNumber = u.PhoneNumber,
@@ -111,14 +109,12 @@ public class UserManagementService : IUserManagementService
         }
 
         await EnsureRoleExistsAsync(request.RoleId);
-        await EnsureOperatorExistsAsync(request.OperatorId);
 
         var now = DateTime.UtcNow;
         var user = new User
         {
             UserId = Guid.NewGuid(),
             RoleId = request.RoleId,
-            OperatorId = request.OperatorId,
             FullName = request.FullName.Trim(),
             Email = email,
             PasswordHash = PasswordHasher.Hash(request.Password),
@@ -146,12 +142,6 @@ public class UserManagementService : IUserManagementService
         {
             await EnsureRoleExistsAsync(request.RoleId.Value);
             user.RoleId = request.RoleId.Value;
-        }
-
-        if (request.OperatorId.HasValue)
-        {
-            await EnsureOperatorExistsAsync(request.OperatorId);
-            user.OperatorId = request.OperatorId;
         }
 
         if (!string.IsNullOrWhiteSpace(request.FullName))
@@ -254,7 +244,6 @@ public class UserManagementService : IUserManagementService
 
         var user = await query
             .Include(u => u.Role)
-            .Include(u => u.Operator)
             .FirstOrDefaultAsync(u => u.UserId == userId);
 
         return user ?? throw new Exception("Khong tim thay user.");
@@ -269,23 +258,6 @@ public class UserManagementService : IUserManagementService
         if (!exists)
         {
             throw new Exception("Role khong ton tai.");
-        }
-    }
-
-    private async Task EnsureOperatorExistsAsync(int? operatorId)
-    {
-        if (!operatorId.HasValue)
-        {
-            return;
-        }
-
-        var exists = await _uow.GetRepository<ServiceOperator>().Entities
-            .AsNoTracking()
-            .AnyAsync(o => o.OperatorId == operatorId.Value && o.IsActive);
-
-        if (!exists)
-        {
-            throw new Exception("Operator khong ton tai hoac da bi khoa.");
         }
     }
 
@@ -324,8 +296,6 @@ public class UserManagementService : IUserManagementService
             UserId = user.UserId,
             RoleId = user.RoleId,
             RoleName = user.Role.RoleName,
-            OperatorId = user.OperatorId,
-            OperatorName = user.Operator?.OperatorName,
             FullName = user.FullName,
             Email = user.Email,
             PhoneNumber = user.PhoneNumber,
