@@ -9,8 +9,6 @@ public partial class User
 
     public int RoleId { get; set; }
 
-    public int? OperatorId { get; set; }
-
     public string FullName { get; set; } = null!;
 
     public string Email { get; set; } = null!;
@@ -35,13 +33,19 @@ public partial class User
 
     public DateTime? UpdatedAt { get; set; }
 
+    public virtual ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
+
     public virtual ICollection<AiConversation> AiConversations { get; set; } = new List<AiConversation>();
+
+    public virtual ICollection<AreaAlert> AreaAlerts { get; set; } = new List<AreaAlert>();
+
+    public virtual ICollection<CompletionDocument> CompletionDocuments { get; set; } = new List<CompletionDocument>();
 
     public virtual ICollection<Feedback> FeedbackApprovedByManagers { get; set; } = new List<Feedback>();
 
-    public virtual ICollection<FeedbackAssignment> FeedbackAssignments { get; set; } = new List<FeedbackAssignment>();
-
     public virtual ICollection<FeedbackComment> FeedbackComments { get; set; } = new List<FeedbackComment>();
+
+    public virtual ICollection<FeedbackProviderReport> FeedbackProviderReports { get; set; } = new List<FeedbackProviderReport>();
 
     public virtual ICollection<FeedbackResolutionReview> FeedbackResolutionReviews { get; set; } = new List<FeedbackResolutionReview>();
 
@@ -57,16 +61,17 @@ public partial class User
 
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
 
-    public virtual ServiceOperator? Operator { get; set; }
+    public virtual ICollection<ProviderContactLog> ProviderContactLogs { get; set; } = new List<ProviderContactLog>();
+
+    public virtual ICollection<ProviderContract> ProviderContracts { get; set; } = new List<ProviderContract>();
+
+    public virtual ICollection<ProviderContractAttachment> ProviderContractAttachments { get; set; } = new List<ProviderContractAttachment>();
 
     public virtual Role Role { get; set; } = null!;
 
-    public virtual ICollection<Booking> Bookings { get; set; }
-    = new List<Booking>();
+    public virtual ICollection<StaffAreaAssignment> StaffAreaAssignmentAssignedByUsers { get; set; } = new List<StaffAreaAssignment>();
 
-    public virtual ICollection<ServicePayment> ServicePayments { get; set; }
-        = new List<ServicePayment>();
+    public virtual ICollection<StaffAreaAssignment> StaffAreaAssignmentUsers { get; set; } = new List<StaffAreaAssignment>();
 
-    public virtual ICollection<ServiceReview> ServiceReviews { get; set; }
-        = new List<ServiceReview>();
+    public virtual ICollection<UserAreaSubscription> UserAreaSubscriptions { get; set; } = new List<UserAreaSubscription>();
 }

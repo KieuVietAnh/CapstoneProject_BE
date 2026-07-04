@@ -13,6 +13,8 @@ public partial class AnalysisResult
 
     public int? DetectedCategoryId { get; set; }
 
+    public int? DetectedAreaId { get; set; }
+
     public string? Sentiment { get; set; }
 
     public string? UrgencyLevel { get; set; }
@@ -26,6 +28,8 @@ public partial class AnalysisResult
     public string? RawResponse { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    public virtual OperatingArea? DetectedArea { get; set; }
 
     public virtual UrbanServiceCategory? DetectedCategory { get; set; }
 

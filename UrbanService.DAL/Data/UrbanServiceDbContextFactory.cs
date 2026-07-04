@@ -10,13 +10,13 @@ public class UrbanServiceDbContextFactory : IDesignTimeDbContextFactory<UrbanSer
     {
         var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
             ?? "Development";
+        var currentDirectory = Directory.GetCurrentDirectory();
+        var appSettingsDirectory = ResolveAppSettingsDirectory(currentDirectory);
 
         var configuration = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
+            .SetBasePath(appSettingsDirectory)
             .AddJsonFile("appsettings.json", optional: true)
             .AddJsonFile($"appsettings.{environment}.json", optional: true)
-            .AddJsonFile(Path.Combine("UrbanService", "appsettings.json"), optional: true)
-            .AddJsonFile(Path.Combine("UrbanService", $"appsettings.{environment}.json"), optional: true)
             .Build();
 
         var connectionString = Environment.GetEnvironmentVariable(
@@ -29,5 +29,29 @@ public class UrbanServiceDbContextFactory : IDesignTimeDbContextFactory<UrbanSer
         optionsBuilder.UseNpgsql(connectionString);
 
         return new UrbanServiceDbContext(optionsBuilder.Options);
+    }
+
+    private static string ResolveAppSettingsDirectory(string startDirectory)
+    {
+        var directory = new DirectoryInfo(startDirectory);
+
+        while (directory != null)
+        {
+            var directAppSettings = Path.Combine(directory.FullName, "appsettings.json");
+            if (File.Exists(directAppSettings))
+            {
+                return directory.FullName;
+            }
+
+            var apiAppSettings = Path.Combine(directory.FullName, "UrbanService", "appsettings.json");
+            if (File.Exists(apiAppSettings))
+            {
+                return Path.Combine(directory.FullName, "UrbanService");
+            }
+
+            directory = directory.Parent;
+        }
+
+        return startDirectory;
     }
 }

@@ -34,6 +34,7 @@ public class FeedbackService : IFeedbackService
         IReadOnlyCollection<UploadedFeedbackAttachmentDto> attachments)
     {
         ValidateCreate(request);
+        await EnsureAreaExistsAsync(request.AreaId);
         await EnsureCategoryExistsAsync(request.CategoryId);
 
         var now = DateTime.UtcNow;
@@ -41,12 +42,16 @@ public class FeedbackService : IFeedbackService
         {
             FeedbackId = Guid.NewGuid(),
             UserId = userId,
+            AreaId = request.AreaId,
             CategoryId = request.CategoryId,
             Title = request.Title.Trim(),
             Description = request.Description.Trim(),
             LocationText = request.LocationText.Trim(),
             Latitude = request.Latitude,
             Longitude = request.Longitude,
+            LocationAccuracyMeters = request.LocationAccuracyMeters,
+            GeoSource = NormalizeOptional(request.GeoSource),
+            IsLocationVerified = false,
             Priority = NormalizeOrDefault(request.Priority, "Medium"),
             Status = FeedbackStatus.Submitted,
             DueDate = request.DueDate,
@@ -121,6 +126,8 @@ public class FeedbackService : IFeedbackService
                 FeedbackId = f.FeedbackId,
                 UserId = f.UserId,
                 UserName = f.User.FullName,
+                AreaId = f.AreaId,
+                AreaName = f.Area.AreaName,
                 CategoryId = f.CategoryId,
                 CategoryName = f.Category.CategoryName,
                 Title = f.Title,
@@ -192,6 +199,8 @@ public class FeedbackService : IFeedbackService
                 FeedbackId = f.FeedbackId,
                 UserId = f.UserId,
                 UserName = f.User.FullName,
+                AreaId = f.AreaId,
+                AreaName = f.Area.AreaName,
                 CategoryId = f.CategoryId,
                 CategoryName = f.Category.CategoryName,
                 Title = f.Title,
@@ -253,6 +262,8 @@ public class FeedbackService : IFeedbackService
                 FeedbackId = f.FeedbackId,
                 UserId = f.UserId,
                 UserName = f.User.FullName,
+                AreaId = f.AreaId,
+                AreaName = f.Area.AreaName,
                 CategoryId = f.CategoryId,
                 CategoryName = f.Category.CategoryName,
                 Title = f.Title,
@@ -312,6 +323,8 @@ public class FeedbackService : IFeedbackService
                     FeedbackId = f.FeedbackId,
                     UserId = f.UserId,
                     UserName = f.User.FullName,
+                    AreaId = f.AreaId,
+                    AreaName = f.Area.AreaName,
                     CategoryId = f.CategoryId,
                     CategoryName = f.Category.CategoryName,
                     Title = f.Title,
@@ -391,6 +404,12 @@ public class FeedbackService : IFeedbackService
     {
         var feedback = await GetOwnedFeedbackWithDetailsAsync(userId, feedbackId, asNoTracking: false);
 
+        if (request.AreaId.HasValue && request.AreaId.Value != feedback.AreaId)
+        {
+            await EnsureAreaExistsAsync(request.AreaId.Value);
+            feedback.AreaId = request.AreaId.Value;
+        }
+
         if (request.CategoryId.HasValue && request.CategoryId.Value != feedback.CategoryId)
         {
             await EnsureCategoryExistsAsync(request.CategoryId.Value);
@@ -414,6 +433,8 @@ public class FeedbackService : IFeedbackService
 
         feedback.Latitude = request.Latitude ?? feedback.Latitude;
         feedback.Longitude = request.Longitude ?? feedback.Longitude;
+        feedback.LocationAccuracyMeters = request.LocationAccuracyMeters ?? feedback.LocationAccuracyMeters;
+        feedback.GeoSource = request.GeoSource != null ? NormalizeOptional(request.GeoSource) : feedback.GeoSource;
         feedback.Priority = string.IsNullOrWhiteSpace(request.Priority) ? feedback.Priority : request.Priority.Trim();
         feedback.DueDate = request.DueDate ?? feedback.DueDate;
         feedback.UpdatedAt = DateTime.UtcNow;
@@ -429,6 +450,12 @@ public class FeedbackService : IFeedbackService
     {
         var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: false);
 
+        if (request.AreaId.HasValue && request.AreaId.Value != feedback.AreaId)
+        {
+            await EnsureAreaExistsAsync(request.AreaId.Value);
+            feedback.AreaId = request.AreaId.Value;
+        }
+
         if (request.CategoryId.HasValue && request.CategoryId.Value != feedback.CategoryId)
         {
             await EnsureCategoryExistsAsync(request.CategoryId.Value);
@@ -452,6 +479,9 @@ public class FeedbackService : IFeedbackService
 
         feedback.Latitude = request.Latitude ?? feedback.Latitude;
         feedback.Longitude = request.Longitude ?? feedback.Longitude;
+        feedback.LocationAccuracyMeters = request.LocationAccuracyMeters ?? feedback.LocationAccuracyMeters;
+        feedback.GeoSource = request.GeoSource != null ? NormalizeOptional(request.GeoSource) : feedback.GeoSource;
+        feedback.IsLocationVerified = true;
         feedback.Priority = string.IsNullOrWhiteSpace(request.Priority) ? feedback.Priority : request.Priority.Trim();
         feedback.DueDate = request.DueDate ?? feedback.DueDate;
         feedback.UpdatedAt = DateTime.UtcNow;
@@ -663,6 +693,7 @@ public class FeedbackService : IFeedbackService
 
         var feedback = await query
             .Include(f => f.User)
+            .Include(f => f.Area)
             .Include(f => f.Category)
             .Include(f => f.FeedbackAttachments)
             .Include(f => f.FeedbackComments)
@@ -696,6 +727,7 @@ public class FeedbackService : IFeedbackService
 
         var feedback = await query
             .Include(f => f.User)
+            .Include(f => f.Area)
             .Include(f => f.Category)
             .Include(f => f.FeedbackAttachments)
             .Include(f => f.FeedbackComments)
@@ -732,6 +764,18 @@ public class FeedbackService : IFeedbackService
         }
     }
 
+    private async Task EnsureAreaExistsAsync(int areaId)
+    {
+        var exists = await _uow.GetRepository<OperatingArea>().Entities
+            .AsNoTracking()
+            .AnyAsync(a => a.AreaId == areaId && a.IsActive);
+
+        if (!exists)
+        {
+            throw new Exception("Area khong ton tai hoac da bi khoa.");
+        }
+    }
+
     private static FeedbackDetailDto MapDetail(Feedback feedback, Guid userId)
     {
         return new FeedbackDetailDto
@@ -739,6 +783,8 @@ public class FeedbackService : IFeedbackService
             FeedbackId = feedback.FeedbackId,
             UserId = feedback.UserId,
             UserName = feedback.User?.FullName,
+            AreaId = feedback.AreaId,
+            AreaName = feedback.Area?.AreaName,
             CategoryId = feedback.CategoryId,
             CategoryName = feedback.Category?.CategoryName,
             Title = feedback.Title,
@@ -746,6 +792,9 @@ public class FeedbackService : IFeedbackService
             LocationText = feedback.LocationText,
             Latitude = feedback.Latitude,
             Longitude = feedback.Longitude,
+            LocationAccuracyMeters = feedback.LocationAccuracyMeters,
+            GeoSource = feedback.GeoSource,
+            IsLocationVerified = feedback.IsLocationVerified,
             Priority = feedback.Priority,
             Status = feedback.Status,
             DueDate = feedback.DueDate,
@@ -819,6 +868,11 @@ public class FeedbackService : IFeedbackService
 
     private static void ValidateCreate(FeedbackCreateRequest request)
     {
+        if (request.AreaId <= 0)
+        {
+            throw new Exception("AreaId la bat buoc.");
+        }
+
         if (request.CategoryId <= 0)
         {
             throw new Exception("CategoryId là bắt buộc.");
@@ -843,6 +897,11 @@ public class FeedbackService : IFeedbackService
     private static string NormalizeOrDefault(string? value, string fallback)
     {
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private async Task ChangeStatusAsync(
@@ -908,27 +967,36 @@ public class FeedbackService : IFeedbackService
                 throw new Exception(
                     "Feedback must be Verified.");
 
+            var coordinatorExists = await _uow
+                .GetRepository<ServiceProviderCoordinator>()
+                .Entities
+                .AsNoTracking()
+                .AnyAsync(c => c.CoordinatorId == request.CoordinatorId && c.IsActive);
+
+            if (!coordinatorExists)
+                throw new Exception("Coordinator khong ton tai hoac da bi khoa.");
+
             await _uow
-                .GetRepository<FeedbackAssignment>()
+                .GetRepository<FeedbackProviderReport>()
                 .AddAsync(
-                    new FeedbackAssignment
+                    new FeedbackProviderReport
                     {
                         FeedbackId =
                             request.FeedbackId,
 
-                        OperatorId =
-                            request.OperatorId,
+                        CoordinatorId =
+                            request.CoordinatorId,
 
-                        AssignedByUserId =
+                        ReportedByUserId =
                             request.StaffUserId,
 
-                        AssignmentStatus =
-                            "Assigned",
+                        ReportStatus =
+                            "Reported",
 
-                        Note =
+                        ReportNote =
                             request.Note,
 
-                        AssignedAt =
+                        ReportedAt =
                             DateTime.UtcNow
                     });
 
@@ -956,10 +1024,18 @@ public class FeedbackService : IFeedbackService
                 request.FeedbackId,
                 false);
 
-        var user =
-            await _uow.GetRepository<User>()
-                .GetByIdAsync(
-                    request.OperatorUserId);
+        FeedbackProviderReport? report = null;
+        if (request.ProviderReportId.HasValue)
+        {
+            report = await _uow
+                .GetRepository<FeedbackProviderReport>()
+                .GetByIdAsync(request.ProviderReportId.Value);
+
+            if (report == null || report.FeedbackId != request.FeedbackId)
+            {
+                throw new Exception("Provider report khong hop le.");
+            }
+        }
 
         var resolution =
             new FeedbackResolution
@@ -967,11 +1043,11 @@ public class FeedbackService : IFeedbackService
                 FeedbackId =
                     request.FeedbackId,
 
-                OperatorId =
-                    user!.OperatorId!.Value,
+                ProviderReportId =
+                    request.ProviderReportId,
 
-                ResolvedByUserId =
-                    request.OperatorUserId,
+                CreatedByStaffUserId =
+                    request.StaffUserId,
 
                 ResolutionSummary =
                     request.ResolutionSummary,
@@ -993,32 +1069,30 @@ public class FeedbackService : IFeedbackService
             .GetRepository<FeedbackResolution>()
             .AddAsync(resolution);
 
-        await _uow.SaveAsync();
-
-        foreach (var image in request.ImageUrls)
+        if (report != null)
         {
-            await _uow
-                .GetRepository<
-                    FeedbackResolutionAttachment>()
-                .AddAsync(
-                    new FeedbackResolutionAttachment
-                    {
-                        ResolutionId =
-                            resolution.ResolutionId,
-
-                        FileUrl = image,
-
-                        FileType = "image",
-
-                        UploadedAt =
-                            DateTime.UtcNow
-                    });
+            foreach (var image in request.ImageUrls)
+            {
+                await _uow
+                    .GetRepository<CompletionDocument>()
+                    .AddAsync(
+                        new CompletionDocument
+                        {
+                            ProviderReportId = report.ProviderReportId,
+                            FeedbackId = request.FeedbackId,
+                            CoordinatorId = report.CoordinatorId,
+                            UploadedByUserId = request.StaffUserId,
+                            FileUrl = image,
+                            FileType = "image",
+                            ReceivedAt = DateTime.UtcNow
+                        });
+            }
         }
 
         await ChangeStatusAsync(
             feedback,
             FeedbackStatus.SubmittedForApproval,
-            request.OperatorUserId);
+            request.StaffUserId);
 
         await _uow.SaveAsync();
     }
@@ -1122,7 +1196,7 @@ public class FeedbackService : IFeedbackService
                         request.IsSatisfied,
 
                     Comment =
-                        request.Comment,
+                        request.Comment ?? string.Empty,
 
                     CreatedAt =
                         DateTime.UtcNow

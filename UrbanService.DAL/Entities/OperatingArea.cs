@@ -1,19 +1,37 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace UrbanService.DAL.Entities;
 
-public partial class UrbanServiceCategory
+public partial class OperatingArea
 {
-    public int CategoryId { get; set; }
+    public int AreaId { get; set; }
 
-    public string CategoryName { get; set; } = null!;
+    public string AreaName { get; set; } = null!;
 
-    public string? Description { get; set; }
+    public string AreaType { get; set; } = null!;
+
+    public string? WardCode { get; set; }
+
+    public string? DistrictName { get; set; }
+
+    public string? ProvinceName { get; set; }
+
+    public decimal? CenterLatitude { get; set; }
+
+    public decimal? CenterLongitude { get; set; }
+
+    public string? BoundaryGeoJson { get; set; }
 
     public bool IsActive { get; set; }
 
+    public DateOnly? StartedAt { get; set; }
+
+    public DateOnly? EndedAt { get; set; }
+
     public DateTime CreatedAt { get; set; }
+
+    public DateTime? UpdatedAt { get; set; }
 
     public virtual ICollection<AiKnowledgeSource> AiKnowledgeSources { get; set; } = new List<AiKnowledgeSource>();
 
@@ -28,4 +46,8 @@ public partial class UrbanServiceCategory
     public virtual ICollection<Feedback> Feedbacks { get; set; } = new List<Feedback>();
 
     public virtual ICollection<ProviderContract> ProviderContracts { get; set; } = new List<ProviderContract>();
+
+    public virtual ICollection<StaffAreaAssignment> StaffAreaAssignments { get; set; } = new List<StaffAreaAssignment>();
+
+    public virtual ICollection<UserAreaSubscription> UserAreaSubscriptions { get; set; } = new List<UserAreaSubscription>();
 }

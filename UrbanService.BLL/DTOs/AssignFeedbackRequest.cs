@@ -10,7 +10,7 @@ namespace UrbanService.BLL.DTOs
     {
         public Guid FeedbackId { get; set; }
 
-        public int OperatorId { get; set; }
+        public int CoordinatorId { get; set; }
 
         public Guid StaffUserId { get; set; }
 

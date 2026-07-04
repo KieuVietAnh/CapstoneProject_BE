@@ -9,6 +9,8 @@ public partial class AiKnowledgeSource
 
     public int? CategoryId { get; set; }
 
+    public int? AreaId { get; set; }
+
     public string Title { get; set; } = null!;
 
     public string SourceType { get; set; } = null!;
@@ -22,6 +24,8 @@ public partial class AiKnowledgeSource
     public DateTime CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }
+
+    public virtual OperatingArea? Area { get; set; }
 
     public virtual UrbanServiceCategory? Category { get; set; }
 }

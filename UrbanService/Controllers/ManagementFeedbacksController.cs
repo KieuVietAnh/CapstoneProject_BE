@@ -124,7 +124,7 @@ public class ManagementFeedbacksController : ControllerBase
     }
 
     /// <summary>
-    /// Staff assign feedback cho operator
+    /// Staff report feedback cho coordinator
     /// </summary>
     [HttpPost("assign")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]
@@ -147,11 +147,11 @@ public class ManagementFeedbacksController : ControllerBase
     /// Operator gửi kết quả xử lý
     /// </summary>
     [HttpPost("submit-resolution")]
-    [Authorize(Roles = UserRole.SERVICEOPERATORSTAFF)]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
     public async Task<IActionResult> SubmitResolution(
         [FromBody] SubmitResolutionRequest request)
     {
-        request.OperatorUserId =
+        request.StaffUserId =
             GetCurrentUserId();
 
         await _feedbackService

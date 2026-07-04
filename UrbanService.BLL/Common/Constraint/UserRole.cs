@@ -6,6 +6,5 @@ public static class UserRole
     public const string SYSTEMADMIN = "SYSTEMADMIN";
     public const string SYSTEMSTAFF = "SYSTEMSTAFF";
     public const string INTERACTIONMANAGER = "INTERACTIONMANAGER";
-    public const string SERVICEOPERATORSTAFF = "SERVICEOPERATORSTAFF";
 
 }
