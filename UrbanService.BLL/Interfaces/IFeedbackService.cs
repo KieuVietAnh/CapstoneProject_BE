@@ -50,9 +50,40 @@ public interface IFeedbackService
         Guid feedbackId,
         Guid staffUserId);
 
-    Task AssignFeedbackAsync(
+    Task<FeedbackProviderReportDto> AssignFeedbackAsync(
         AssignFeedbackRequest request);
 
+    Task<IReadOnlyCollection<ProviderCandidateDto>> GetProviderCandidatesAsync(Guid feedbackId);
+
+    Task<IReadOnlyCollection<FeedbackProviderReportDto>> GetProviderReportsAsync(Guid feedbackId);
+
+    Task<FeedbackProviderReportDto> UpdateProviderReportStatusAsync(
+        int providerReportId,
+        Guid currentUserId,
+        UpdateProviderReportStatusRequest request);
+
+    Task<ProviderContactLogDto> AddProviderContactLogAsync(
+        int providerReportId,
+        Guid currentUserId,
+        ProviderContactLogCreateRequest request);
+
+    Task<IReadOnlyCollection<ProviderContactLogDto>> GetProviderContactLogsAsync(int providerReportId);
+
+    Task<IReadOnlyCollection<CompletionDocumentDto>> AddCompletionDocumentsAsync(
+        int providerReportId,
+        Guid currentUserId,
+        IReadOnlyCollection<UploadedFeedbackAttachmentDto> documents,
+        string? description);
+
+    Task<IReadOnlyCollection<CompletionDocumentDto>> GetCompletionDocumentsAsync(int providerReportId);
+
+    Task<IReadOnlyCollection<FeedbackResolutionDto>> GetFeedbackResolutionsAsync(Guid feedbackId);
+
+    Task<FeedbackResolutionDto> GetResolutionAsync(int resolutionId);
+
+    Task NotifyProviderResultAsync(
+        Guid feedbackId,
+        NotifyProviderResultRequest request);
 
     Task SubmitResolutionAsync(
         SubmitResolutionRequest request);
@@ -67,6 +98,6 @@ public interface IFeedbackService
         Guid managerId,
         string reason);
 
-    Task CitizenReviewAsync(
+    Task<FeedbackResolutionReviewDto> CitizenReviewAsync(
         CitizenReviewRequest request);
 }
