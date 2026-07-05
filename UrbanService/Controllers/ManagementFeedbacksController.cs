@@ -61,6 +61,73 @@ public class ManagementFeedbacksController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Lay danh sach Service Provider phu hop voi area/category cua feedback.</summary>
+    [HttpGet("{feedbackId:guid}/provider-candidates")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ProviderCandidateDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetProviderCandidates(Guid feedbackId)
+    {
+        var result = await _feedbackService.GetProviderCandidatesAsync(feedbackId);
+        return Ok(result);
+    }
+
+    /// <summary>Xem cac lan feedback da duoc report sang Service Provider.</summary>
+    [HttpGet("{feedbackId:guid}/provider-reports")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<FeedbackProviderReportDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetProviderReports(Guid feedbackId)
+    {
+        var result = await _feedbackService.GetProviderReportsAsync(feedbackId);
+        return Ok(result);
+    }
+
+    /// <summary>Xem lich su ket qua xu ly staff da submit cho feedback.</summary>
+    [HttpGet("{feedbackId:guid}/resolutions")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<FeedbackResolutionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetFeedbackResolutions(Guid feedbackId)
+    {
+        var result = await _feedbackService.GetFeedbackResolutionsAsync(feedbackId);
+        return Ok(result);
+    }
+
+    /// <summary>Xem chi tiet mot ket qua xu ly.</summary>
+    [HttpGet("resolutions/{resolutionId:int}")]
+    [ProducesResponseType(typeof(FeedbackResolutionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetResolution(int resolutionId)
+    {
+        var result = await _feedbackService.GetResolutionAsync(resolutionId);
+        return Ok(result);
+    }
+
+    /// <summary>Gui notification thu cong cho nguoi dan ve ket qua/provider status cua feedback.</summary>
+    [HttpPost("{feedbackId:guid}/notify-provider-result")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF + "," + UserRole.SYSTEMADMIN)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> NotifyProviderResult(
+        Guid feedbackId,
+        [FromBody] NotifyProviderResultRequest request)
+    {
+        await _feedbackService.NotifyProviderResultAsync(feedbackId, request);
+
+        return Ok(new
+        {
+            Message = "Notification sent successfully."
+        });
+    }
+
     /// <summary>Staff chỉnh sửa feedback của người dân.</summary>
     /// <remarks>
     /// Chỉ role `SYSTEMSTAFF` được phép sử dụng. Có thể sửa category, priority,
@@ -134,13 +201,10 @@ public class ManagementFeedbacksController : ControllerBase
         request.StaffUserId =
             GetCurrentUserId();
 
-        await _feedbackService.AssignFeedbackAsync(
+        var result = await _feedbackService.AssignFeedbackAsync(
             request);
 
-        return Ok(new
-        {
-            Message = "Feedback assigned successfully."
-        });
+        return Ok(result);
     }
 
     /// <summary>

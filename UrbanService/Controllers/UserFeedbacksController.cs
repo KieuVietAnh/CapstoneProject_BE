@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
+using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
 
 namespace UrbanService.Controllers;
@@ -100,12 +101,15 @@ public class UserFeedbacksController : ControllerBase
         var attachments = await UploadFilesAsync(form.Attachments, "urban-service/feedbacks");
         var request = new FeedbackCreateRequest
         {
+            AreaId = form.AreaId,
             CategoryId = form.CategoryId,
             Title = form.Title,
             Description = form.Description,
             LocationText = form.LocationText,
             Latitude = form.Latitude,
             Longitude = form.Longitude,
+            LocationAccuracyMeters = form.LocationAccuracyMeters,
+            GeoSource = form.GeoSource,
             Priority = form.Priority,
             DueDate = form.DueDate
         };
@@ -217,6 +221,28 @@ public class UserFeedbacksController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Nguoi dan danh gia ket qua xu ly sau khi feedback duoc duyet.</summary>
+    [HttpPost("{feedbackId:guid}/resolution-review")]
+    [ProducesResponseType(typeof(FeedbackResolutionReviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ReviewResolution(
+        Guid feedbackId,
+        [FromBody] CitizenResolutionReviewRequest request)
+    {
+        var result = await _feedbackService.CitizenReviewAsync(new CitizenReviewRequest
+        {
+            FeedbackId = feedbackId,
+            UserId = GetCurrentUserId(),
+            Rating = request.Rating,
+            IsSatisfied = request.IsSatisfied,
+            Comment = request.Comment
+        });
+
+        return Ok(result);
+    }
+
     private async Task<IReadOnlyCollection<UploadedFeedbackAttachmentDto>> UploadFilesAsync(
         IReadOnlyCollection<IFormFile>? files,
         string folder)
@@ -263,6 +289,10 @@ public class UserFeedbacksController : ControllerBase
 
 public class FeedbackCreateFormRequest
 {
+    /// <summary>ID cua khu vuc van hanh.</summary>
+    /// <example>1</example>
+    public int AreaId { get; set; }
+
     /// <summary>ID của danh mục dịch vụ đô thị đang hoạt động.</summary>
     /// <example>1</example>
     public int CategoryId { get; set; }
@@ -286,6 +316,12 @@ public class FeedbackCreateFormRequest
     /// <summary>Kinh độ của vị trí, nếu có.</summary>
     /// <example>106.7043</example>
     public decimal? Longitude { get; set; }
+
+    /// <summary>Do chinh xac vi tri tinh bang met, neu co.</summary>
+    public int? LocationAccuracyMeters { get; set; }
+
+    /// <summary>Nguon lay toa do, vi du GPS hoac Manual.</summary>
+    public string? GeoSource { get; set; }
 
     /// <summary>Mức độ ưu tiên. Mặc định là Medium nếu bỏ trống.</summary>
     /// <example>Medium</example>
