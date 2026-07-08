@@ -9,7 +9,7 @@ on:
 env:
   DOCKER_IMAGE: urban-service-api
   CONTAINER_NAME: urban-service-api
-  APP_DIR: /var/www/urban-service
+  APP_DIR: /var/www/urban-service-be
 
 jobs:
   build-and-deploy:
