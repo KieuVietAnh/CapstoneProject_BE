@@ -9,6 +9,7 @@ namespace UrbanService.BLL.Interfaces
         Task<AuthResultDto> RegisterAsync(RegisterRequest req);
         Task<AuthResultDto> LoginAsync(LoginRequest req);
         Task<AuthResultDto> GoogleLoginAsync(GoogleLoginRequest req);
+        Task<AuthResultDto> RefreshTokenAsync(RefreshTokenRequest req);
         Task RequestEmailVerificationOtpAsync(Guid userId);
         Task VerifyEmailAsync(Guid userId, VerifyEmailRequest req);
 
