@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
+using System.Text;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Common.Securities;
 using UrbanService.BLL.Dtos;
@@ -21,6 +22,7 @@ namespace UrbanService.BLL.Services
         private readonly IMemoryCache _cache;
         private const int VerificationOtpMinutes = 5;
         private const int VerificationOtpCooldownSeconds = 60;
+        private const int DefaultRefreshTokenExpireDays = 7;
 
         public AuthService(
             IUnitOfWork uow,
@@ -60,7 +62,7 @@ namespace UrbanService.BLL.Services
                 throw new UnauthorizedAccessException("Tài khoản đã bị khóa.");
             }
 
-            return ToAuthResult(user);
+            return await IssueAuthResultAsync(user);
         }
 
         public async Task<AuthResultDto> RegisterAsync(RegisterRequest req)
@@ -106,9 +108,8 @@ namespace UrbanService.BLL.Services
             };
 
             await userRepo.AddAsync(user);
-            await _uow.SaveAsync();
 
-            return ToAuthResult(user);
+            return await IssueAuthResultAsync(user);
         }
 
         public async Task<AuthResultDto> GoogleLoginAsync(GoogleLoginRequest req)
@@ -164,7 +165,42 @@ namespace UrbanService.BLL.Services
                 throw new UnauthorizedAccessException("Tài khoản đã bị khóa.");
             }
 
-            return ToAuthResult(user);
+            return await IssueAuthResultAsync(user);
+        }
+
+        public async Task<AuthResultDto> RefreshTokenAsync(RefreshTokenRequest req)
+        {
+            var refreshToken = req.RefreshToken?.Trim();
+
+            if (string.IsNullOrWhiteSpace(refreshToken))
+            {
+                throw new UnauthorizedAccessException();
+            }
+
+            if (!TryGetRefreshTokenExpiresAt(refreshToken, out var expiresAt))
+            {
+                throw new UnauthorizedAccessException();
+            }
+
+            var refreshTokenHash = HashRefreshToken(refreshToken);
+            var user = await _uow.GetRepository<User>().FindAsync(
+                u => u.RefreshToken == refreshTokenHash,
+                q => q.Include(u => u.Role));
+
+            if (user == null || !user.IsActive || user.IsRefreshTokenRevoked)
+            {
+                throw new UnauthorizedAccessException();
+            }
+
+            if (expiresAt <= DateTimeOffset.UtcNow)
+            {
+                user.IsRefreshTokenRevoked = true;
+                user.UpdatedAt = DateTime.UtcNow;
+                await _uow.SaveAsync();
+                throw new UnauthorizedAccessException();
+            }
+
+            return await IssueAuthResultAsync(user);
         }
 
         public async Task RequestEmailVerificationOtpAsync(Guid userId)
@@ -255,17 +291,76 @@ namespace UrbanService.BLL.Services
             return role;
         }
 
-        private AuthResultDto ToAuthResult(User user)
+        private async Task<AuthResultDto> IssueAuthResultAsync(User user)
+        {
+            var (refreshToken, _) = GenerateRefreshToken();
+            user.RefreshToken = HashRefreshToken(refreshToken);
+            user.IsRefreshTokenRevoked = false;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            await _uow.SaveAsync();
+
+            return ToAuthResult(user, refreshToken);
+        }
+
+        private AuthResultDto ToAuthResult(User user, string refreshToken)
         {
             return new AuthResultDto
             {
                 Token = _jwt.Generate(user),
+                RefreshToken = refreshToken,
                 UserId = user.UserId,
                 Email = user.Email,
                 FullName = user.FullName,
                 Role = user.Role?.RoleName,
                 IsVerified = user.IsVerified
             };
+        }
+
+        private (string Token, DateTimeOffset ExpiresAt) GenerateRefreshToken()
+        {
+            var bytes = RandomNumberGenerator.GetBytes(64);
+            var token = Convert.ToBase64String(bytes)
+                .TrimEnd('=')
+                .Replace('+', '-')
+                .Replace('/', '_');
+            var expiresAt = DateTimeOffset.UtcNow.AddDays(GetRefreshTokenExpireDays());
+
+            return ($"{token}.{expiresAt.ToUnixTimeSeconds()}", expiresAt);
+        }
+
+        private int GetRefreshTokenExpireDays()
+        {
+            return int.TryParse(_cfg["Jwt:RefreshTokenExpireDays"], out var days) && days > 0
+                ? days
+                : DefaultRefreshTokenExpireDays;
+        }
+
+        private static string HashRefreshToken(string refreshToken)
+        {
+            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken));
+            return Convert.ToHexString(bytes);
+        }
+
+        private static bool TryGetRefreshTokenExpiresAt(string refreshToken, out DateTimeOffset expiresAt)
+        {
+            expiresAt = default;
+            var separatorIndex = refreshToken.LastIndexOf('.');
+
+            if (separatorIndex < 0 || separatorIndex == refreshToken.Length - 1)
+            {
+                return false;
+            }
+
+            var expiresAtText = refreshToken[(separatorIndex + 1)..];
+
+            if (!long.TryParse(expiresAtText, out var unixSeconds))
+            {
+                return false;
+            }
+
+            expiresAt = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+            return true;
         }
 
         private static string GetVerificationOtpKey(Guid userId) => $"email-verification:{userId}";

@@ -53,6 +53,20 @@ namespace UrbanService.Controllers
             return Ok(result);
         }
 
+        /// <summary>Cấp access token mới bằng refresh token.</summary>
+        /// <remarks>
+        /// API công khai. Client gửi refresh token nhận từ login/register/google-login.
+        /// Refresh token sẽ được rotate sau mỗi lần gọi thành công.
+        /// </remarks>
+        [HttpPost("refresh-token")]
+        [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest req)
+        {
+            var result = await _auth.RefreshTokenAsync(req);
+            return Ok(result);
+        }
+
         /// <summary>Đăng nhập bằng tài khoản Google đã xác thực.</summary>
         /// <remarks>
         /// Frontend gửi Google ID token nhận từ Google Identity Services.
