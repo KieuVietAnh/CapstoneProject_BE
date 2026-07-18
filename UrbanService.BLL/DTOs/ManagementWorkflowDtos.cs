@@ -104,6 +104,72 @@ public class AreaUpdateRequest
     public DateOnly? EndedAt { get; set; }
 }
 
+public class UserAreaAlertDto
+{
+    public int AlertId { get; set; }
+
+    public int AreaId { get; set; }
+
+    public string AreaName { get; set; } = null!;
+
+    public string? WardCode { get; set; }
+
+    public string? DistrictName { get; set; }
+
+    public string? ProvinceName { get; set; }
+
+    public int? CategoryId { get; set; }
+
+    public string? CategoryName { get; set; }
+
+    public int? HotspotId { get; set; }
+
+    public string Title { get; set; } = null!;
+
+    public string Message { get; set; } = null!;
+
+    public string AlertType { get; set; } = null!;
+
+    public string Severity { get; set; } = null!;
+
+    public decimal? Latitude { get; set; }
+
+    public decimal? Longitude { get; set; }
+
+    public int? RadiusMeters { get; set; }
+
+    public string Status { get; set; } = null!;
+
+    public DateTime StartAt { get; set; }
+
+    public DateTime? EndAt { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+
+    public bool IsSubscribedArea { get; set; }
+}
+
+public class UserAreaSubscriptionDto
+{
+    public int SubscriptionId { get; set; }
+
+    public int AreaId { get; set; }
+
+    public string AreaName { get; set; } = null!;
+
+    public string? WardCode { get; set; }
+
+    public string? DistrictName { get; set; }
+
+    public string? ProvinceName { get; set; }
+
+    public bool IsPrimaryArea { get; set; }
+
+    public bool ReceiveAlerts { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+}
+
 public class SetActiveRequest
 {
     public bool IsActive { get; set; }
