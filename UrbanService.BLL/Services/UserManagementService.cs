@@ -94,6 +94,42 @@ public class UserManagementService : IUserManagementService
         return MapUser(user);
     }
 
+    public async Task<UserProfileDto> GetMyProfileAsync(Guid currentUserId)
+    {
+        var user = await GetUserEntityAsync(currentUserId, asNoTracking: true);
+        return MapProfile(user);
+    }
+
+    public async Task<UserProfileDto> UpdateMyProfileAsync(Guid currentUserId, UpdateUserProfileRequest request)
+    {
+        var user = await GetUserEntityAsync(currentUserId, asNoTracking: false);
+
+        if (!string.IsNullOrWhiteSpace(request.FullName))
+        {
+            user.FullName = request.FullName.Trim();
+        }
+
+        if (request.PhoneNumber != null)
+        {
+            user.PhoneNumber = NormalizeOptional(request.PhoneNumber);
+        }
+
+        if (request.Address != null)
+        {
+            user.Address = NormalizeOptional(request.Address);
+        }
+
+        if (request.AvatarUrl != null)
+        {
+            user.AvatarUrl = NormalizeOptional(request.AvatarUrl);
+        }
+
+        user.UpdatedAt = DateTime.UtcNow;
+        await _uow.SaveAsync();
+
+        return await GetMyProfileAsync(user.UserId);
+    }
+
     public async Task<AdminUserDto> CreateUserAsync(AdminCreateUserRequest request)
     {
         ValidateCreate(request);
@@ -287,6 +323,25 @@ public class UserManagementService : IUserManagementService
     private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static UserProfileDto MapProfile(User user)
+    {
+        return new UserProfileDto
+        {
+            UserId = user.UserId,
+            RoleId = user.RoleId,
+            RoleName = user.Role.RoleName,
+            FullName = user.FullName,
+            Email = user.Email,
+            PhoneNumber = user.PhoneNumber,
+            Address = user.Address,
+            AvatarUrl = user.AvatarUrl,
+            IsActive = user.IsActive,
+            IsVerified = user.IsVerified,
+            CreatedAt = user.CreatedAt,
+            UpdatedAt = user.UpdatedAt
+        };
     }
 
     private static AdminUserDto MapUser(User user)

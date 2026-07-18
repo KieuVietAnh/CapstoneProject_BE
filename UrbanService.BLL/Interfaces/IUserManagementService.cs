@@ -9,6 +9,10 @@ public interface IUserManagementService
 
     Task<AdminUserDto> GetUserAsync(Guid userId);
 
+    Task<UserProfileDto> GetMyProfileAsync(Guid currentUserId);
+
+    Task<UserProfileDto> UpdateMyProfileAsync(Guid currentUserId, UpdateUserProfileRequest request);
+
     Task<AdminUserDto> CreateUserAsync(AdminCreateUserRequest request);
 
     Task<AdminUserDto> UpdateUserAsync(Guid currentAdminId, Guid userId, AdminUpdateUserRequest request);
