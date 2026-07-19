@@ -84,7 +84,7 @@ public class ManagementServiceProvidersController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF)]
+    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(ServiceProviderCoordinatorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateServiceProvider(
@@ -111,7 +111,7 @@ public class ManagementServiceProvidersController : ControllerBase
     }
 
     [HttpPut("{coordinatorId:int}")]
-    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF)]
+    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(ServiceProviderCoordinatorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UpdateServiceProvider(
@@ -160,7 +160,7 @@ public class ManagementServiceProvidersController : ControllerBase
     }
 
     [HttpPatch("{coordinatorId:int}/active")]
-    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF)]
+    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(ServiceProviderCoordinatorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> SetActive(
@@ -200,7 +200,7 @@ public class ManagementServiceProvidersController : ControllerBase
     }
 
     [HttpPost("{coordinatorId:int}/coverages")]
-    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF)]
+    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(CoordinatorCoverageDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateCoverage(
@@ -241,7 +241,7 @@ public class ManagementServiceProvidersController : ControllerBase
     }
 
     [HttpPut("{coordinatorId:int}/coverages/{coverageId:int}")]
-    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF)]
+    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(CoordinatorCoverageDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UpdateCoverage(
@@ -263,6 +263,19 @@ public class ManagementServiceProvidersController : ControllerBase
         {
             await EnsureCategoryExistsAsync(request.CategoryId.Value);
             coverage.CategoryId = request.CategoryId.Value;
+        }
+
+        var duplicateCoverageExists = await _uow.GetRepository<CoordinatorCoverage>().Entities
+            .AsNoTracking()
+            .AnyAsync(c =>
+                c.CoverageId != coverageId &&
+                c.CoordinatorId == coordinatorId &&
+                c.AreaId == coverage.AreaId &&
+                c.CategoryId == coverage.CategoryId);
+
+        if (duplicateCoverageExists)
+        {
+            throw new Exception("Coverage cho provider/area/category nay da ton tai.");
         }
 
         coverage.IsPrimary = request.IsPrimary ?? coverage.IsPrimary;

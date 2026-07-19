@@ -96,8 +96,8 @@ public class FeedbackService : IFeedbackService
         await _aiFeedbackReviewQueue.EnqueueAsync(feedback.FeedbackId, userId);
         await SendFeedbackNotificationAsync(
             feedback,
-            "Feedback da duoc tao",
-            $"Feedback \"{feedback.Title}\" da duoc tao va dang cho xu ly.");
+            "Phản ánh đã được tạo",
+            $"Phản ánh \"{feedback.Title}\" đã được tiếp nhận và đang chờ xử lý.");
 
         return await GetMyFeedbackDetailAsync(userId, feedback.FeedbackId);
     }
@@ -457,8 +457,8 @@ public class FeedbackService : IFeedbackService
         await _uow.SaveAsync();
         await SendFeedbackNotificationAsync(
             feedback,
-            "Feedback da duoc cap nhat",
-            $"Feedback \"{feedback.Title}\" cua ban da duoc cap nhat.");
+            "Phản ánh đã được cập nhật",
+            $"Phản ánh \"{feedback.Title}\" của bạn đã được cập nhật thành công.");
 
         return await GetMyFeedbackDetailAsync(userId, feedbackId);
     }
@@ -548,8 +548,8 @@ public class FeedbackService : IFeedbackService
         {
             await SendFeedbackNotificationAsync(
                 feedback,
-                "Feedback da duoc nhan vien cap nhat",
-                $"Feedback \"{feedback.Title}\" da duoc nhan vien cap nhat thong tin.");
+                "Phản ánh đã được nhân viên cập nhật",
+                $"Thông tin phản ánh \"{feedback.Title}\" đã được nhân viên cập nhật.");
         }
 
         return await GetFeedbackDetailAsync(currentUserId, feedbackId);
@@ -750,8 +750,8 @@ public class FeedbackService : IFeedbackService
     {
         await _notificationService.SendAsync(
             feedback.UserId,
-            "Trạng thái feedback đã được cập nhật",
-            $"Feedback \"{feedback.Title}\" đã chuyển từ \"{history.OldStatus}\" sang \"{history.NewStatus}\".",
+            "Trạng thái phản ánh đã được cập nhật",
+            $"Phản ánh \"{feedback.Title}\" đã chuyển trạng thái từ \"{history.OldStatus}\" sang \"{history.NewStatus}\".",
             NotificationType.TicketUpdated,
             $"/feedbacks/{feedback.FeedbackId}");
     }
@@ -1366,8 +1366,8 @@ public class FeedbackService : IFeedbackService
         await _uow.SaveAsync();
         await SendFeedbackNotificationAsync(
             report.Feedback,
-            "Da cap nhat lien he nha cung cap",
-            $"Feedback \"{report.Feedback.Title}\" da co cap nhat lien he nha cung cap.");
+            "Đã cập nhật liên hệ nhà cung cấp",
+            $"Phản ánh \"{report.Feedback.Title}\" đã có thông tin liên hệ mới từ nhà cung cấp");
 
         var saved = await _uow.GetRepository<ProviderContactLog>().Entities
             .AsNoTracking()
@@ -1426,8 +1426,8 @@ public class FeedbackService : IFeedbackService
         await _uow.SaveAsync();
         await SendFeedbackNotificationAsync(
             report.Feedback,
-            "Da cap nhat tai lieu hoan thanh",
-            $"Feedback \"{report.Feedback.Title}\" da co tai lieu hoan thanh moi.");
+            "Đã có tài liệu hoàn thành mới",
+            $"Phản ánh \"{report.Feedback.Title}\" đã được cập nhật tài liệu hoàn thành.");
 
         return await GetCompletionDocumentsAsync(providerReportId);
     }
