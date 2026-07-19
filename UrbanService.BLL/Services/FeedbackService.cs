@@ -173,6 +173,18 @@ public class FeedbackService : IFeedbackService
         return MapDetail(feedback, userId);
     }
 
+    public async Task<FeedbackDetailDto> GetResidentFeedFeedbackDetailAsync(Guid currentUserId, Guid feedbackId)
+    {
+        var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: true);
+
+        if (IsInternalFeedbackStatus(feedback.Status))
+        {
+            throw new Exception("Feedback này chưa được công khai trên bảng tin.");
+        }
+
+        return MapDetail(feedback, currentUserId);
+    }
+
     public async Task<PagedResultDto<FeedbackListItemDto>> GetResidentFeedFeedbacksAsync(FeedbackQueryParameters query)
     {
         var pageNumber = query.PageNumber < 1 ? 1 : query.PageNumber;
@@ -182,9 +194,7 @@ public class FeedbackService : IFeedbackService
 
         var feedbacks = _uow.GetRepository<Feedback>().Entities
             .AsNoTracking()
-            .Where(f =>
-                f.Status.ToLower() != FeedbackStatus.Submitted.ToLower() &&
-                f.Status.ToLower() != FeedbackStatus.AiReviewed.ToLower());
+            .Where(f => !InternalFeedbackStatuses.Contains(f.Status));
 
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -720,6 +730,18 @@ public class FeedbackService : IFeedbackService
 
         _uow.GetRepository<FeedbackSupport>().Delete(support);
         await _uow.SaveAsync();
+    }
+
+    private static readonly string[] InternalFeedbackStatuses =
+    [
+        FeedbackStatus.Submitted,
+        FeedbackStatus.AiReviewed
+    ];
+
+    private static bool IsInternalFeedbackStatus(string status)
+    {
+        return InternalFeedbackStatuses.Any(internalStatus =>
+            string.Equals(internalStatus, status, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<Feedback> GetFeedbackWithDetailsAsync(Guid feedbackId, bool asNoTracking)

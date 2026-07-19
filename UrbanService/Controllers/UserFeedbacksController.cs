@@ -54,6 +54,22 @@ public class UserFeedbacksController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Xem chi tiết một feedback công khai trên bảng tin người dân.</summary>
+    /// <remarks>
+    /// Yêu cầu role `SERVICEUSER`. Cho phép xem feedback của người khác nếu feedback
+    /// đã được công khai trên bảng tin, loại các feedback đang `Submitted` hoặc `AiReviewed`.
+    /// </remarks>
+    [HttpGet("feed/{feedbackId:guid}")]
+    [ProducesResponseType(typeof(FeedbackDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetResidentFeedFeedbackDetail(Guid feedbackId)
+    {
+        var result = await _feedbackService.GetResidentFeedFeedbackDetailAsync(GetCurrentUserId(), feedbackId);
+        return Ok(result);
+    }
+
     /// <summary>Xem chi tiết một feedback của người dân hiện tại.</summary>
     /// <remarks>Chỉ chủ sở hữu feedback có role `SERVICEUSER` được xem.</remarks>
     [HttpGet("{feedbackId:guid}")]
