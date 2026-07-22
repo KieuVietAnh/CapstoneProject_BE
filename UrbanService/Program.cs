@@ -31,10 +31,10 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 
 builder.Services.AddSingleton<IAiFeedbackReviewQueue, AiFeedbackReviewQueue>();
-builder.Services.AddHttpClient<IAiClient, GeminiAiClient>(client =>
+builder.Services.AddHttpClient<IAiClient, GroqAiClient>(client =>
 {
-    var baseUrl = builder.Configuration["Gemini:BaseUrl"]
-        ?? "https://generativelanguage.googleapis.com/v1beta";
+    var baseUrl = builder.Configuration["Groq:BaseUrl"]
+        ?? "https://api.groq.com/openai/v1";
 
     client.BaseAddress = new Uri(baseUrl.EndsWith('/') ? baseUrl : $"{baseUrl}/");
 

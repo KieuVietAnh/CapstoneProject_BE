@@ -11,7 +11,7 @@ public partial class Feedback
 
     public int AreaId { get; set; }
 
-    public int CategoryId { get; set; }
+    public int? CategoryId { get; set; }
 
     public string Title { get; set; } = null!;
 
@@ -29,7 +29,7 @@ public partial class Feedback
 
     public bool IsLocationVerified { get; set; }
 
-    public string Priority { get; set; } = null!;
+    public string? Priority { get; set; }
 
     public string Status { get; set; } = null!;
 
@@ -55,7 +55,7 @@ public partial class Feedback
 
     public virtual User? ApprovedByManager { get; set; }
 
-    public virtual UrbanServiceCategory Category { get; set; } = null!;
+    public virtual UrbanServiceCategory? Category { get; set; }
 
     public virtual ICollection<Channel> Channels { get; set; } = new List<Channel>();
 

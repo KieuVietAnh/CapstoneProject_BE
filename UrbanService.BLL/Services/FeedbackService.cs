@@ -46,7 +46,6 @@ public class FeedbackService : IFeedbackService
     {
         ValidateCreate(request);
         await EnsureAreaExistsAsync(request.AreaId);
-        await EnsureCategoryExistsAsync(request.CategoryId);
 
         var now = DateTime.UtcNow;
         var feedback = new Feedback
@@ -54,7 +53,7 @@ public class FeedbackService : IFeedbackService
             FeedbackId = Guid.NewGuid(),
             UserId = userId,
             AreaId = request.AreaId,
-            CategoryId = request.CategoryId,
+            CategoryId = null,
             Title = request.Title.Trim(),
             Description = request.Description.Trim(),
             LocationText = request.LocationText.Trim(),
@@ -63,7 +62,7 @@ public class FeedbackService : IFeedbackService
             LocationAccuracyMeters = request.LocationAccuracyMeters,
             GeoSource = NormalizeOptional(request.GeoSource),
             IsLocationVerified = false,
-            Priority = NormalizeOrDefault(request.Priority, "Medium"),
+            Priority = null,
             Status = FeedbackStatus.Submitted,
             DueDate = request.DueDate,
             IsMasterTicket = false,
@@ -1064,11 +1063,6 @@ public class FeedbackService : IFeedbackService
         if (request.AreaId <= 0)
         {
             throw new Exception("AreaId la bat buoc.");
-        }
-
-        if (request.CategoryId <= 0)
-        {
-            throw new Exception("CategoryId là bắt buộc.");
         }
 
         if (string.IsNullOrWhiteSpace(request.Title))

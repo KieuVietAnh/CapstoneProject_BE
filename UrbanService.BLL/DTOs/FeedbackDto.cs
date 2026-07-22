@@ -19,7 +19,7 @@ public class FeedbackCreateRequest
 {
     public int AreaId { get; set; }
 
-    public int CategoryId { get; set; }
+    public int? CategoryId { get; set; }
 
     public string Title { get; set; } = null!;
 
@@ -115,7 +115,7 @@ public class FeedbackListItemDto
 
     public string? AreaName { get; set; }
 
-    public int CategoryId { get; set; }
+    public int? CategoryId { get; set; }
 
     public string? CategoryName { get; set; }
 
@@ -123,7 +123,7 @@ public class FeedbackListItemDto
 
     public string LocationText { get; set; } = null!;
 
-    public string Priority { get; set; } = null!;
+    public string? Priority { get; set; }
 
     public string Status { get; set; } = null!;
 

@@ -58,10 +58,11 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
             }
         }
 
-        var prompt = BuildAnalysisPrompt(feedback, images.Count > 0);
+        var activeCategories = await GetActiveCategoriesAsync(cancellationToken);
+        var prompt = BuildAnalysisPrompt(feedback, activeCategories, images.Count > 0);
         var rawResponse = await ChatWithFallbackAsync(feedback.FeedbackId, prompt, images, cancellationToken);
         var parsed = ParseAnalysis(rawResponse);
-        var detectedCategory = await FindDetectedCategoryAsync(parsed.DetectedCategoryName, cancellationToken);
+        var detectedCategory = FindDetectedCategory(parsed.DetectedCategoryName, activeCategories);
 
         _uow.BeginTransaction();
         try
@@ -82,6 +83,12 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
             };
 
             await _uow.GetRepository<AnalysisResult>().AddAsync(analysisResult);
+
+            feedback.CategoryId = detectedCategory?.CategoryId
+                ?? throw new Exception("AI review khong xac dinh duoc category hop le cho feedback.");
+
+            feedback.Priority = NormalizeUrgencyAsPriority(parsed.UrgencyLevel)
+                ?? throw new Exception("AI review khong xac dinh duoc priority hop le cho feedback.");
 
             if (!string.Equals(feedback.Status, FeedbackStatus.AiReviewed, StringComparison.OrdinalIgnoreCase))
             {
@@ -126,20 +133,28 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         }
     }
 
-    private async Task<UrbanServiceCategory?> FindDetectedCategoryAsync(
-        string? categoryName,
+    private async Task<IReadOnlyCollection<UrbanServiceCategory>> GetActiveCategoriesAsync(
         CancellationToken cancellationToken)
+    {
+        return await _uow.GetRepository<UrbanServiceCategory>().Entities
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.CategoryName)
+            .ToListAsync(cancellationToken);
+    }
+
+    private static UrbanServiceCategory? FindDetectedCategory(
+        string? categoryName,
+        IReadOnlyCollection<UrbanServiceCategory> activeCategories)
     {
         if (string.IsNullOrWhiteSpace(categoryName))
         {
             return null;
         }
 
-        var normalized = categoryName.Trim().ToLower();
-        return await _uow.GetRepository<UrbanServiceCategory>().Entities
-            .AsNoTracking()
-            .Where(c => c.IsActive)
-            .FirstOrDefaultAsync(c => c.CategoryName.ToLower() == normalized, cancellationToken);
+        var normalized = NormalizeForMatching(categoryName);
+        return activeCategories.FirstOrDefault(c =>
+            NormalizeForMatching(c.CategoryName) == normalized);
     }
 
     private static bool IsImageAttachment(FeedbackAttachment attachment)
@@ -182,23 +197,47 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         }
     }
 
-    private static string BuildAnalysisPrompt(Feedback feedback, bool hasImages)
+    private static string BuildAnalysisPrompt(
+        Feedback feedback,
+        IReadOnlyCollection<UrbanServiceCategory> activeCategories,
+        bool hasImages)
     {
+        var categoryList = activeCategories.Count == 0
+            ? "- Khong co category active trong he thong"
+            : string.Join(
+                Environment.NewLine,
+                activeCategories.Select(c =>
+                    $"- {c.CategoryName}{(string.IsNullOrWhiteSpace(c.Description) ? string.Empty : $": {c.Description}")}"));
+
         return $$"""
         Ban la he thong phan tich phan anh do thi cho UrbanService.
         Hay phan tich feedback cua nguoi dan dua tren text{{(hasImages ? " va anh dinh kem" : "")}}.
         Tat ca noi dung text do AI sinh ra phai bang tieng Viet co dau.
+        Nhiem vu bat buoc:
+        1. Chon dung 1 category phu hop nhat tu danh sach category active ben duoi.
+        2. Gan muc uu tien/priority dua tren muc do khan cap cua feedback.
+        3. detectedCategoryName phai trung khop chinh xac voi mot CategoryName trong danh sach.
+        4. urgencyLevel phai la mot trong cac gia tri: Low, Medium, High, Critical.
+
+        Danh sach category active:
+        {{categoryList}}
+
+        Quy tac priority:
+        - Low: van de nho, it anh huong, khong can xu ly gap.
+        - Medium: anh huong binh thuong, can xu ly theo lich.
+        - High: anh huong nhieu nguoi/khu vuc, can uu tien xu ly som.
+        - Critical: nguy hiem, mat an toan, su co nghiem trong, can xu ly khan cap.
 
         Feedback:
         - Tieu de: {{feedback.Title}}
         - Mo ta: {{feedback.Description}}
         - Dia diem: {{feedback.LocationText}}
-        - Muc uu tien hien tai: {{feedback.Priority}}
-        - Category hien tai: {{feedback.Category.CategoryName}}
+        - Muc uu tien hien tai: {{feedback.Priority ?? "Chua co"}}
+        - Category hien tai: {{feedback.Category?.CategoryName ?? "Chua co"}}
 
         Tra ve dung JSON:
         {
-          "detectedCategoryName": string | null,
+          "detectedCategoryName": string,
           "sentiment": "Positive" | "Neutral" | "Negative",
           "urgencyLevel": "Low" | "Medium" | "High" | "Critical",
           "summary": string,
@@ -208,9 +247,32 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         }
 
         Khong duoc them giai thich ngoai JSON.
+        Bat buoc detectedCategoryName khong duoc null neu danh sach category active co du lieu.
         Cac field summary, keywords va riskNotes phai viet bang tieng Viet.
         {{(hasImages ? "Neu anh khong ro hoac khong lien quan, ghi ro trong riskNotes." : "Khong co anh dinh kem trong request nay, chi phan tich dua tren text.")}}
         """;
+    }
+
+    private static string NormalizeForMatching(string value)
+    {
+        return value.Trim().ToLowerInvariant();
+    }
+
+    private static string? NormalizeUrgencyAsPriority(string? urgencyLevel)
+    {
+        if (string.IsNullOrWhiteSpace(urgencyLevel))
+        {
+            return null;
+        }
+
+        return urgencyLevel.Trim() switch
+        {
+            var value when string.Equals(value, "Low", StringComparison.OrdinalIgnoreCase) => "Low",
+            var value when string.Equals(value, "Medium", StringComparison.OrdinalIgnoreCase) => "Medium",
+            var value when string.Equals(value, "High", StringComparison.OrdinalIgnoreCase) => "High",
+            var value when string.Equals(value, "Critical", StringComparison.OrdinalIgnoreCase) => "Critical",
+            _ => null
+        };
     }
 
     private static ParsedAnalysis ParseAnalysis(string rawResponse)

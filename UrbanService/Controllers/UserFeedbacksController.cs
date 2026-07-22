@@ -40,14 +40,13 @@ public class UserFeedbacksController : ControllerBase
 
     /// <summary>Xem bang tin feedback cua nguoi dan.</summary>
     /// <remarks>
-    /// Yeu cau role `SERVICEUSER`. Tra ve tat ca feedback da qua buoc noi bo,
-    /// loai cac feedback dang `Submitted` hoac `AiReviewed`.
-    /// Ho tro phan trang va loc theo `status`, `categoryId`, `search`.
+    /// API công khai, không yêu cầu đăng nhập. Trả về tất cả feedback đã qua bước nội bộ,
+    /// loại các feedback đang `Submitted` hoặc `AiReviewed`.
+    /// Hỗ trợ phân trang và lọc theo `status`, `categoryId`, `search`.
     /// </remarks>
     [HttpGet("feed")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(PagedResultDto<FeedbackListItemDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetResidentFeedFeedbacks([FromQuery] FeedbackQueryParameters query)
     {
         var result = await _feedbackService.GetResidentFeedFeedbacksAsync(query);
@@ -56,17 +55,17 @@ public class UserFeedbacksController : ControllerBase
 
     /// <summary>Xem chi tiết một feedback công khai trên bảng tin người dân.</summary>
     /// <remarks>
-    /// Yêu cầu role `SERVICEUSER`. Cho phép xem feedback của người khác nếu feedback
-    /// đã được công khai trên bảng tin, loại các feedback đang `Submitted` hoặc `AiReviewed`.
+    /// API công khai, không yêu cầu đăng nhập. Cho phép xem feedback đã được công khai
+    /// trên bảng tin, loại các feedback đang `Submitted` hoặc `AiReviewed`.
+    /// Nếu có JWT hợp lệ, hệ thống vẫn tính trạng thái `IsSupportedByCurrentUser`.
     /// </remarks>
     [HttpGet("feed/{feedbackId:guid}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(FeedbackDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetResidentFeedFeedbackDetail(Guid feedbackId)
     {
-        var result = await _feedbackService.GetResidentFeedFeedbackDetailAsync(GetCurrentUserId(), feedbackId);
+        var result = await _feedbackService.GetResidentFeedFeedbackDetailAsync(GetCurrentUserIdOrEmpty(), feedbackId);
         return Ok(result);
     }
 
@@ -300,6 +299,14 @@ public class UserFeedbacksController : ControllerBase
         }
 
         return parsedUserId;
+    }
+
+    private Guid GetCurrentUserIdOrEmpty()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(userId, out var parsedUserId)
+            ? parsedUserId
+            : Guid.Empty;
     }
 }
 
