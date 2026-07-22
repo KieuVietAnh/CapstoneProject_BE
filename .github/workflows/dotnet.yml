@@ -85,6 +85,9 @@ jobs:
             AI_NUM_PREDICT=${{ secrets.AI_NUM_PREDICT }}
             AI_NUM_CONTEXT=${{ secrets.AI_NUM_CONTEXT }}
             AI_TEMPERATURE=${{ secrets.AI_TEMPERATURE }}
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}
+            GEMINI_BASE_URL=${{ secrets.GEMINI_BASE_URL }}
             EOF
 
             echo "Stopping old container if exists..."
