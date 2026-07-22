@@ -35,4 +35,7 @@ services:
       AI__NumPredict: ${AI_NUM_PREDICT:-512}
       AI__NumContext: ${AI_NUM_CONTEXT:-4096}
       AI__Temperature: ${AI_TEMPERATURE:-0.1}
+      Gemini__ApiKey: ${GEMINI_API_KEY}
+      Gemini__Model: ${GEMINI_MODEL:-gemini-2.5-flash}
+      Gemini__BaseUrl: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta}
     restart: unless-stopped

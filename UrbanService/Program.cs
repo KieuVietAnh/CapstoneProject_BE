@@ -31,18 +31,17 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 
 builder.Services.AddSingleton<IAiFeedbackReviewQueue, AiFeedbackReviewQueue>();
-builder.Services.AddHttpClient<IAiClient, AiClient>(client =>
+builder.Services.AddHttpClient<IAiClient, GeminiAiClient>(client =>
 {
-    var baseUrl = builder.Configuration["AI:BaseUrl"];
-    if (!string.IsNullOrWhiteSpace(baseUrl))
-    {
-        client.BaseAddress = new Uri(baseUrl);
-    }
+    var baseUrl = builder.Configuration["Gemini:BaseUrl"]
+        ?? "https://generativelanguage.googleapis.com/v1beta";
+
+    client.BaseAddress = new Uri(baseUrl.EndsWith('/') ? baseUrl : $"{baseUrl}/");
 
     client.Timeout = TimeSpan.FromSeconds(
         int.TryParse(builder.Configuration["AI:TimeoutSeconds"], out var timeoutSeconds)
             ? timeoutSeconds
-            : 600);
+            : 120);
 });
 builder.Services.AddScoped<IAiFeedbackAnalysisService, AiFeedbackAnalysisService>();
 builder.Services.AddScoped<IAiChatService, AiChatService>();

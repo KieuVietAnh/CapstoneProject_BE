@@ -1344,8 +1344,8 @@ public class FeedbackService : IFeedbackService
 
         await SendFeedbackNotificationAsync(
             report.Feedback,
-            "Trang thai nha cung cap da duoc cap nhat",
-            $"Feedback \"{report.Feedback.Title}\" co trang thai nha cung cap moi: {newStatus}.");
+            "Trạng thái nhà cung cấp đã được cập nhật",
+            $"Phản ánh \"{report.Feedback.Title}\" có trạng thái nhà cung cấp mới: {newStatus}.");
 
         return await GetProviderReportDtoAsync(providerReportId);
     }
