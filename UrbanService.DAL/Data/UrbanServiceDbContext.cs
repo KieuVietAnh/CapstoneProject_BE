@@ -36,6 +36,8 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<FeedbackComment> FeedbackComments { get; set; }
 
+    public virtual DbSet<FeedbackDuplicateCandidate> FeedbackDuplicateCandidates { get; set; }
+
     public virtual DbSet<FeedbackProviderReport> FeedbackProviderReports { get; set; }
 
     public virtual DbSet<FeedbackResolution> FeedbackResolutions { get; set; }
@@ -364,6 +366,42 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.ParentTicketId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_feedback_parent");
+        });
+
+        modelBuilder.Entity<FeedbackDuplicateCandidate>(entity =>
+        {
+            entity.HasKey(e => e.DuplicateCandidateId).HasName("feedback_duplicate_candidates_pkey");
+            entity.ToTable("feedback_duplicate_candidates");
+
+            entity.HasIndex(e => new { e.FeedbackId, e.PotentialParentFeedbackId }, "uq_feedback_duplicate_candidate_pair").IsUnique();
+
+            entity.HasIndex(e => e.Status, "ix_feedback_duplicate_candidates_status");
+
+            entity.Property(e => e.DuplicateCandidateId).HasDefaultValueSql("gen_random_uuid()").HasColumnName("duplicate_candidate_id");
+            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
+            entity.Property(e => e.PotentialParentFeedbackId).HasColumnName("potential_parent_feedback_id");
+            entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValueSql("'Pending'::character varying").HasColumnName("status");
+            entity.Property(e => e.ConfidenceScore).HasPrecision(5, 4).HasColumnName("confidence_score");
+            entity.Property(e => e.Reason).HasColumnName("reason");
+            entity.Property(e => e.ReviewedByUserId).HasColumnName("reviewed_by_user_id");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+            entity.Property(e => e.ReviewedAt).HasColumnName("reviewed_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Feedback).WithMany(p => p.FeedbackDuplicateCandidates)
+                .HasForeignKey(d => d.FeedbackId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_feedback_duplicate_candidate_feedback");
+
+            entity.HasOne(d => d.PotentialParentFeedback).WithMany(p => p.PotentialParentDuplicateCandidates)
+                .HasForeignKey(d => d.PotentialParentFeedbackId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_feedback_duplicate_candidate_parent_feedback");
+
+            entity.HasOne(d => d.ReviewedByUser).WithMany(p => p.FeedbackDuplicateCandidateReviews)
+                .HasForeignKey(d => d.ReviewedByUserId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_feedback_duplicate_candidate_reviewed_by");
         });
 
         modelBuilder.Entity<FeedbackAttachment>(entity =>

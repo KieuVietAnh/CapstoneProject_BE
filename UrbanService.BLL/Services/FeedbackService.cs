@@ -28,15 +28,18 @@ public class FeedbackService : IFeedbackService
     private readonly IUnitOfWork _uow;
     private readonly INotificationService _notificationService;
     private readonly IAiFeedbackReviewQueue _aiFeedbackReviewQueue;
+    private readonly IAiFeedbackDuplicateService _aiFeedbackDuplicateService;
 
     public FeedbackService(
         IUnitOfWork uow,
         INotificationService notificationService,
-        IAiFeedbackReviewQueue aiFeedbackReviewQueue)
+        IAiFeedbackReviewQueue aiFeedbackReviewQueue,
+        IAiFeedbackDuplicateService aiFeedbackDuplicateService)
     {
         _uow = uow;
         _notificationService = notificationService;
         _aiFeedbackReviewQueue = aiFeedbackReviewQueue;
+        _aiFeedbackDuplicateService = aiFeedbackDuplicateService;
     }
 
     public async Task<FeedbackDetailDto> CreateAsync(
@@ -92,6 +95,7 @@ public class FeedbackService : IFeedbackService
         await _uow.GetRepository<Feedback>().AddAsync(feedback);
         await _uow.SaveAsync();
 
+        await _aiFeedbackDuplicateService.CheckAndLinkDuplicateAsync(feedback, userId);
         await _aiFeedbackReviewQueue.EnqueueAsync(feedback.FeedbackId, userId);
         await SendFeedbackNotificationAsync(
             feedback,
@@ -169,7 +173,9 @@ public class FeedbackService : IFeedbackService
     public async Task<FeedbackDetailDto> GetMyFeedbackDetailAsync(Guid userId, Guid feedbackId)
     {
         var feedback = await GetOwnedFeedbackWithDetailsAsync(userId, feedbackId, asNoTracking: true);
-        return MapDetail(feedback, userId);
+        var detail = MapDetail(feedback, userId);
+        await PopulateDuplicateInfoAsync(detail);
+        return detail;
     }
 
     public async Task<FeedbackDetailDto> GetResidentFeedFeedbackDetailAsync(Guid currentUserId, Guid feedbackId)
@@ -181,7 +187,9 @@ public class FeedbackService : IFeedbackService
             throw new Exception("Feedback này chưa được công khai trên bảng tin.");
         }
 
-        return MapDetail(feedback, currentUserId);
+        var detail = MapDetail(feedback, currentUserId);
+        await PopulateDuplicateInfoAsync(detail);
+        return detail;
     }
 
     public async Task<PagedResultDto<FeedbackListItemDto>> GetResidentFeedFeedbacksAsync(FeedbackQueryParameters query)
@@ -421,7 +429,9 @@ public class FeedbackService : IFeedbackService
     public async Task<FeedbackDetailDto> GetFeedbackDetailAsync(Guid currentUserId, Guid feedbackId)
     {
         var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: true);
-        return MapDetail(feedback, currentUserId);
+        var detail = MapDetail(feedback, currentUserId);
+        await PopulateDuplicateInfoAsync(detail);
+        return detail;
     }
 
     public async Task<FeedbackDetailDto> UpdateAsync(Guid userId, Guid feedbackId, FeedbackUpdateRequest request)
@@ -878,6 +888,9 @@ public class FeedbackService : IFeedbackService
             AttachmentCount = feedback.FeedbackAttachments.Count,
             CommentCount = feedback.FeedbackComments.Count,
             SupportCount = feedback.FeedbackSupports.Count,
+            DuplicateWarning = false,
+            PotentialDuplicate = null,
+            ParentTicketId = feedback.ParentTicketId,
             IsSupportedByCurrentUser = feedback.FeedbackSupports.Any(s => s.UserId == userId),
             Attachments = feedback.FeedbackAttachments
                 .OrderBy(a => a.UploadedAt)
@@ -908,6 +921,39 @@ public class FeedbackService : IFeedbackService
                 })
                 .ToList()
         };
+    }
+
+    private async Task PopulateDuplicateInfoAsync(FeedbackListItemDto dto)
+    {
+        dto.ParentTicketId = await _uow.GetRepository<Feedback>().Entities
+            .AsNoTracking()
+            .Where(feedback => feedback.FeedbackId == dto.FeedbackId)
+            .Select(feedback => feedback.ParentTicketId)
+            .FirstOrDefaultAsync();
+
+        var pendingCandidate = await _uow.GetRepository<FeedbackDuplicateCandidate>().Entities
+            .AsNoTracking()
+            .Where(candidate =>
+                candidate.FeedbackId == dto.FeedbackId &&
+                candidate.Status == "Pending")
+            .OrderByDescending(candidate => candidate.ConfidenceScore ?? 0m)
+            .ThenByDescending(candidate => candidate.CreatedAt)
+            .Select(candidate => new FeedbackPotentialDuplicateDto
+            {
+                DuplicateCandidateId = candidate.DuplicateCandidateId,
+                FeedbackId = candidate.FeedbackId,
+                PotentialParentFeedbackId = candidate.PotentialParentFeedbackId,
+                PotentialParentTitle = candidate.PotentialParentFeedback.Title,
+                PotentialParentLocationText = candidate.PotentialParentFeedback.LocationText,
+                Status = candidate.Status,
+                ConfidenceScore = candidate.ConfidenceScore,
+                Reason = candidate.Reason,
+                CreatedAt = candidate.CreatedAt
+            })
+            .FirstOrDefaultAsync();
+
+        dto.PotentialDuplicate = pendingCandidate;
+        dto.DuplicateWarning = pendingCandidate is not null;
     }
 
     private static FeedbackCommentDto MapComment(FeedbackComment comment)

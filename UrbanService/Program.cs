@@ -44,6 +44,7 @@ builder.Services.AddHttpClient<IAiClient, OpenRouterAiClient>(client =>
             : 120);
 });
 builder.Services.AddScoped<IAiFeedbackAnalysisService, AiFeedbackAnalysisService>();
+builder.Services.AddScoped<IAiFeedbackDuplicateService, AiFeedbackDuplicateService>();
 builder.Services.AddScoped<IAiChatService, AiChatService>();
 builder.Services.AddHostedService<AiFeedbackReviewWorker>();
 builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>

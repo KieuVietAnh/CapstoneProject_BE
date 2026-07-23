@@ -65,6 +65,10 @@ public partial class Feedback
 
     public virtual ICollection<FeedbackComment> FeedbackComments { get; set; } = new List<FeedbackComment>();
 
+    public virtual ICollection<FeedbackDuplicateCandidate> FeedbackDuplicateCandidates { get; set; } = new List<FeedbackDuplicateCandidate>();
+
+    public virtual ICollection<FeedbackDuplicateCandidate> PotentialParentDuplicateCandidates { get; set; } = new List<FeedbackDuplicateCandidate>();
+
     public virtual ICollection<FeedbackResolutionReview> FeedbackResolutionReviews { get; set; } = new List<FeedbackResolutionReview>();
 
     public virtual ICollection<FeedbackResolution> FeedbackResolutions { get; set; } = new List<FeedbackResolution>();

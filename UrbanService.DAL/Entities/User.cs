@@ -45,6 +45,8 @@ public partial class User
 
     public virtual ICollection<FeedbackComment> FeedbackComments { get; set; } = new List<FeedbackComment>();
 
+    public virtual ICollection<FeedbackDuplicateCandidate> FeedbackDuplicateCandidateReviews { get; set; } = new List<FeedbackDuplicateCandidate>();
+
     public virtual ICollection<FeedbackProviderReport> FeedbackProviderReports { get; set; } = new List<FeedbackProviderReport>();
 
     public virtual ICollection<FeedbackResolutionReview> FeedbackResolutionReviews { get; set; } = new List<FeedbackResolutionReview>();

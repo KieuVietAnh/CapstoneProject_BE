@@ -136,6 +136,12 @@ public class FeedbackListItemDto
     public int CommentCount { get; set; }
 
     public int SupportCount { get; set; }
+
+    public bool DuplicateWarning { get; set; }
+
+    public FeedbackPotentialDuplicateDto? PotentialDuplicate { get; set; }
+
+    public Guid? ParentTicketId { get; set; }
 }
 
 public class FeedbackDetailDto : FeedbackListItemDto
@@ -161,6 +167,27 @@ public class FeedbackDetailDto : FeedbackListItemDto
     public IReadOnlyCollection<FeedbackCommentDto> Comments { get; set; } = [];
 
     public IReadOnlyCollection<FeedbackStatusHistoryDto> StatusHistories { get; set; } = [];
+}
+
+public class FeedbackPotentialDuplicateDto
+{
+    public Guid DuplicateCandidateId { get; set; }
+
+    public Guid FeedbackId { get; set; }
+
+    public Guid PotentialParentFeedbackId { get; set; }
+
+    public string? PotentialParentTitle { get; set; }
+
+    public string? PotentialParentLocationText { get; set; }
+
+    public string Status { get; set; } = null!;
+
+    public decimal? ConfidenceScore { get; set; }
+
+    public string? Reason { get; set; }
+
+    public DateTime CreatedAt { get; set; }
 }
 
 public class FeedbackWithAnalysisResultDto
