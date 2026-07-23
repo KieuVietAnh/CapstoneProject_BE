@@ -15,10 +15,14 @@ namespace UrbanService.Controllers;
 public class ManagementFeedbacksController : ControllerBase
 {
     private readonly IFeedbackService _feedbackService;
+    private readonly IAreaAlertService _areaAlertService;
 
-    public ManagementFeedbacksController(IFeedbackService feedbackService)
+    public ManagementFeedbacksController(
+        IFeedbackService feedbackService,
+        IAreaAlertService areaAlertService)
     {
         _feedbackService = feedbackService;
+        _areaAlertService = areaAlertService;
     }
 
     /// <summary>Xem danh sách tất cả feedback trong hệ thống.</summary>
@@ -106,6 +110,26 @@ public class ManagementFeedbacksController : ControllerBase
     public async Task<IActionResult> GetResolution(int resolutionId)
     {
         var result = await _feedbackService.GetResolutionAsync(resolutionId);
+        return Ok(result);
+    }
+
+    /// <summary>Tao canh bao khu vuc tu feedback nghiem trong.</summary>
+    /// <remarks>Role duoc phep: SYSTEMSTAFF, INTERACTIONMANAGER.</remarks>
+    [HttpPost("{feedbackId:guid}/area-alert")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF + "," + UserRole.INTERACTIONMANAGER)]
+    [ProducesResponseType(typeof(UrbanService.BLL.Dtos.UserAreaAlertDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> CreateAreaAlertFromFeedback(
+        Guid feedbackId,
+        [FromBody] CreateAreaAlertFromFeedbackRequest request)
+    {
+        var result = await _areaAlertService.CreateAlertFromFeedbackAsync(
+            GetCurrentUserId(),
+            feedbackId,
+            request);
+
         return Ok(result);
     }
 

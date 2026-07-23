@@ -26,9 +26,11 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IFeedbackService, FeedbackService>();
+builder.Services.AddScoped<IFeedbackDuplicateCandidateService, FeedbackDuplicateCandidateService>();
 builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+builder.Services.AddScoped<IAreaAlertService, AreaAlertService>();
 
 builder.Services.AddSingleton<IAiFeedbackReviewQueue, AiFeedbackReviewQueue>();
 builder.Services.AddHttpClient<IAiClient, OpenRouterAiClient>(client =>
