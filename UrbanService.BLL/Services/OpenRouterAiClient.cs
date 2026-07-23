@@ -7,27 +7,27 @@ using UrbanService.BLL.Interfaces;
 
 namespace UrbanService.BLL.Services;
 
-public class GroqAiClient : IAiClient
+public class OpenRouterAiClient : IAiClient
 {
     private const string VietnameseSystemInstruction =
         "Luôn trả lời bằng tiếng Việt có dấu. Nếu response là JSON, giữ nguyên tên field/schema được yêu cầu, nhưng mọi giá trị dạng text do AI sinh ra phải bằng tiếng Việt.";
 
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
-    private readonly ILogger<GroqAiClient> _logger;
+    private readonly ILogger<OpenRouterAiClient> _logger;
     private readonly long _maxImageBytes;
     private readonly double _temperature;
 
-    public GroqAiClient(
+    public OpenRouterAiClient(
         HttpClient httpClient,
         IConfiguration configuration,
-        ILogger<GroqAiClient> logger)
+        ILogger<OpenRouterAiClient> logger)
     {
         _httpClient = httpClient;
         _configuration = configuration;
         _logger = logger;
 
-        ModelName = configuration["Groq:Model"] ?? "llama-3.1-8b-instant";
+        ModelName = configuration["OpenRouter:Model"] ?? "openai/gpt-4o-mini";
         _maxImageBytes = int.TryParse(configuration["AI:MaxImageBytes"], out var maxImageBytes)
             ? maxImageBytes
             : 2 * 1024 * 1024;
@@ -42,7 +42,7 @@ public class GroqAiClient : IAiClient
     {
         try
         {
-            ApplyAuthorizationHeader();
+            ApplyOpenRouterHeaders();
 
             var payload = new
             {
@@ -64,7 +64,7 @@ public class GroqAiClient : IAiClient
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Groq health check failed.");
+            _logger.LogWarning(ex, "OpenRouter health check failed.");
             return false;
         }
     }
@@ -75,21 +75,20 @@ public class GroqAiClient : IAiClient
         bool jsonFormat = false,
         CancellationToken cancellationToken = default)
     {
-        ApplyAuthorizationHeader();
+        ApplyOpenRouterHeaders();
 
         var userPrompt = jsonFormat
             ? $"{prompt}\n\nChỉ trả về JSON hợp lệ, không bọc markdown, không thêm giải thích ngoài JSON."
             : prompt;
 
-        if (base64Images is { Count: > 0 })
-        {
-            userPrompt += "\n\nLưu ý: Groq client hiện tại chỉ xử lý text, ảnh đính kèm đã được bỏ qua.";
-        }
+        object userContent = base64Images is { Count: > 0 }
+            ? BuildMultimodalContent(userPrompt, base64Images)
+            : userPrompt;
 
         var payload = new
         {
             model = ModelName,
-            messages = new[]
+            messages = new object[]
             {
                 new
                 {
@@ -99,7 +98,7 @@ public class GroqAiClient : IAiClient
                 new
                 {
                     role = "user",
-                    content = userPrompt
+                    content = userContent
                 }
             },
             temperature = _temperature,
@@ -116,21 +115,21 @@ public class GroqAiClient : IAiClient
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning(ex, "Groq chat request timed out.");
-            throw new Exception("Groq API timeout. Kiem tra ket noi toi Groq API.");
+            _logger.LogWarning(ex, "OpenRouter chat request timed out.");
+            throw new Exception("OpenRouter API timeout. Kiem tra ket noi toi OpenRouter API.");
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Groq chat request could not connect.");
-            throw new Exception("Khong ket noi duoc Groq API. Kiem tra internet, firewall va Groq:BaseUrl.");
+            _logger.LogWarning(ex, "OpenRouter chat request could not connect.");
+            throw new Exception("Khong ket noi duoc OpenRouter API. Kiem tra internet, firewall va OpenRouter:BaseUrl.");
         }
 
         using (response)
         {
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Groq chat request failed with status {StatusCode}: {Body}", response.StatusCode, body);
-                throw new Exception($"Groq API khong phan hoi thanh cong ({(int)response.StatusCode} {response.StatusCode}): {Truncate(body, 500)}");
+                _logger.LogWarning("OpenRouter chat request failed with status {StatusCode}: {Body}", response.StatusCode, body);
+                throw new Exception($"OpenRouter API khong phan hoi thanh cong ({(int)response.StatusCode} {response.StatusCode}): {Truncate(body, 500)}");
             }
 
             try
@@ -141,23 +140,23 @@ public class GroqAiClient : IAiClient
                     choicesElement.ValueKind != JsonValueKind.Array ||
                     choicesElement.GetArrayLength() == 0)
                 {
-                    throw new Exception("Groq API tra ve response khong co choices.");
+                    throw new Exception("OpenRouter API tra ve response khong co choices.");
                 }
 
                 var firstChoice = choicesElement[0];
                 if (!firstChoice.TryGetProperty("message", out var messageElement) ||
                     !messageElement.TryGetProperty("content", out var contentElement))
                 {
-                    throw new Exception("Groq API tra ve response khong hop le.");
+                    throw new Exception("OpenRouter API tra ve response khong hop le.");
                 }
 
                 return contentElement.GetString()?.Trim()
-                    ?? throw new Exception("Groq API tra ve content rong.");
+                    ?? throw new Exception("OpenRouter API tra ve content rong.");
             }
             catch (JsonException ex)
             {
-                _logger.LogWarning(ex, "Failed to parse Groq response: {Body}", body);
-                throw new Exception("Groq API tra ve JSON khong hop le.");
+                _logger.LogWarning(ex, "Failed to parse OpenRouter response: {Body}", body);
+                throw new Exception("OpenRouter API tra ve JSON khong hop le.");
             }
         }
     }
@@ -223,15 +222,49 @@ public class GroqAiClient : IAiClient
         }
     }
 
-    private void ApplyAuthorizationHeader()
+    private void ApplyOpenRouterHeaders()
     {
-        var apiKey = _configuration["Groq:ApiKey"];
+        var apiKey = _configuration["OpenRouter:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new Exception("Chua cau hinh Groq:ApiKey.");
+            throw new Exception("Chua cau hinh OpenRouter:ApiKey.");
         }
 
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        var referer = _configuration["OpenRouter:HttpReferer"];
+        if (!string.IsNullOrWhiteSpace(referer))
+        {
+            _httpClient.DefaultRequestHeaders.Remove("HTTP-Referer");
+            _httpClient.DefaultRequestHeaders.Add("HTTP-Referer", referer);
+        }
+
+        var title = _configuration["OpenRouter:XTitle"] ?? "UrbanService";
+        _httpClient.DefaultRequestHeaders.Remove("X-Title");
+        _httpClient.DefaultRequestHeaders.Add("X-Title", title);
+    }
+
+    private static object[] BuildMultimodalContent(string prompt, IReadOnlyCollection<string> base64Images)
+    {
+        var content = new List<object>
+        {
+            new
+            {
+                type = "text",
+                text = prompt
+            }
+        };
+
+        content.AddRange(base64Images.Select(base64Image => new
+        {
+            type = "image_url",
+            image_url = new
+            {
+                url = $"data:image/jpeg;base64,{base64Image}"
+            }
+        }));
+
+        return content.ToArray();
     }
 
     private static string OptimizeCloudinaryImageUrl(string imageUrl)

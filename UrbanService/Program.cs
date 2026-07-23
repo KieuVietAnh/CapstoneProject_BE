@@ -31,10 +31,10 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 
 builder.Services.AddSingleton<IAiFeedbackReviewQueue, AiFeedbackReviewQueue>();
-builder.Services.AddHttpClient<IAiClient, GroqAiClient>(client =>
+builder.Services.AddHttpClient<IAiClient, OpenRouterAiClient>(client =>
 {
-    var baseUrl = builder.Configuration["Groq:BaseUrl"]
-        ?? "https://api.groq.com/openai/v1";
+    var baseUrl = builder.Configuration["OpenRouter:BaseUrl"]
+        ?? "https://openrouter.ai/api/v1";
 
     client.BaseAddress = new Uri(baseUrl.EndsWith('/') ? baseUrl : $"{baseUrl}/");
 

@@ -35,7 +35,9 @@ services:
       AI__NumPredict: ${AI_NUM_PREDICT:-512}
       AI__NumContext: ${AI_NUM_CONTEXT:-4096}
       AI__Temperature: ${AI_TEMPERATURE:-0.1}
-      Groq__ApiKey: ${GROQ_API_KEY}
-      Groq__Model: ${GROQ_MODEL:-llama-3.1-8b-instant}
-      Groq__BaseUrl: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      OpenRouter__ApiKey: ${OPENROUTER_API_KEY}
+      OpenRouter__Model: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
+      OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OpenRouter__HttpReferer: ${OPENROUTER_HTTP_REFERER:-https://urban-mind-fe-web.vercel.app}
+      OpenRouter__XTitle: ${OPENROUTER_X_TITLE:-UrbanService}
     restart: unless-stopped
