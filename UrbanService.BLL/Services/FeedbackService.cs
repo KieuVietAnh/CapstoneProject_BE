@@ -264,7 +264,9 @@ public class FeedbackService : IFeedbackService
         var search = query.Search?.Trim().ToLower();
         var status = query.Status?.Trim().ToLower();
 
-        var feedbacks = _uow.GetRepository<Feedback>().Entities.AsNoTracking();
+        var feedbacks = _uow.GetRepository<Feedback>().Entities
+            .AsNoTracking()
+            .Where(f => f.ParentTicketId == null);
 
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -779,10 +781,38 @@ public class FeedbackService : IFeedbackService
 
     private async Task SendStatusUpdatedNotificationAsync(Feedback feedback, FeedbackStatusHistory history)
     {
+        var message = (history.OldStatus, history.NewStatus) switch
+        {
+            (FeedbackStatus.Submitted, FeedbackStatus.AiReviewed) =>
+                "Phản ánh đã được AI phân tích",
+
+            (FeedbackStatus.Submitted, FeedbackStatus.Verified) or
+            (FeedbackStatus.AiReviewed, FeedbackStatus.Verified) =>
+                "Phản ánh của bạn đã được xác thực",
+
+            (FeedbackStatus.Verified, FeedbackStatus.Assigned) =>
+                "Phản ánh của bạn đã được phân công cho đơn vị xử lý",
+
+            (FeedbackStatus.Assigned, FeedbackStatus.InProgress) =>
+                "Đơn vị xử lý đang xử lý phản ánh của bạn.",
+
+            (FeedbackStatus.InProgress, FeedbackStatus.SubmittedForApproval) =>
+                "Đơn vị xử lý đã gửi minh chứng hoàn thành",
+
+            (FeedbackStatus.SubmittedForApproval, FeedbackStatus.Approved) =>
+                "Hệ thống đã xác nhận đơn vị xử lý đã hoàn thành",
+
+            (FeedbackStatus.Approved, FeedbackStatus.Closed) =>
+                "Phản ánh của bạn đã được hoàn thành",
+
+            _ =>
+                $"Phản ánh \"{feedback.Title}\" đã chuyển trạng thái từ \"{history.OldStatus}\" sang \"{history.NewStatus}\"."
+        };
+
         await _notificationService.SendAsync(
             feedback.UserId,
             "Trạng thái phản ánh đã được cập nhật",
-            $"Phản ánh \"{feedback.Title}\" đã chuyển trạng thái từ \"{history.OldStatus}\" sang \"{history.NewStatus}\".",
+            message,
             NotificationType.TicketUpdated,
             $"/feedbacks/{feedback.FeedbackId}");
     }

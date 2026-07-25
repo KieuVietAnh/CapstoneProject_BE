@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
@@ -15,10 +16,14 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
     private const string RejectedStatus = "Rejected";
 
     private readonly IUnitOfWork _uow;
+    private readonly INotificationService _notificationService;
 
-    public FeedbackDuplicateCandidateService(IUnitOfWork uow)
+    public FeedbackDuplicateCandidateService(
+        IUnitOfWork uow,
+        INotificationService notificationService)
     {
         _uow = uow;
+        _notificationService = notificationService;
     }
 
     public async Task<FeedbackDuplicateSummaryDto> GetSummaryAsync()
@@ -107,6 +112,13 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
         candidate.UpdatedAt = DateTime.UtcNow;
 
         await _uow.SaveAsync();
+
+        await _notificationService.SendAsync(
+            childFeedback.UserId,
+            "Phản ánh bị đánh dấu trùng",
+            "Phản ánh của bạn đã bị đánh dấu trùng với một phản ánh khác.",
+            NotificationType.TicketUpdated,
+            $"/feedbacks/{parentFeedback.FeedbackId}");
 
         return await GetCandidateDetailAsync(duplicateCandidateId);
     }
