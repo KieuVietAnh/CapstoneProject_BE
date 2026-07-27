@@ -33,7 +33,24 @@ builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IAreaAlertService, AreaAlertService>();
 
 builder.Services.AddSingleton<IAiFeedbackReviewQueue, AiFeedbackReviewQueue>();
-builder.Services.AddHttpClient<IAiClient, OpenRouterAiClient>(client =>
+
+// Default IAiClient is Qwen/Ollama. It is used for feedback draft, classification/review,
+// duplicate detection, and other non-chat AI tasks.
+builder.Services.AddHttpClient<IAiClient, AiClient>(client =>
+{
+    var baseUrl = builder.Configuration["AI:BaseUrl"]
+        ?? "http://localhost:11434";
+
+    client.BaseAddress = new Uri(baseUrl.EndsWith('/') ? baseUrl : $"{baseUrl}/");
+
+    client.Timeout = TimeSpan.FromSeconds(
+        int.TryParse(builder.Configuration["AI:TimeoutSeconds"], out var timeoutSeconds)
+            ? timeoutSeconds
+            : 120);
+});
+
+// OpenRouter is registered separately and used only by the user chatbot.
+builder.Services.AddHttpClient<OpenRouterAiClient>(client =>
 {
     var baseUrl = builder.Configuration["OpenRouter:BaseUrl"]
         ?? "https://openrouter.ai/api/v1";
@@ -48,6 +65,7 @@ builder.Services.AddHttpClient<IAiClient, OpenRouterAiClient>(client =>
 builder.Services.AddScoped<IAiFeedbackAnalysisService, AiFeedbackAnalysisService>();
 builder.Services.AddScoped<IAiFeedbackDuplicateService, AiFeedbackDuplicateService>();
 builder.Services.AddScoped<IAiChatService, AiChatService>();
+builder.Services.AddScoped<IAiFeedbackDraftService, AiFeedbackDraftService>();
 builder.Services.AddHostedService<AiFeedbackReviewWorker>();
 builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
 {

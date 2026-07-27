@@ -220,6 +220,10 @@ public class FeedbackProviderReportDto
 
     public string? Email { get; set; }
 
+    public string? Address { get; set; }
+
+    public string? Note { get; set; }
+
     public Guid ReportedByUserId { get; set; }
 
     public string? ReportedByUserName { get; set; }
@@ -268,6 +272,14 @@ public class ProviderContactLogDto
     public string? ProviderName { get; set; }
 
     public string? CoordinatorName { get; set; }
+
+    public string? PhoneNumber { get; set; }
+
+    public string? Email { get; set; }
+
+    public string? Address { get; set; }
+
+    public string? Note { get; set; }
 
     public Guid ContactedByUserId { get; set; }
 

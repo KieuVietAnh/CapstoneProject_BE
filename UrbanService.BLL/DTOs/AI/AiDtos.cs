@@ -84,6 +84,46 @@ public class AiMessageDto
     public DateTime CreatedAt { get; set; }
 }
 
+public class AiFeedbackDraftRequest
+{
+    public string Reflection { get; set; } = null!;
+
+    public string? Location { get; set; }
+
+    public decimal? Latitude { get; set; }
+
+    public decimal? Longitude { get; set; }
+
+    public IReadOnlyCollection<string> ImageUrls { get; set; } = [];
+
+    public IReadOnlyCollection<string> Base64Images { get; set; } = [];
+}
+
+public class AiFeedbackDraftResponse
+{
+    public string Title { get; set; } = null!;
+
+    public string Description { get; set; } = null!;
+
+    public string? Location { get; set; }
+
+    public decimal? Latitude { get; set; }
+
+    public decimal? Longitude { get; set; }
+
+    public IReadOnlyCollection<string> ImageUrls { get; set; } = [];
+
+    public string? SuggestedCategory { get; set; }
+
+    public string? UrgencyLevel { get; set; }
+
+    public string? Summary { get; set; }
+
+    public IReadOnlyCollection<string> MissingFields { get; set; } = [];
+
+    public string ConfirmationMessage { get; set; } = null!;
+}
+
 public class AiHealthResponse
 {
     public bool IsAvailable { get; set; }

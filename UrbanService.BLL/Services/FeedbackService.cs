@@ -48,7 +48,7 @@ public class FeedbackService : IFeedbackService
         IReadOnlyCollection<UploadedFeedbackAttachmentDto> attachments)
     {
         ValidateCreate(request);
-        await EnsureAreaExistsAsync(request.AreaId);
+        await EnsureAreaMatchesLocationAsync(request.AreaId, request.Latitude, request.Longitude);
 
         var now = DateTime.UtcNow;
         var feedback = new Feedback
@@ -440,9 +440,13 @@ public class FeedbackService : IFeedbackService
     {
         var feedback = await GetOwnedFeedbackWithDetailsAsync(userId, feedbackId, asNoTracking: false);
 
+        var updatedAreaId = request.AreaId ?? feedback.AreaId;
+        var updatedLatitude = request.Latitude ?? feedback.Latitude;
+        var updatedLongitude = request.Longitude ?? feedback.Longitude;
+        await EnsureAreaMatchesLocationAsync(updatedAreaId, updatedLatitude, updatedLongitude);
+
         if (request.AreaId.HasValue && request.AreaId.Value != feedback.AreaId)
         {
-            await EnsureAreaExistsAsync(request.AreaId.Value);
             feedback.AreaId = request.AreaId.Value;
         }
 
@@ -503,9 +507,13 @@ public class FeedbackService : IFeedbackService
             !string.IsNullOrWhiteSpace(request.Priority) ||
             request.DueDate.HasValue;
 
+        var updatedAreaId = request.AreaId ?? feedback.AreaId;
+        var updatedLatitude = request.Latitude ?? feedback.Latitude;
+        var updatedLongitude = request.Longitude ?? feedback.Longitude;
+        await EnsureAreaMatchesLocationAsync(updatedAreaId, updatedLatitude, updatedLongitude);
+
         if (request.AreaId.HasValue && request.AreaId.Value != feedback.AreaId)
         {
-            await EnsureAreaExistsAsync(request.AreaId.Value);
             feedback.AreaId = request.AreaId.Value;
         }
 
@@ -891,6 +899,235 @@ public class FeedbackService : IFeedbackService
         }
     }
 
+    private async Task EnsureAreaMatchesLocationAsync(int areaId, decimal? latitude, decimal? longitude)
+    {
+        var area = await _uow.GetRepository<OperatingArea>().Entities
+            .AsNoTracking()
+            .Where(a => a.AreaId == areaId && a.IsActive)
+            .Select(a => new
+            {
+                a.AreaId,
+                a.AreaName,
+                a.BoundaryGeoJson
+            })
+            .FirstOrDefaultAsync();
+
+        if (area == null)
+        {
+            throw new Exception("Area khong ton tai hoac da bi khoa.");
+        }
+
+        if (!latitude.HasValue || !longitude.HasValue)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(area.BoundaryGeoJson))
+        {
+            throw new Exception($"Khu vực \"{area.AreaName}\" chưa được cấu hình ranh giới bản đồ.");
+        }
+
+        if (!IsPointInsideGeoJsonBoundary(latitude.Value, longitude.Value, area.BoundaryGeoJson))
+        {
+            throw new Exception($"Vị trí đã chọn không nằm trong khu vực \"{area.AreaName}\".");
+        }
+    }
+
+    private static bool IsPointInsideGeoJsonBoundary(decimal latitude, decimal longitude, string boundaryGeoJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(boundaryGeoJson);
+            return IsPointInsideGeoJsonElement(document.RootElement, (double)latitude, (double)longitude);
+        }
+        catch (JsonException)
+        {
+            throw new Exception("BoundaryGeoJson của khu vực không hợp lệ.");
+        }
+    }
+
+    private static bool IsPointInsideGeoJsonElement(JsonElement element, double latitude, double longitude)
+    {
+        if (!element.TryGetProperty("type", out var typeElement))
+        {
+            return false;
+        }
+
+        var type = typeElement.GetString();
+
+        if (string.Equals(type, "FeatureCollection", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!element.TryGetProperty("features", out var features) || features.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            foreach (var feature in features.EnumerateArray())
+            {
+                if (IsPointInsideGeoJsonElement(feature, latitude, longitude))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (string.Equals(type, "Feature", StringComparison.OrdinalIgnoreCase))
+        {
+            return element.TryGetProperty("geometry", out var geometry) &&
+                IsPointInsideGeoJsonElement(geometry, latitude, longitude);
+        }
+
+        if (!element.TryGetProperty("coordinates", out var coordinates))
+        {
+            return false;
+        }
+
+        if (string.Equals(type, "Polygon", StringComparison.OrdinalIgnoreCase))
+        {
+            return IsPointInsidePolygonCoordinates(coordinates, latitude, longitude);
+        }
+
+        if (string.Equals(type, "MultiPolygon", StringComparison.OrdinalIgnoreCase))
+        {
+            if (coordinates.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            foreach (var polygon in coordinates.EnumerateArray())
+            {
+                if (IsPointInsidePolygonCoordinates(polygon, latitude, longitude))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsPointInsidePolygonCoordinates(JsonElement polygonCoordinates, double latitude, double longitude)
+    {
+        if (polygonCoordinates.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var isInsideOuterRing = false;
+        var isInsideHole = false;
+        var ringIndex = 0;
+
+        foreach (var ring in polygonCoordinates.EnumerateArray())
+        {
+            var isInsideRing = IsPointInsideLinearRing(ring, latitude, longitude);
+
+            if (ringIndex == 0)
+            {
+                isInsideOuterRing = isInsideRing;
+            }
+            else if (isInsideRing)
+            {
+                isInsideHole = true;
+                break;
+            }
+
+            ringIndex++;
+        }
+
+        return isInsideOuterRing && !isInsideHole;
+    }
+
+    private static bool IsPointInsideLinearRing(JsonElement ring, double latitude, double longitude)
+    {
+        if (ring.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var points = ring.EnumerateArray()
+            .Where(point => point.ValueKind == JsonValueKind.Array && point.GetArrayLength() >= 2)
+            .Select(point => new
+            {
+                Longitude = point[0].GetDouble(),
+                Latitude = point[1].GetDouble()
+            })
+            .ToList();
+
+        if (points.Count < 3)
+        {
+            return false;
+        }
+
+        var inside = false;
+        var previousIndex = points.Count - 1;
+
+        for (var currentIndex = 0; currentIndex < points.Count; currentIndex++)
+        {
+            var current = points[currentIndex];
+            var previous = points[previousIndex];
+
+            if (IsPointOnSegment(
+                longitude,
+                latitude,
+                previous.Longitude,
+                previous.Latitude,
+                current.Longitude,
+                current.Latitude))
+            {
+                return true;
+            }
+
+            var intersects = current.Latitude > latitude != previous.Latitude > latitude &&
+                longitude < (previous.Longitude - current.Longitude) *
+                (latitude - current.Latitude) /
+                (previous.Latitude - current.Latitude) +
+                current.Longitude;
+
+            if (intersects)
+            {
+                inside = !inside;
+            }
+
+            previousIndex = currentIndex;
+        }
+
+        return inside;
+    }
+
+    private static bool IsPointOnSegment(
+        double pointLongitude,
+        double pointLatitude,
+        double startLongitude,
+        double startLatitude,
+        double endLongitude,
+        double endLatitude)
+    {
+        const double epsilon = 0.0000001;
+
+        var crossProduct = (pointLatitude - startLatitude) * (endLongitude - startLongitude) -
+            (pointLongitude - startLongitude) * (endLatitude - startLatitude);
+
+        if (Math.Abs(crossProduct) > epsilon)
+        {
+            return false;
+        }
+
+        var dotProduct = (pointLongitude - startLongitude) * (endLongitude - startLongitude) +
+            (pointLatitude - startLatitude) * (endLatitude - startLatitude);
+
+        if (dotProduct < -epsilon)
+        {
+            return false;
+        }
+
+        var squaredLength = Math.Pow(endLongitude - startLongitude, 2) +
+            Math.Pow(endLatitude - startLatitude, 2);
+
+        return dotProduct <= squaredLength + epsilon;
+    }
+
     private static FeedbackDetailDto MapDetail(Feedback feedback, Guid userId)
     {
         return new FeedbackDetailDto
@@ -1036,6 +1273,8 @@ public class FeedbackService : IFeedbackService
             CoordinatorName = report.Coordinator?.CoordinatorName,
             PhoneNumber = report.Coordinator?.PhoneNumber,
             Email = report.Coordinator?.Email,
+            Address = report.Coordinator?.Address,
+            Note = report.Coordinator?.Note,
             ReportedByUserId = report.ReportedByUserId,
             ReportedByUserName = report.ReportedByUser?.FullName,
             ReportStatus = report.ReportStatus,
@@ -1057,6 +1296,10 @@ public class FeedbackService : IFeedbackService
             CoordinatorId = log.CoordinatorId,
             ProviderName = log.Coordinator?.ProviderName,
             CoordinatorName = log.Coordinator?.CoordinatorName,
+            PhoneNumber = log.Coordinator?.PhoneNumber,
+            Email = log.Coordinator?.Email,
+            Address = log.Coordinator?.Address,
+            Note = log.Coordinator?.Note,
             ContactedByUserId = log.ContactedByUserId,
             ContactedByUserName = log.ContactedByUser?.FullName,
             ContactMethod = log.ContactMethod,

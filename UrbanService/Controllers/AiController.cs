@@ -17,6 +17,7 @@ public class AiController : ControllerBase
 {
     private readonly IAiClient _aiClient;
     private readonly IAiChatService _aiChatService;
+    private readonly IAiFeedbackDraftService _aiFeedbackDraftService;
     private readonly IUnitOfWork _uow;
     private readonly IAiFeedbackReviewQueue _aiFeedbackReviewQueue;
     private readonly IConfiguration _configuration;
@@ -24,12 +25,14 @@ public class AiController : ControllerBase
     public AiController(
         IAiClient aiClient,
         IAiChatService aiChatService,
+        IAiFeedbackDraftService aiFeedbackDraftService,
         IUnitOfWork uow,
         IAiFeedbackReviewQueue aiFeedbackReviewQueue,
         IConfiguration configuration)
     {
         _aiClient = aiClient;
         _aiChatService = aiChatService;
+        _aiFeedbackDraftService = aiFeedbackDraftService;
         _uow = uow;
         _aiFeedbackReviewQueue = aiFeedbackReviewQueue;
         _configuration = configuration;
@@ -132,6 +135,25 @@ public class AiController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _aiChatService.SendAsync(
+            GetCurrentUserId(),
+            request,
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>Tao ban nhap phan anh tu noi dung, vi tri va anh nguoi dung cung cap.</summary>
+    [HttpPost("feedback-draft")]
+    [Authorize(Roles = UserRole.SERVICEUSER)]
+    [ProducesResponseType(typeof(AiFeedbackDraftResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> CreateFeedbackDraft(
+        [FromBody] AiFeedbackDraftRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _aiFeedbackDraftService.CreateDraftAsync(
             GetCurrentUserId(),
             request,
             cancellationToken);

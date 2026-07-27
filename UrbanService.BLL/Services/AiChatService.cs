@@ -9,9 +9,9 @@ namespace UrbanService.BLL.Services;
 public class AiChatService : IAiChatService
 {
     private readonly IUnitOfWork _uow;
-    private readonly IAiClient _aiClient;
+    private readonly OpenRouterAiClient _aiClient;
 
-    public AiChatService(IUnitOfWork uow, IAiClient aiClient)
+    public AiChatService(IUnitOfWork uow, OpenRouterAiClient aiClient)
     {
         _uow = uow;
         _aiClient = aiClient;
