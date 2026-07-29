@@ -27,9 +27,13 @@ public class BrevoEmailSender : IEmailSender
     {
         Validate(email);
 
-        var apiKey = _configuration["Brevo:ApiKey"];
-        var senderEmail = _configuration["Brevo:SenderEmail"];
-        var senderName = _configuration["Brevo:SenderName"] ?? "UrbanService";
+        var apiKey = NormalizeSecret(_configuration["Brevo:ApiKey"]);
+        var senderEmail = _configuration["Brevo:SenderEmail"]?.Trim();
+        var senderName = _configuration["Brevo:SenderName"]?.Trim();
+        if (string.IsNullOrWhiteSpace(senderName))
+        {
+            senderName = "UrbanService";
+        }
 
         if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(senderEmail))
         {
@@ -68,7 +72,41 @@ public class BrevoEmailSender : IEmailSender
             (int)response.StatusCode,
             responseBody);
 
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            throw new Exception(
+                "Không thể gửi email qua Brevo. HTTP 401. Brevo trả về unauthorized/key not found. " +
+                $"Kiểm tra BREVO_API_KEY đang inject vào Brevo:ApiKey có đúng API key SMTP Brevo còn hiệu lực không. Key hiện tại length={apiKey.Length}, fingerprint={CreateSecretFingerprint(apiKey)}.");
+        }
+
         throw new Exception($"Không thể gửi email qua Brevo. HTTP {(int)response.StatusCode}.");
+    }
+
+    private static string NormalizeSecret(string? value)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+
+        if (normalized.Length >= 2 &&
+            ((normalized.StartsWith('"') && normalized.EndsWith('"')) ||
+             (normalized.StartsWith('\'') && normalized.EndsWith('\''))))
+        {
+            normalized = normalized[1..^1].Trim();
+        }
+
+        return normalized;
+    }
+
+    private static string CreateSecretFingerprint(string secret)
+    {
+        if (string.IsNullOrEmpty(secret))
+        {
+            return "empty";
+        }
+
+        var prefix = secret.Length <= 8 ? secret : secret[..8];
+        var suffix = secret.Length <= 4 ? string.Empty : secret[^4..];
+
+        return $"{prefix}...{suffix}";
     }
 
     private static IReadOnlyCollection<BrevoContact> MapContacts(IEnumerable<string> emails) =>

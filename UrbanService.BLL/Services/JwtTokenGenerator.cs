@@ -21,7 +21,9 @@ namespace UrbanService.BLL.Services
             var audience = _cfg["Jwt:Audience"];
             var expireMinutes = int.TryParse(_cfg["Jwt:ExpireMinutes"], out var m) ? m : 60;
 
-            var roleName = acc.Role?.RoleName ?? UserRole.SERVICEUSER;
+            var roleName = acc.IsVerified
+                ? acc.Role?.RoleName ?? UserRole.SERVICEUSER
+                : "EMAIL_VERIFICATION";
 
             var claims = new List<Claim>
             {
