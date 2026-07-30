@@ -110,7 +110,8 @@ public class AiChatService : IAiChatService
         });
 
         var knowledge = await BuildKnowledgeContextAsync(feedback, request.Message, cancellationToken);
-        var prompt = BuildChatPrompt(request.Message.Trim(), knowledge, feedback);
+        var conversationHistory = await BuildConversationHistoryAsync(conversation.AiConversationId, cancellationToken);
+        var prompt = BuildChatPrompt(request.Message.Trim(), knowledge, feedback, conversationHistory);
         var aiMessage = await _aiClient.ChatAsync(prompt, jsonFormat: false, cancellationToken: cancellationToken);
 
         var savedAiMessage = new AiMessage
@@ -207,7 +208,39 @@ public class AiChatService : IAiChatService
         return string.Join(Environment.NewLine, selected);
     }
 
-    private static string BuildChatPrompt(string message, string knowledge, Feedback? feedback)
+    private async Task<string> BuildConversationHistoryAsync(
+        int conversationId,
+        CancellationToken cancellationToken)
+    {
+        var messages = await _uow.GetRepository<AiMessage>().Entities
+            .AsNoTracking()
+            .Where(m => m.AiConversationId == conversationId)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(10)
+            .OrderBy(m => m.CreatedAt)
+            .Select(m => new
+            {
+                m.SenderType,
+                m.MessageText
+            })
+            .ToListAsync(cancellationToken);
+
+        if (messages.Count == 0)
+        {
+            return "Chua co lich su hoi thoai truoc do trong conversation nay.";
+        }
+
+        return string.Join(Environment.NewLine, messages.Select(m =>
+        {
+            var sender = string.Equals(m.SenderType, "AI", StringComparison.OrdinalIgnoreCase)
+                ? "AI"
+                : "Nguoi dan";
+
+            return $"- {sender}: {Truncate(m.MessageText, 1000)}";
+        }));
+    }
+
+    private static string BuildChatPrompt(string message, string knowledge, Feedback? feedback, string conversationHistory)
     {
         var feedbackContext = feedback == null
             ? "Khong co feedback cu the."
@@ -231,9 +264,12 @@ public class AiChatService : IAiChatService
         Knowledge:
         {knowledge}
 
+        Lich su hoi thoai trong conversation hien tai:
+        {conversationHistory}
+
         {feedbackContext}
 
-        Cau hoi nguoi dan:
+        Cau hoi moi nhat cua nguoi dan:
         {message}
         """;
     }
