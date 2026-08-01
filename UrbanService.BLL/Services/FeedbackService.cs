@@ -8,6 +8,8 @@ using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
 using UrbanService.DAL.UnitOfWork;
+using UrbanService.BLL.DTOs.SLA;
+
 
 namespace UrbanService.BLL.Services;
 
@@ -29,17 +31,21 @@ public class FeedbackService : IFeedbackService
     private readonly INotificationService _notificationService;
     private readonly IAiFeedbackReviewQueue _aiFeedbackReviewQueue;
     private readonly IAiFeedbackDuplicateService _aiFeedbackDuplicateService;
+    private readonly ISlaService _slaService;
+
 
     public FeedbackService(
-        IUnitOfWork uow,
-        INotificationService notificationService,
-        IAiFeedbackReviewQueue aiFeedbackReviewQueue,
-        IAiFeedbackDuplicateService aiFeedbackDuplicateService)
+    IUnitOfWork uow,
+    INotificationService notificationService,
+    IAiFeedbackReviewQueue aiFeedbackReviewQueue,
+    IAiFeedbackDuplicateService aiFeedbackDuplicateService,
+    ISlaService slaService)
     {
         _uow = uow;
         _notificationService = notificationService;
         _aiFeedbackReviewQueue = aiFeedbackReviewQueue;
         _aiFeedbackDuplicateService = aiFeedbackDuplicateService;
+        _slaService = slaService;
     }
 
     public async Task<FeedbackDetailDto> CreateAsync(
@@ -548,29 +554,49 @@ public class FeedbackService : IFeedbackService
         feedback.UpdatedAt = DateTime.UtcNow;
 
         FeedbackStatusHistory? statusHistory = null;
+        string? oldStatus = null;
+
         if (!string.IsNullOrWhiteSpace(request.Status) &&
-            !string.Equals(feedback.Status, request.Status.Trim(), StringComparison.OrdinalIgnoreCase))
+            !string.Equals(
+                feedback.Status,
+                request.Status.Trim(),
+                StringComparison.OrdinalIgnoreCase))
         {
-            var newStatus = FeedbackStatus.Normalize(request.Status);
+            var newStatus = FeedbackStatus.Normalize(
+                request.Status);
+
+            oldStatus = feedback.Status;
+
             statusHistory = new FeedbackStatusHistory
             {
                 FeedbackId = feedbackId,
                 ChangedByUserId = currentUserId,
-                OldStatus = feedback.Status,
+                OldStatus = oldStatus,
                 NewStatus = newStatus,
                 Note = request.StatusNote?.Trim(),
                 ChangedAt = DateTime.UtcNow
             };
 
-            feedback.Status = statusHistory.NewStatus;
-            feedback.FeedbackStatusHistories.Add(statusHistory);
+            feedback.Status = newStatus;
+            feedback.FeedbackStatusHistories.Add(
+                statusHistory);
         }
 
         await _uow.SaveAsync();
 
-        if (statusHistory != null)
+        if (statusHistory != null &&
+            oldStatus != null)
         {
-            await SendStatusUpdatedNotificationAsync(feedback, statusHistory);
+            await SynchronizeSlaByStatusAsync(
+                feedback.FeedbackId,
+                oldStatus,
+                feedback.Status,
+                currentUserId,
+                statusHistory.Note);
+
+            await SendStatusUpdatedNotificationAsync(
+                feedback,
+                statusHistory);
         }
 
         if (hasContentChanges)
@@ -581,7 +607,9 @@ public class FeedbackService : IFeedbackService
                 $"Thông tin phản ánh \"{feedback.Title}\" đã được nhân viên cập nhật.");
         }
 
-        return await GetFeedbackDetailAsync(currentUserId, feedbackId);
+        return await GetFeedbackDetailAsync(
+            currentUserId,
+            feedbackId);
     }
 
     public async Task DeleteAsync(Guid userId, Guid feedbackId)
@@ -636,31 +664,42 @@ public class FeedbackService : IFeedbackService
         await _uow.SaveAsync();
     }
 
-    public async Task<FeedbackStatusHistoryDto> UpdateStatusByStaffOrAdminAsync(
+    public async Task<FeedbackStatusHistoryDto>
+    UpdateStatusByStaffOrAdminAsync(
         Guid currentUserId,
         Guid feedbackId,
         UpdateFeedbackStatusRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Status))
         {
-            throw new Exception("Status là bắt buộc.");
+            throw new Exception(
+                "Status là bắt buộc.");
         }
 
-        var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: false);
-        var newStatus = FeedbackStatus.Normalize(request.Status);
+        var feedback = await GetFeedbackWithDetailsAsync(
+            feedbackId,
+            asNoTracking: false);
 
-        if (string.Equals(feedback.Status, newStatus, StringComparison.OrdinalIgnoreCase))
+        var newStatus = FeedbackStatus.Normalize(
+            request.Status);
+
+        if (string.Equals(
+                feedback.Status,
+                newStatus,
+                StringComparison.OrdinalIgnoreCase))
         {
-            throw new Exception($"Feedback đã ở trạng thái {newStatus}.");
+            throw new Exception(
+                $"Feedback đã ở trạng thái {newStatus}.");
         }
 
         var now = DateTime.UtcNow;
+        var oldStatus = feedback.Status;
 
         var history = new FeedbackStatusHistory
         {
             FeedbackId = feedbackId,
             ChangedByUserId = currentUserId,
-            OldStatus = feedback.Status,
+            OldStatus = oldStatus,
             NewStatus = newStatus,
             Note = request.Note?.Trim(),
             ChangedAt = now
@@ -672,7 +711,16 @@ public class FeedbackService : IFeedbackService
 
         await _uow.SaveAsync();
 
-        await SendStatusUpdatedNotificationAsync(feedback, history);
+        await SynchronizeSlaByStatusAsync(
+            feedback.FeedbackId,
+            oldStatus,
+            newStatus,
+            currentUserId,
+            history.Note);
+
+        await SendStatusUpdatedNotificationAsync(
+            feedback,
+            history);
 
         return new FeedbackStatusHistoryDto
         {
@@ -685,6 +733,7 @@ public class FeedbackService : IFeedbackService
             ChangedAt = history.ChangedAt
         };
     }
+
 
     public async Task<FeedbackCommentDto> AddCommentAsync(Guid userId, Guid feedbackId, FeedbackCommentCreateRequest request)
     {
@@ -1451,15 +1500,18 @@ public class FeedbackService : IFeedbackService
     Guid feedbackId,
     Guid staffUserId)
     {
-        var feedback =
-            await GetFeedbackWithDetailsAsync(
-                feedbackId,
-                false);
+        var feedback = await GetFeedbackWithDetailsAsync(
+            feedbackId,
+            false);
 
         if (feedback.Status != FeedbackStatus.Submitted &&
             feedback.Status != FeedbackStatus.AiReviewed)
+        {
             throw new Exception(
                 "Feedback must be Submitted or AiReviewed.");
+        }
+
+        var oldStatus = feedback.Status;
 
         var history = await ChangeStatusAsync(
             feedback,
@@ -1468,7 +1520,18 @@ public class FeedbackService : IFeedbackService
             "Verified by staff");
 
         await _uow.SaveAsync();
-        await SendStatusUpdatedNotificationAsync(feedback, history);
+
+        // SLA bắt đầu ngay sau khi feedback được staff xác minh.
+        await SynchronizeSlaByStatusAsync(
+            feedback.FeedbackId,
+            oldStatus,
+            feedback.Status,
+            staffUserId,
+            history.Note);
+
+        await SendStatusUpdatedNotificationAsync(
+            feedback,
+            history);
     }
 
     public async Task<FeedbackProviderReportDto> AssignFeedbackAsync(
@@ -1650,15 +1713,25 @@ public class FeedbackService : IFeedbackService
         }
 
         await _uow.SaveAsync();
+
         if (statusHistory != null)
         {
-            await SendStatusUpdatedNotificationAsync(report.Feedback, statusHistory);
+            await SynchronizeSlaByStatusAsync(
+                report.Feedback.FeedbackId,
+                statusHistory.OldStatus!,
+                statusHistory.NewStatus,
+                currentUserId,
+                statusHistory.Note);
+
+            await SendStatusUpdatedNotificationAsync(
+                report.Feedback,
+                statusHistory);
         }
 
         await SendFeedbackNotificationAsync(
-            report.Feedback,
-            "Trạng thái nhà cung cấp đã được cập nhật",
-            $"Phản ánh \"{report.Feedback.Title}\" có trạng thái nhà cung cấp mới: {newStatus}.");
+    report.Feedback,
+    "Trạng thái nhà cung cấp đã được cập nhật",
+    $"Phản ánh \"{report.Feedback.Title}\" có trạng thái nhà cung cấp mới: {newStatus}.");
 
         return await GetProviderReportDtoAsync(providerReportId);
     }
@@ -1930,20 +2003,20 @@ public class FeedbackService : IFeedbackService
     Guid managerId,
     string? note)
     {
-        var feedback =
-            await GetFeedbackWithDetailsAsync(
-                feedbackId,
-                false);
+        var feedback = await GetFeedbackWithDetailsAsync(
+            feedbackId,
+            false);
 
-        var resolution =
-            (await _uow
+        var resolution = (await _uow
                 .GetRepository<FeedbackResolution>()
-                .GetAllAsync(
-                    x => x.FeedbackId ==
-                         feedbackId))
-            .OrderByDescending(
-                x => x.ResolvedAt)
-            .First();
+                .GetAllAsync(x =>
+                    x.FeedbackId == feedbackId))
+            .OrderByDescending(x => x.ResolvedAt)
+            .FirstOrDefault()
+            ?? throw new Exception(
+                "Không tìm thấy resolution để phê duyệt.");
+
+        var oldStatus = feedback.Status;
 
         resolution.Status =
             FeedbackStatus.Approved;
@@ -1961,8 +2034,21 @@ public class FeedbackService : IFeedbackService
             note);
 
         await _uow.SaveAsync();
-        await SendStatusUpdatedNotificationAsync(feedback, history);
+
+        // Approved là thời điểm manager xác nhận việc xử lý đã hoàn tất.
+        // SLA resolution được hoàn thành tại đây, không chờ citizen review.
+        await SynchronizeSlaByStatusAsync(
+            feedback.FeedbackId,
+            oldStatus,
+            feedback.Status,
+            managerId,
+            note);
+
+        await SendStatusUpdatedNotificationAsync(
+            feedback,
+            history);
     }
+
 
     public async Task RequireReworkAsync(
     Guid feedbackId,
@@ -2063,5 +2149,122 @@ public class FeedbackService : IFeedbackService
             .FirstAsync(r => r.ReviewId == review.ReviewId);
 
         return MapResolutionReview(saved);
+    }
+
+    private async Task SynchronizeSlaByStatusAsync(
+    Guid feedbackId,
+    string oldStatus,
+    string newStatus,
+    Guid triggeredByUserId,
+    string? note)
+    {
+        if (string.Equals(
+                oldStatus,
+                newStatus,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        // Verified: bắt đầu SLA.
+        if (string.Equals(
+                newStatus,
+                FeedbackStatus.Verified,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var hasCurrentSla = await _uow
+                .GetRepository<FeedbackSla>()
+                .Entities
+                .AsNoTracking()
+                .AnyAsync(x =>
+                    x.FeedbackId == feedbackId &&
+                    x.IsCurrent);
+
+            if (!hasCurrentSla)
+            {
+                await _slaService.StartAsync(
+                    feedbackId,
+                    triggeredByUserId);
+            }
+
+            return;
+        }
+
+        // InProgress: phản hồi đầu tiên được ghi nhận.
+        if (string.Equals(
+                newStatus,
+                FeedbackStatus.InProgress,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var currentSla = await _uow
+                .GetRepository<FeedbackSla>()
+                .Entities
+                .AsNoTracking()
+                .Where(x =>
+                    x.FeedbackId == feedbackId &&
+                    x.IsCurrent)
+                .Select(x => new
+                {
+                    x.RespondedAt,
+                    x.Status
+                })
+                .FirstOrDefaultAsync();
+
+            if (currentSla != null &&
+                !currentSla.RespondedAt.HasValue &&
+                string.Equals(
+                    currentSla.Status,
+                    SlaStatus.Running,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                await _slaService.MarkRespondedAsync(
+                    feedbackId,
+                    triggeredByUserId,
+                    NormalizeOptional(note) ??
+                    "Feedback bắt đầu được xử lý.");
+            }
+
+            return;
+        }
+
+        // Approved: manager xác nhận kết quả xử lý, hoàn thành SLA.
+        if (string.Equals(
+                newStatus,
+                FeedbackStatus.Approved,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var currentSla = await _uow
+                .GetRepository<FeedbackSla>()
+                .Entities
+                .AsNoTracking()
+                .Where(x =>
+                    x.FeedbackId == feedbackId &&
+                    x.IsCurrent)
+                .Select(x => new
+                {
+                    x.Status
+                })
+                .FirstOrDefaultAsync();
+
+            if (currentSla != null &&
+                !string.Equals(
+                    currentSla.Status,
+                    SlaStatus.Completed,
+                    StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(
+                    currentSla.Status,
+                    SlaStatus.Cancelled,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                await _slaService.CompleteAsync(
+                    feedbackId,
+                    triggeredByUserId,
+                    new CompleteSlaRequest
+                    {
+                        Note = NormalizeOptional(note) ??
+                            "Manager đã xác nhận kết quả xử lý feedback."
+                    });
+            }
+        }
     }
 }

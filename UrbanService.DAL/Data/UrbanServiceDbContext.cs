@@ -24,7 +24,6 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<AuditLog> AuditLogs { get; set; }
 
-    public virtual DbSet<Channel> Channels { get; set; }
 
     public virtual DbSet<CompletionDocument> CompletionDocuments { get; set; }
 
@@ -71,6 +70,14 @@ public partial class UrbanServiceDbContext : DbContext
     public virtual DbSet<UrbanServiceCategory> UrbanServiceCategories { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
+
+    public virtual DbSet<SlaPolicy> SlaPolicies { get; set; }
+
+    public virtual DbSet<FeedbackSla> FeedbackSlas { get; set; }
+
+    public virtual DbSet<SlaEvent> SlaEvents { get; set; }
+
+    public virtual DbSet<SlaPauseHistory> SlaPauseHistories { get; set; }
 
     public virtual DbSet<UserAreaSubscription> UserAreaSubscriptions { get; set; }
 
@@ -788,24 +795,7 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasConstraintName("fk_message_attachment_message");
         });
 
-        modelBuilder.Entity<Channel>(entity =>
-        {
-            entity.HasKey(e => e.ChannelId).HasName("channels_pkey");
-            entity.ToTable("channels");
-
-            entity.Property(e => e.ChannelId).HasColumnName("channel_id");
-            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
-            entity.Property(e => e.ChannelName).HasMaxLength(100).HasColumnName("channel_name");
-            entity.Property(e => e.ExternalConversationId).HasMaxLength(200).HasColumnName("external_conversation_id");
-            entity.Property(e => e.ExternalMessageId).HasMaxLength(200).HasColumnName("external_message_id");
-            entity.Property(e => e.SourceUserExternalId).HasMaxLength(200).HasColumnName("source_user_external_id");
-            entity.Property(e => e.ReceivedAt).HasDefaultValueSql("now()").HasColumnName("received_at");
-
-            entity.HasOne(d => d.Feedback).WithMany(p => p.Channels)
-                .HasForeignKey(d => d.FeedbackId)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_channel_feedback");
-        });
+        
 
         modelBuilder.Entity<AnalysisResult>(entity =>
         {
@@ -929,6 +919,365 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_audit_log_user");
+        });
+
+        modelBuilder.Entity<SlaPolicy>(entity =>
+        {
+            entity.HasKey(e => e.SlaPolicyId)
+                .HasName("sla_policies_pkey");
+
+            entity.ToTable("sla_policies");
+
+            entity.Property(e => e.SlaPolicyId)
+                .HasColumnName("sla_policy_id");
+
+            entity.Property(e => e.PolicyName)
+                .HasMaxLength(200)
+                .HasColumnName("policy_name");
+
+            entity.Property(e => e.AreaId)
+                .HasColumnName("area_id");
+
+            entity.Property(e => e.CategoryId)
+                .HasColumnName("category_id");
+
+            entity.Property(e => e.Priority)
+                .HasMaxLength(20)
+                .HasColumnName("priority");
+
+            entity.Property(e => e.ResponseTimeMinutes)
+                .HasColumnName("response_time_minutes");
+
+            entity.Property(e => e.ResolutionTimeMinutes)
+                .HasColumnName("resolution_time_minutes");
+
+            entity.Property(e => e.EffectiveFrom)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("effective_from");
+
+            entity.Property(e => e.EffectiveTo)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("effective_to");
+
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+
+            entity.Property(e => e.CreatedByUserId)
+                .HasColumnName("created_by_user_id");
+
+            entity.Property(e => e.UpdatedByUserId)
+                .HasColumnName("updated_by_user_id");
+
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => new
+            {
+                e.AreaId,
+                e.CategoryId,
+                e.Priority,
+                e.IsActive
+            })
+            .HasDatabaseName("ix_sla_policies_lookup");
+
+            entity.HasOne(d => d.Area)
+                .WithMany(p => p.SlaPolicies)
+                .HasForeignKey(d => d.AreaId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_sla_policies_operating_areas");
+
+            entity.HasOne(d => d.Category)
+                .WithMany(p => p.SlaPolicies)
+                .HasForeignKey(d => d.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_sla_policies_categories");
+
+            entity.HasOne(d => d.CreatedByUser)
+                .WithMany(p => p.CreatedSlaPolicies)
+                .HasForeignKey(d => d.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_sla_policies_created_by_user");
+
+            entity.HasOne(d => d.UpdatedByUser)
+                .WithMany(p => p.UpdatedSlaPolicies)
+                .HasForeignKey(d => d.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_sla_policies_updated_by_user");
+        });
+
+        modelBuilder.Entity<FeedbackSla>(entity =>
+        {
+            entity.HasKey(e => e.FeedbackSlaId)
+                .HasName("feedback_slas_pkey");
+
+            entity.ToTable("feedback_slas");
+
+            entity.Property(e => e.FeedbackSlaId)
+                .HasColumnName("feedback_sla_id");
+
+            entity.Property(e => e.FeedbackId)
+                .HasColumnName("feedback_id");
+
+            entity.Property(e => e.SlaPolicyId)
+                .HasColumnName("sla_policy_id");
+
+            entity.Property(e => e.AreaId)
+                .HasColumnName("area_id");
+
+            entity.Property(e => e.CategoryId)
+                .HasColumnName("category_id");
+
+            entity.Property(e => e.Priority)
+                .HasMaxLength(20)
+                .HasColumnName("priority");
+
+            entity.Property(e => e.StartedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("started_at");
+
+            entity.Property(e => e.ResponseDueAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("response_due_at");
+
+            entity.Property(e => e.ResolutionDueAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("resolution_due_at");
+
+            entity.Property(e => e.RespondedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("responded_at");
+
+            entity.Property(e => e.ResolvedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("resolved_at");
+
+            entity.Property(e => e.TotalPausedMinutes)
+                .HasDefaultValue(0)
+                .HasColumnName("total_paused_minutes");
+
+            entity.Property(e => e.Status)
+                .HasMaxLength(30)
+                .HasColumnName("status");
+
+            entity.Property(e => e.ResponseStatus)
+                .HasMaxLength(30)
+                .HasColumnName("response_status");
+
+            entity.Property(e => e.ResolutionStatus)
+                .HasMaxLength(30)
+                .HasColumnName("resolution_status");
+
+            entity.Property(e => e.IsResponseBreached)
+                .HasDefaultValue(false)
+                .HasColumnName("is_response_breached");
+
+            entity.Property(e => e.IsResolutionBreached)
+                .HasDefaultValue(false)
+                .HasColumnName("is_resolution_breached");
+
+            entity.Property(e => e.IsCurrent)
+                .HasDefaultValue(true)
+                .HasColumnName("is_current");
+
+            entity.Property(e => e.StartedByUserId)
+                .HasColumnName("started_by_user_id");
+
+            entity.Property(e => e.CompletedByUserId)
+                .HasColumnName("completed_by_user_id");
+
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.FeedbackId)
+                .HasDatabaseName("ix_feedback_slas_feedback_id");
+
+            entity.HasIndex(e => new
+            {
+                e.Status,
+                e.ResponseDueAt,
+                e.ResolutionDueAt
+            })
+            .HasDatabaseName("ix_feedback_slas_monitoring");
+
+            entity.HasIndex(e => e.FeedbackId)
+                .IsUnique()
+                .HasFilter("is_current = true")
+                .HasDatabaseName("ux_feedback_slas_current_feedback");
+
+            entity.HasOne(d => d.Feedback)
+                .WithMany(p => p.FeedbackSlas)
+                .HasForeignKey(d => d.FeedbackId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_feedback_slas_feedbacks");
+
+            entity.HasOne(d => d.SlaPolicy)
+                .WithMany(p => p.FeedbackSlas)
+                .HasForeignKey(d => d.SlaPolicyId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_feedback_slas_sla_policies");
+
+            entity.HasOne(d => d.Area)
+                .WithMany(p => p.FeedbackSlas)
+                .HasForeignKey(d => d.AreaId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_feedback_slas_operating_areas");
+
+            entity.HasOne(d => d.Category)
+                .WithMany(p => p.FeedbackSlas)
+                .HasForeignKey(d => d.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_feedback_slas_categories");
+
+            entity.HasOne(d => d.StartedByUser)
+                .WithMany(p => p.StartedFeedbackSlas)
+                .HasForeignKey(d => d.StartedByUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_feedback_slas_started_by_user");
+
+            entity.HasOne(d => d.CompletedByUser)
+                .WithMany(p => p.CompletedFeedbackSlas)
+                .HasForeignKey(d => d.CompletedByUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_feedback_slas_completed_by_user");
+        });
+
+        modelBuilder.Entity<SlaEvent>(entity =>
+        {
+            entity.HasKey(e => e.SlaEventId)
+                .HasName("sla_events_pkey");
+
+            entity.ToTable("sla_events");
+
+            entity.Property(e => e.SlaEventId)
+                .HasColumnName("sla_event_id");
+
+            entity.Property(e => e.FeedbackSlaId)
+                .HasColumnName("feedback_sla_id");
+
+            entity.Property(e => e.EventType)
+                .HasMaxLength(50)
+                .HasColumnName("event_type");
+
+            entity.Property(e => e.OldStatus)
+                .HasMaxLength(30)
+                .HasColumnName("old_status");
+
+            entity.Property(e => e.NewStatus)
+                .HasMaxLength(30)
+                .HasColumnName("new_status");
+
+            entity.Property(e => e.Note)
+                .HasMaxLength(1000)
+                .HasColumnName("note");
+
+            entity.Property(e => e.TriggeredByUserId)
+                .HasColumnName("triggered_by_user_id");
+
+            entity.Property(e => e.TriggerSource)
+                .HasMaxLength(20)
+                .HasColumnName("trigger_source");
+
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+
+            entity.HasIndex(e => new
+            {
+                e.FeedbackSlaId,
+                e.CreatedAt
+            })
+            .HasDatabaseName("ix_sla_events_feedback_sla_created_at");
+
+            entity.HasOne(d => d.FeedbackSla)
+                .WithMany(p => p.SlaEvents)
+                .HasForeignKey(d => d.FeedbackSlaId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_sla_events_feedback_slas");
+
+            entity.HasOne(d => d.TriggeredByUser)
+                .WithMany(p => p.TriggeredSlaEvents)
+                .HasForeignKey(d => d.TriggeredByUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_sla_events_triggered_by_user");
+        });
+
+        modelBuilder.Entity<SlaPauseHistory>(entity =>
+        {
+            entity.HasKey(e => e.SlaPauseHistoryId)
+                .HasName("sla_pause_histories_pkey");
+
+            entity.ToTable("sla_pause_histories");
+
+            entity.Property(e => e.SlaPauseHistoryId)
+                .HasColumnName("sla_pause_history_id");
+
+            entity.Property(e => e.FeedbackSlaId)
+                .HasColumnName("feedback_sla_id");
+
+            entity.Property(e => e.ReasonCode)
+                .HasMaxLength(50)
+                .HasColumnName("reason_code");
+
+            entity.Property(e => e.ReasonNote)
+                .HasMaxLength(1000)
+                .HasColumnName("reason_note");
+
+            entity.Property(e => e.PausedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("paused_at");
+
+            entity.Property(e => e.ResumedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("resumed_at");
+
+            entity.Property(e => e.PausedMinutes)
+                .HasColumnName("paused_minutes");
+
+            entity.Property(e => e.PausedByUserId)
+                .HasColumnName("paused_by_user_id");
+
+            entity.Property(e => e.ResumedByUserId)
+                .HasColumnName("resumed_by_user_id");
+
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.FeedbackSlaId)
+                .HasDatabaseName("ix_sla_pause_histories_feedback_sla_id");
+
+            entity.HasOne(d => d.FeedbackSla)
+                .WithMany(p => p.SlaPauseHistories)
+                .HasForeignKey(d => d.FeedbackSlaId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_sla_pause_histories_feedback_slas");
+
+            entity.HasOne(d => d.PausedByUser)
+                .WithMany(p => p.PausedSlaHistories)
+                .HasForeignKey(d => d.PausedByUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_sla_pause_histories_paused_by_user");
+
+            entity.HasOne(d => d.ResumedByUser)
+                .WithMany(p => p.ResumedSlaHistories)
+                .HasForeignKey(d => d.ResumedByUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_sla_pause_histories_resumed_by_user");
         });
 
         OnModelCreatingPartial(modelBuilder);

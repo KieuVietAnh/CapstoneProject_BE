@@ -47,6 +47,12 @@ public partial class OperatingArea
 
     public virtual ICollection<ProviderContract> ProviderContracts { get; set; } = new List<ProviderContract>();
 
+    public virtual ICollection<SlaPolicy> SlaPolicies { get; set; }
+    = new List<SlaPolicy>();
+
+    public virtual ICollection<FeedbackSla> FeedbackSlas { get; set; }
+        = new List<FeedbackSla>();
+
     public virtual ICollection<StaffAreaAssignment> StaffAreaAssignments { get; set; } = new List<StaffAreaAssignment>();
 
     public virtual ICollection<UserAreaSubscription> UserAreaSubscriptions { get; set; } = new List<UserAreaSubscription>();

@@ -26,34 +26,60 @@ public class NotificationService : INotificationService
     }
 
     public async Task<NotificationDto> SendAsync(
-        Guid userId,
-        string title,
-        string message,
-        string type,
-        string? targetUrl = null)
+    Guid userId,
+    string title,
+    string message,
+    string type,
+    string? targetUrl = null)
     {
+        if (userId == Guid.Empty)
+            throw new ArgumentException(nameof(userId));
+
+        if (string.IsNullOrWhiteSpace(title))
+            throw new Exception("Title là bắt buộc.");
+
+        if (string.IsNullOrWhiteSpace(message))
+            throw new Exception("Message là bắt buộc.");
+
         var notification = new Notification
         {
             UserId = userId,
-            Title = title,
-            Message = message,
+            Title = title.Trim(),
+            Message = message.Trim(),
             Type = NotificationType.Normalize(type),
             IsRead = false,
-            TargetUrl = targetUrl,
+            TargetUrl = string.IsNullOrWhiteSpace(targetUrl)
+                ? null
+                : targetUrl.Trim(),
             CreatedAt = DateTime.UtcNow
         };
 
-        await _uow.GetRepository<Notification>().AddAsync(notification);
+        await _uow
+            .GetRepository<Notification>()
+            .AddAsync(notification);
+
         await _uow.SaveAsync();
 
         var dto = Map(notification);
-        _logger.LogInformation(
-            "Notification {NotificationId} saved for user {UserId} with type {Type}",
-            dto.NotificationId,
-            dto.UserId,
-            dto.Type);
 
-        await _realtimeSender.SendToUserAsync(userId, dto);
+        _logger.LogInformation(
+            "Notification {NotificationId} created for {UserId}",
+            dto.NotificationId,
+            dto.UserId);
+
+        try
+        {
+            await _realtimeSender.SendToUserAsync(
+                userId,
+                dto);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Realtime notification failed.");
+        }
+
         return dto;
     }
 

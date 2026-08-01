@@ -57,8 +57,6 @@ public partial class Feedback
 
     public virtual UrbanServiceCategory? Category { get; set; }
 
-    public virtual ICollection<Channel> Channels { get; set; } = new List<Channel>();
-
     public virtual ICollection<CompletionDocument> CompletionDocuments { get; set; } = new List<CompletionDocument>();
 
     public virtual ICollection<FeedbackAttachment> FeedbackAttachments { get; set; } = new List<FeedbackAttachment>();
@@ -79,6 +77,9 @@ public partial class Feedback
 
     public virtual ICollection<FeedbackSupport> FeedbackSupports { get; set; } = new List<FeedbackSupport>();
 
+    public virtual ICollection<FeedbackSla> FeedbackSlas { get; set; }
+    = new List<FeedbackSla>();
+
     public virtual ICollection<InteractionMessage> InteractionMessages { get; set; } = new List<InteractionMessage>();
 
     public virtual ICollection<Feedback> InverseParentTicket { get; set; } = new List<Feedback>();
@@ -86,4 +87,6 @@ public partial class Feedback
     public virtual Feedback? ParentTicket { get; set; }
 
     public virtual User User { get; set; } = null!;
+
+
 }

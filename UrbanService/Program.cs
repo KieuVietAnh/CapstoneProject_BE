@@ -13,6 +13,7 @@ using UrbanService.DAL.Interfaces;
 using UrbanService.DAL.UnitOfWork;
 using UrbanService.Hubs;
 using UrbanService.Middlewares;
+using UrbanService.BLL.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,6 +33,30 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IAreaAlertService, AreaAlertService>();
 builder.Services.AddScoped<IInteractionMessageService, InteractionMessageService>();
+
+builder.Services.AddScoped<
+    ISlaPolicyService,
+    SlaPolicyService>();
+
+builder.Services.AddScoped<
+    ISlaService,
+    SlaService>();
+
+builder.Services
+    .AddOptions<SlaMonitoringOptions>()
+    .Bind(
+        builder.Configuration.GetSection(
+            SlaMonitoringOptions.SectionName))
+    .Validate(
+        options => options.IntervalMinutes >= 1,
+        "SlaMonitoring:IntervalMinutes phải lớn hơn hoặc bằng 1.")
+    .Validate(
+        options => options.InitialDelaySeconds >= 0,
+        "SlaMonitoring:InitialDelaySeconds không được nhỏ hơn 0.")
+    .ValidateOnStart();
+
+builder.Services.AddHostedService<
+    SlaMonitoringBackgroundService>();
 
 builder.Services.AddSingleton<IAiFeedbackReviewQueue, AiFeedbackReviewQueue>();
 
