@@ -25,6 +25,12 @@ public partial class UrbanServiceCategory
 
     public virtual ICollection<CoordinatorCoverage> CoordinatorCoverages { get; set; } = new List<CoordinatorCoverage>();
 
+    public virtual ICollection<SlaPolicy> SlaPolicies { get; set; }
+    = new List<SlaPolicy>();
+
+    public virtual ICollection<FeedbackSla> FeedbackSlas { get; set; }
+        = new List<FeedbackSla>();
+
     public virtual ICollection<Feedback> Feedbacks { get; set; } = new List<Feedback>();
 
     public virtual ICollection<ProviderContract> ProviderContracts { get; set; } = new List<ProviderContract>();

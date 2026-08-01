@@ -76,4 +76,25 @@ public partial class User
     public virtual ICollection<StaffAreaAssignment> StaffAreaAssignmentUsers { get; set; } = new List<StaffAreaAssignment>();
 
     public virtual ICollection<UserAreaSubscription> UserAreaSubscriptions { get; set; } = new List<UserAreaSubscription>();
+
+    public virtual ICollection<SlaPolicy> CreatedSlaPolicies { get; set; }
+    = new List<SlaPolicy>();
+
+    public virtual ICollection<SlaPolicy> UpdatedSlaPolicies { get; set; }
+        = new List<SlaPolicy>();
+
+    public virtual ICollection<FeedbackSla> StartedFeedbackSlas { get; set; }
+        = new List<FeedbackSla>();
+
+    public virtual ICollection<FeedbackSla> CompletedFeedbackSlas { get; set; }
+        = new List<FeedbackSla>();
+
+    public virtual ICollection<SlaEvent> TriggeredSlaEvents { get; set; }
+        = new List<SlaEvent>();
+
+    public virtual ICollection<SlaPauseHistory> PausedSlaHistories { get; set; }
+        = new List<SlaPauseHistory>();
+
+    public virtual ICollection<SlaPauseHistory> ResumedSlaHistories { get; set; }
+        = new List<SlaPauseHistory>();
 }
