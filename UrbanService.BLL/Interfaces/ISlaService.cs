@@ -67,9 +67,9 @@ public interface ISlaService
     /// Chọn lại policy và tính lại deadline của SLA.
     /// </summary>
     Task<FeedbackSlaDto> RecalculateAsync(
-        Guid feedbackId,
-        Guid recalculatedByUserId,
-        RecalculateSlaRequest request);
+    Guid feedbackId,
+    Guid recalculatedByUserId,
+    RecalculateSlaRequest request);
 
     /// <summary>
     /// Kiểm tra và cập nhật trạng thái vi phạm của một SLA.
@@ -81,4 +81,11 @@ public interface ISlaService
     /// Trả về số SLA vừa được cập nhật vi phạm.
     /// </summary>
     Task<int> CheckAllRunningSlasAsync();
+
+    Task<SlaStatusDto> GetStatusAsync(
+    Guid feedbackId);
+
+
+    Task<List<SlaTimelineDto>> GetTimelineAsync(
+        Guid feedbackId);
 }
