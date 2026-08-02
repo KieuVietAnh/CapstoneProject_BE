@@ -7,6 +7,7 @@ namespace UrbanService.DAL.Interfaces
         void Save();
         Task SaveAsync();
         void BeginTransaction();
+        Task AcquireTransactionAdvisoryLockAsync(long lockKey);
         void CommitTransaction();
         void RollBack();
     }

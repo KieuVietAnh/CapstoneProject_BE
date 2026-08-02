@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using UrbanService.DAL.Data;
 using UrbanService.DAL.Interfaces;
@@ -53,7 +54,25 @@ namespace UrbanService.DAL.UnitOfWork
         // Bắt đầu giao dịch
         public void BeginTransaction()
         {
+            if (_transaction != null)
+            {
+                throw new InvalidOperationException("A transaction is already active for this unit of work.");
+            }
+
             _transaction = _context.Database.BeginTransaction();
+        }
+
+        public async Task AcquireTransactionAdvisoryLockAsync(long lockKey)
+        {
+            if (_transaction == null)
+            {
+                throw new InvalidOperationException(
+                    "A transaction must be active before acquiring a transaction advisory lock.");
+            }
+
+            await _context.Database.ExecuteSqlRawAsync(
+                "SELECT pg_advisory_xact_lock({0});",
+                lockKey);
         }
 
         // Commit giao dịch
@@ -72,9 +91,16 @@ namespace UrbanService.DAL.UnitOfWork
         {
             if (_transaction != null)
             {
-                _transaction.Rollback();
-                _transaction.Dispose();
-                _transaction = null;
+                try
+                {
+                    _transaction.Rollback();
+                }
+                finally
+                {
+                    _transaction.Dispose();
+                    _transaction = null;
+                    _context.ChangeTracker.Clear();
+                }
             }
         }
 

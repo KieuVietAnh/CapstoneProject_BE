@@ -142,6 +142,8 @@ public class FeedbackListItemDto
     public FeedbackPotentialDuplicateDto? PotentialDuplicate { get; set; }
 
     public Guid? ParentTicketId { get; set; }
+
+    public bool IsMasterTicket { get; set; }
 }
 
 public class FeedbackDetailDto : FeedbackListItemDto

@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UrbanService.DAL", "UrbanSe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UrbanService.BLL", "UrbanService.BLL\UrbanService.BLL.csproj", "{A0BA4689-86A3-4027-8886-6FD4019D499A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UrbanService.BLL.Tests", "UrbanService.BLL.Tests\UrbanService.BLL.Tests.csproj", "{69092BE3-E3C4-4E3C-B213-A913132F627B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{A0BA4689-86A3-4027-8886-6FD4019D499A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A0BA4689-86A3-4027-8886-6FD4019D499A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A0BA4689-86A3-4027-8886-6FD4019D499A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{69092BE3-E3C4-4E3C-B213-A913132F627B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{69092BE3-E3C4-4E3C-B213-A913132F627B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{69092BE3-E3C4-4E3C-B213-A913132F627B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{69092BE3-E3C4-4E3C-B213-A913132F627B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

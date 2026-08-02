@@ -31,6 +31,25 @@ public static class FeedbackStatus
         Cancelled
     ];
 
+    public static readonly IReadOnlySet<string> EligibleDuplicateMasterStatuses =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            Verified,
+            Assigned,
+            InProgress,
+            Resolved,
+            SubmittedForApproval,
+            Approved,
+            NeedRework,
+            Closed
+        };
+
+    public static bool IsEligibleDuplicateMasterStatus(string? status)
+    {
+        return !string.IsNullOrWhiteSpace(status) &&
+            EligibleDuplicateMasterStatuses.Contains(status);
+    }
+
     public static string Normalize(string status)
     {
         var normalized = Allowed.FirstOrDefault(
