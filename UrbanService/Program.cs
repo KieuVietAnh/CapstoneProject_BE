@@ -33,6 +33,9 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IAreaAlertService, AreaAlertService>();
 builder.Services.AddScoped<IInteractionMessageService, InteractionMessageService>();
+builder.Services.AddScoped<
+    ISlaDashboardService,
+    SlaDashboardService>();
 
 builder.Services.AddScoped<
     ISlaPolicyService,

@@ -1,8 +1,10 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using System.Net;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs.SLA;
+using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
 using UrbanService.BLL.Options;
 using UrbanService.DAL.Entities;
@@ -16,18 +18,207 @@ public class SlaService : ISlaService
     private readonly INotificationService _notificationService;
     private readonly ILogger<SlaService> _logger;
     private readonly SlaMonitoringOptions _slaOptions;
+    private readonly IEmailSender _emailSender;
 
     public SlaService(
     IUnitOfWork unitOfWork,
     INotificationService notificationService,
+    IEmailSender emailSender,
     ILogger<SlaService> logger,
     IOptions<SlaMonitoringOptions> slaOptions)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService;
+        _emailSender = emailSender;
         _logger = logger;
         _slaOptions = slaOptions.Value;
     }
+
+
+    public async Task<List<SlaTimelineDto>> GetTimelineAsync(
+    Guid feedbackId)
+    {
+        var sla = await _unitOfWork
+            .GetRepository<FeedbackSla>()
+            .Entities
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x =>
+                x.FeedbackId == feedbackId &&
+                x.IsCurrent);
+
+
+        if (sla == null)
+        {
+            throw new KeyNotFoundException(
+                "Feedback chưa có SLA.");
+        }
+
+
+
+        return await _unitOfWork
+            .GetRepository<SlaEvent>()
+            .Entities
+            .AsNoTracking()
+            .Where(x =>
+                x.FeedbackSlaId ==
+                sla.FeedbackSlaId)
+            .OrderByDescending(x =>
+                x.CreatedAt)
+            .Select(x =>
+                new SlaTimelineDto
+                {
+                    SlaEventId =
+                        x.SlaEventId,
+
+                    EventType =
+                        x.EventType,
+
+                    OldStatus =
+                        x.OldStatus,
+
+                    NewStatus =
+                        x.NewStatus,
+
+                    Note =
+                        x.Note,
+
+                    TriggerSource =
+                        x.TriggerSource,
+
+                    CreatedAt =
+                        x.CreatedAt
+                })
+            .ToListAsync();
+    }
+
+    public async Task<SlaStatusDto> GetStatusAsync(
+    Guid feedbackId)
+    {
+        var sla = await _unitOfWork
+            .GetRepository<FeedbackSla>()
+            .Entities
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x =>
+                x.FeedbackId == feedbackId &&
+                x.IsCurrent);
+
+
+        if (sla == null)
+        {
+            throw new KeyNotFoundException(
+                "Feedback chưa có SLA.");
+        }
+
+
+        var now = DateTime.UtcNow;
+
+
+        var responseTotal =
+            (sla.ResponseDueAt - sla.StartedAt)
+            .TotalMinutes;
+
+
+        var resolutionTotal =
+            (sla.ResolutionDueAt - sla.StartedAt)
+            .TotalMinutes;
+
+
+
+        var responseUsed =
+    (now - sla.StartedAt)
+    .TotalMinutes
+    - sla.TotalPausedMinutes;
+
+
+        var resolutionUsed =
+            (now - sla.StartedAt)
+            .TotalMinutes
+            - sla.TotalPausedMinutes;
+
+
+
+        return new SlaStatusDto
+        {
+            FeedbackId = sla.FeedbackId,
+
+            FeedbackSlaId =
+                sla.FeedbackSlaId,
+
+
+            Status =
+                sla.Status,
+
+
+            ResponseStatus =
+                sla.ResponseStatus,
+
+
+            ResolutionStatus =
+                sla.ResolutionStatus,
+
+
+            StartedAt =
+                sla.StartedAt,
+
+
+            ResponseDueAt =
+                sla.ResponseDueAt,
+
+
+            ResolutionDueAt =
+                sla.ResolutionDueAt,
+
+
+
+            ResponseRemainingMinutes =
+                Math.Max(
+                    0,
+                    (int)
+                    (sla.ResponseDueAt - now)
+                    .TotalMinutes),
+
+
+
+            ResolutionRemainingMinutes =
+                Math.Max(
+                    0,
+                    (int)
+                    (sla.ResolutionDueAt - now)
+                    .TotalMinutes),
+
+
+
+            ResponseProgressPercent =
+                CalculatePercent(
+                    responseUsed,
+                    responseTotal),
+
+
+
+            ResolutionProgressPercent =
+                CalculatePercent(
+                    resolutionUsed,
+                    resolutionTotal),
+
+
+
+            IsResponseWarning =
+                sla.ResponseStatus == "Warning",
+
+
+            IsResolutionWarning =
+                sla.ResolutionStatus == "Warning",
+
+
+            IsResponseBreached =
+                sla.IsResponseBreached,
+
+
+            IsResolutionBreached =
+                sla.IsResolutionBreached
+        };
+    }
+
     public async Task<FeedbackSlaDto> StartAsync(
         Guid feedbackId,
         Guid startedByUserId)
@@ -165,7 +356,7 @@ public class SlaService : ISlaService
                     $"SLA được bắt đầu theo policy " +
                     $"'{policy.PolicyName}'.",
                 triggeredByUserId: startedByUserId,
-                triggerSource: SlaTriggerSource.User);
+                triggerSource: SlaTriggerSource.Staff);
 
             await _unitOfWork.SaveAsync();
 
@@ -302,7 +493,7 @@ public class SlaService : ISlaService
             entity.Status,
             note ?? "Đã ghi nhận phản hồi đầu tiên.",
             triggeredByUserId,
-            SlaTriggerSource.User);
+            SlaTriggerSource.Manager);
 
         await _unitOfWork.SaveAsync();
 
@@ -389,7 +580,7 @@ public class SlaService : ISlaService
             request.ReasonNote ??
             $"Tạm dừng SLA: {pauseHistory.ReasonCode}.",
             pausedByUserId,
-            SlaTriggerSource.User);
+            SlaTriggerSource.Manager);
 
         await _unitOfWork.SaveAsync();
 
@@ -482,7 +673,7 @@ public class SlaService : ISlaService
             request.Note ??
             $"Tiếp tục SLA sau {pausedMinutes} phút tạm dừng.",
             resumedByUserId,
-            SlaTriggerSource.User);
+            SlaTriggerSource.Manager);
 
         await _unitOfWork.SaveAsync();
 
@@ -565,7 +756,7 @@ public class SlaService : ISlaService
             SlaStatus.Completed,
             request.Note ?? "SLA đã hoàn thành.",
             completedByUserId,
-            SlaTriggerSource.User);
+            SlaTriggerSource.Manager);
 
         await _unitOfWork.SaveAsync();
 
@@ -611,7 +802,7 @@ public class SlaService : ISlaService
             SlaStatus.Cancelled,
             note ?? "SLA đã bị hủy.",
             cancelledByUserId,
-            SlaTriggerSource.User);
+            SlaTriggerSource.Manager);
 
         await _unitOfWork.SaveAsync();
 
@@ -620,9 +811,9 @@ public class SlaService : ISlaService
     }
 
     public async Task<FeedbackSlaDto> RecalculateAsync(
-        Guid feedbackId,
-        Guid recalculatedByUserId,
-        RecalculateSlaRequest request)
+    Guid feedbackId,
+    Guid recalculatedByUserId,
+    RecalculateSlaRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -632,8 +823,10 @@ public class SlaService : ISlaService
         await EnsureUserExistsAsync(
             recalculatedByUserId);
 
+
         var entity =
             await GetCurrentEntityAsync(feedbackId);
+
 
         if (entity.Status == SlaStatus.Completed ||
             entity.Status == SlaStatus.Cancelled)
@@ -642,34 +835,89 @@ public class SlaService : ISlaService
                 "Không thể tính lại SLA đã hoàn thành hoặc bị hủy.");
         }
 
+
         if (entity.Status == SlaStatus.Paused)
         {
             throw new InvalidOperationException(
                 "Cần tiếp tục SLA trước khi tính lại deadline.");
         }
 
-        var policy = await FindApplicablePolicyAsync(
-            entity.AreaId,
-            entity.CategoryId,
-            entity.Priority,
-            DateTime.UtcNow);
 
-        var oldPolicyId = entity.SlaPolicyId;
+        /*
+         * Lấy Category và Priority mới.
+         * Nếu request không truyền thì giữ snapshot hiện tại.
+         */
+        var newCategoryId =
+            request.CategoryId
+            ?? entity.CategoryId;
+
+
+        var newPriority =
+            request.Priority
+            ?? entity.Priority;
+
+
+
+        /*
+         * Tìm SLA Policy mới theo dữ liệu mới.
+         */
+        var policy =
+            await FindApplicablePolicyAsync(
+                entity.AreaId,
+                newCategoryId,
+                newPriority,
+                DateTime.UtcNow);
+
+
+
+        var oldPolicyId =
+            entity.SlaPolicyId;
+
+
+        var oldCategoryId =
+            entity.CategoryId;
+
+
+        var oldPriority =
+            entity.Priority;
+
+
         var oldResponseDueAt =
             entity.ResponseDueAt;
+
 
         var oldResolutionDueAt =
             entity.ResolutionDueAt;
 
+
+
+        /*
+         * Update snapshot SLA
+         */
         entity.SlaPolicyId =
             policy.SlaPolicyId;
 
+
+        entity.CategoryId =
+            newCategoryId;
+
+
+        entity.Priority =
+            newPriority;
+
+
+
+        /*
+         * Tính lại deadline
+         */
         entity.ResponseDueAt =
             entity.StartedAt
                 .AddMinutes(
                     policy.ResponseTimeMinutes)
                 .AddMinutes(
                     entity.TotalPausedMinutes);
+
+
 
         entity.ResolutionDueAt =
             entity.StartedAt
@@ -678,8 +926,16 @@ public class SlaService : ISlaService
                 .AddMinutes(
                     entity.TotalPausedMinutes);
 
-        var now = DateTime.UtcNow;
 
+
+        var now =
+            DateTime.UtcNow;
+
+
+
+        /*
+         * Update Response SLA status
+         */
         if (!entity.RespondedAt.HasValue)
         {
             entity.ResponseStatus =
@@ -690,16 +946,22 @@ public class SlaService : ISlaService
         else
         {
             entity.ResponseStatus =
-                entity.RespondedAt.Value <=
-                entity.ResponseDueAt
+                entity.RespondedAt.Value <= entity.ResponseDueAt
                     ? SlaTargetStatus.Met
                     : SlaTargetStatus.Breached;
         }
+
+
 
         entity.IsResponseBreached =
             entity.ResponseStatus ==
             SlaTargetStatus.Breached;
 
+
+
+        /*
+         * Update Resolution SLA status
+         */
         if (!entity.ResolvedAt.HasValue)
         {
             entity.ResolutionStatus =
@@ -710,26 +972,35 @@ public class SlaService : ISlaService
         else
         {
             entity.ResolutionStatus =
-                entity.ResolvedAt.Value <=
-                entity.ResolutionDueAt
+                entity.ResolvedAt.Value <= entity.ResolutionDueAt
                     ? SlaTargetStatus.Met
                     : SlaTargetStatus.Breached;
         }
+
+
 
         entity.IsResolutionBreached =
             entity.ResolutionStatus ==
             SlaTargetStatus.Breached;
 
-        entity.UpdatedAt = now;
+
+
+        entity.UpdatedAt =
+            now;
+
+
 
         var eventNote =
-            request.Note ??
-            $"Tính lại SLA. Policy: {oldPolicyId} → " +
-            $"{policy.SlaPolicyId}. " +
-            $"ResponseDueAt: {oldResponseDueAt:O} → " +
-            $"{entity.ResponseDueAt:O}. " +
-            $"ResolutionDueAt: {oldResolutionDueAt:O} → " +
-            $"{entity.ResolutionDueAt:O}.";
+            request.Note
+            ??
+            $"Tính lại SLA. " +
+            $"Policy: {oldPolicyId} → {policy.SlaPolicyId}. " +
+            $"Category: {oldCategoryId} → {newCategoryId}. " +
+            $"Priority: {oldPriority} → {newPriority}. " +
+            $"ResponseDueAt: {oldResponseDueAt:O} → {entity.ResponseDueAt:O}. " +
+            $"ResolutionDueAt: {oldResolutionDueAt:O} → {entity.ResolutionDueAt:O}.";
+
+
 
         await AddEventAsync(
             entity.FeedbackSlaId,
@@ -738,23 +1009,30 @@ public class SlaService : ISlaService
             entity.Status,
             eventNote,
             recalculatedByUserId,
-            SlaTriggerSource.User);
+            SlaTriggerSource.Staff);
+
+
 
         await _unitOfWork.SaveAsync();
+
+
 
         return await GetByIdAsync(
             entity.FeedbackSlaId);
     }
 
     public async Task CheckViolationAsync(
-    long feedbackSlaId)
+        long feedbackSlaId)
     {
         ValidateFeedbackSlaId(feedbackSlaId);
 
         var entity = await _unitOfWork
             .GetRepository<FeedbackSla>()
             .Entities
+            .AsSplitQuery()
             .Include(x => x.Feedback)
+                .ThenInclude(x => x.FeedbackProviderReports)
+                    .ThenInclude(x => x.Coordinator)
             .FirstOrDefaultAsync(x =>
                 x.FeedbackSlaId == feedbackSlaId);
 
@@ -770,28 +1048,19 @@ public class SlaService : ISlaService
             return;
         }
 
-        var wasResponseBreached =
-            entity.IsResponseBreached;
+        var result =
+            await ApplyMonitoringCheckAsync(entity);
 
-        var wasResolutionBreached =
-            entity.IsResolutionBreached;
-
-        var hasChanged =
-            await ApplyViolationCheckAsync(entity);
-
-        if (!hasChanged)
+        if (!result.HasChanges)
         {
             return;
         }
 
         await _unitOfWork.SaveAsync();
 
-        await SendBreachNotificationsSafeAsync(
+        await SendMonitoringNotificationsAsync(
             entity,
-            !wasResponseBreached &&
-            entity.IsResponseBreached,
-            !wasResolutionBreached &&
-            entity.IsResolutionBreached);
+            result);
     }
 
     public async Task<int> CheckAllRunningSlasAsync()
@@ -799,7 +1068,10 @@ public class SlaService : ISlaService
         var runningSlas = await _unitOfWork
             .GetRepository<FeedbackSla>()
             .Entities
+            .AsSplitQuery()
             .Include(x => x.Feedback)
+                .ThenInclude(x => x.FeedbackProviderReports)
+                    .ThenInclude(x => x.Coordinator)
             .Where(x =>
                 x.IsCurrent &&
                 x.Status == SlaStatus.Running)
@@ -817,35 +1089,27 @@ public class SlaService : ISlaService
 
         foreach (var entity in runningSlas)
         {
-            var wasResponseBreached =
-                entity.IsResponseBreached;
-
-            var wasResolutionBreached =
-                entity.IsResolutionBreached;
-
             try
             {
-                var hasChanged =
-                    await ApplyViolationCheckAsync(entity);
+                var result =
+                    await ApplyMonitoringCheckAsync(entity);
 
-                if (!hasChanged)
+                if (!result.HasChanges)
                 {
                     continue;
                 }
 
                 /*
-                 * Lưu SLA và event của SLA hiện tại trước.
+                 * Lưu trạng thái SLA và SlaEvent trước.
+                 * Chỉ gửi email/notification sau khi SaveAsync thành công.
                  */
                 await _unitOfWork.SaveAsync();
 
                 updatedCount++;
 
-                await SendBreachNotificationsSafeAsync(
+                await SendMonitoringNotificationsAsync(
                     entity,
-                    !wasResponseBreached &&
-                    entity.IsResponseBreached,
-                    !wasResolutionBreached &&
-                    entity.IsResolutionBreached);
+                    result);
             }
             catch (Exception ex)
             {
@@ -853,41 +1117,121 @@ public class SlaService : ISlaService
                     ex,
                     "Không thể kiểm tra SLA {FeedbackSlaId}.",
                     entity.FeedbackSlaId);
-
-                /*
-                 * Không throw để worker vẫn kiểm tra SLA tiếp theo.
-                 *
-                 * Tuy nhiên nếu UnitOfWork của bạn có ChangeTracker
-                 * thì phương án tốt nhất về sau là tạo scope riêng
-                 * cho từng SLA.
-                 */
             }
         }
 
         _logger.LogInformation(
-            "Đã cập nhật {UpdatedCount} SLA vi phạm.",
+            "Đã cập nhật {UpdatedCount} SLA có cảnh báo hoặc vi phạm.",
             updatedCount);
 
         return updatedCount;
     }
 
-    private async Task<bool> ApplyViolationCheckAsync(
-    FeedbackSla entity)
+    private async Task<SlaMonitoringCheckResult>
+        ApplyMonitoringCheckAsync(
+            FeedbackSla entity)
     {
         var now = DateTime.UtcNow;
-        var hasChanged = false;
 
-        var warningChanged =
-        await CheckWarningAsync(entity);
+        var result =
+            new SlaMonitoringCheckResult();
 
+        var thresholdPercent = Math.Clamp(
+            _slaOptions.WarningThresholdPercent,
+            1,
+            99);
 
-        if (warningChanged)
+        /*
+         * RESPONSE WARNING
+         *
+         * WarningThresholdPercent = 30 nghĩa là cảnh báo
+         * khi SLA chỉ còn khoảng 30% tổng thời gian phản hồi.
+         */
+        if (!entity.RespondedAt.HasValue &&
+            !entity.IsResponseBreached &&
+            now <= entity.ResponseDueAt)
         {
-            hasChanged = true;
+            var totalResponseMinutes =
+                (entity.ResponseDueAt - entity.StartedAt)
+                .TotalMinutes;
+
+            if (totalResponseMinutes > 0)
+            {
+                var responseWarningAt =
+                    entity.StartedAt.AddMinutes(
+                        totalResponseMinutes *
+                        (100 - thresholdPercent) / 100d);
+
+                var hasResponseWarning =
+                    await HasSlaEventAsync(
+                        entity.FeedbackSlaId,
+                        SlaEventType.ResponseWarning);
+
+                if (now >= responseWarningAt &&
+    !hasResponseWarning)
+                {
+                    entity.UpdatedAt = now;
+
+                    await AddEventAsync(
+                        entity.FeedbackSlaId,
+                        SlaEventType.ResponseWarning,
+                        entity.Status,
+                        entity.Status,
+                        $"SLA phản hồi chỉ còn khoảng " +
+                        $"{thresholdPercent}% thời gian.",
+                        null,
+                        SlaTriggerSource.System);
+
+                    result.ResponseWarningCreated = true;
+                }
+            }
         }
 
         /*
-         * Quá hạn phản hồi đầu tiên.
+         * RESOLUTION WARNING
+         */
+        if (!entity.ResolvedAt.HasValue &&
+            !entity.IsResolutionBreached &&
+            now <= entity.ResolutionDueAt)
+        {
+            var totalResolutionMinutes =
+                (entity.ResolutionDueAt - entity.StartedAt)
+                .TotalMinutes;
+
+            if (totalResolutionMinutes > 0)
+            {
+                var resolutionWarningAt =
+                    entity.StartedAt.AddMinutes(
+                        totalResolutionMinutes *
+                        (100 - thresholdPercent) / 100d);
+
+                var hasResolutionWarning =
+                    await HasSlaEventAsync(
+                        entity.FeedbackSlaId,
+                        SlaEventType.ResolutionWarning);
+
+                if (now >= resolutionWarningAt &&
+    !hasResolutionWarning)
+                {
+                    entity.UpdatedAt = now;
+
+                    await AddEventAsync(
+                        entity.FeedbackSlaId,
+                        SlaEventType.ResolutionWarning,
+                        entity.Status,
+                        entity.Status,
+                        $"SLA hoàn thành xử lý chỉ còn khoảng " +
+                        $"{thresholdPercent}% thời gian.",
+                        null,
+                        SlaTriggerSource.System);
+
+                    result.ResolutionWarningCreated = true;
+                }
+            }
+        }
+
+        /*
+         * RESPONSE BREACH
          */
         if (!entity.RespondedAt.HasValue &&
             !entity.IsResponseBreached &&
@@ -908,7 +1252,7 @@ public class SlaService : ISlaService
                 null,
                 SlaTriggerSource.System);
 
-            hasChanged = true;
+            result.ResponseJustBreached = true;
 
             _logger.LogWarning(
                 "SLA {FeedbackSlaId} của feedback {FeedbackId} đã quá hạn phản hồi.",
@@ -917,7 +1261,7 @@ public class SlaService : ISlaService
         }
 
         /*
-         * Quá hạn hoàn thành xử lý.
+         * RESOLUTION BREACH
          */
         if (!entity.ResolvedAt.HasValue &&
             !entity.IsResolutionBreached &&
@@ -938,7 +1282,7 @@ public class SlaService : ISlaService
                 null,
                 SlaTriggerSource.System);
 
-            hasChanged = true;
+            result.ResolutionJustBreached = true;
 
             _logger.LogWarning(
                 "SLA {FeedbackSlaId} của feedback {FeedbackId} đã quá hạn xử lý.",
@@ -946,13 +1290,187 @@ public class SlaService : ISlaService
                 entity.FeedbackId);
         }
 
-        return hasChanged;
+        return result;
+    }
+
+    private async Task SendMonitoringNotificationsAsync(
+        FeedbackSla entity,
+        SlaMonitoringCheckResult result)
+    {
+        if (result.ResponseWarningCreated)
+        {
+            await SendWarningEmailToProviderAsync(
+                entity,
+                SlaEventType.ResponseWarning);
+        }
+
+        if (result.ResolutionWarningCreated)
+        {
+            await SendWarningEmailToProviderAsync(
+                entity,
+                SlaEventType.ResolutionWarning);
+        }
+
+        await SendBreachNotificationsSafeAsync(
+            entity,
+            result.ResponseJustBreached,
+            result.ResolutionJustBreached);
+    }
+
+    private async Task<bool> HasSlaEventAsync(
+        long feedbackSlaId,
+        string eventType)
+    {
+        return await _unitOfWork
+            .GetRepository<SlaEvent>()
+            .Entities
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.FeedbackSlaId == feedbackSlaId &&
+                x.EventType == eventType);
+    }
+
+    private async Task SendWarningEmailToProviderAsync(
+        FeedbackSla entity,
+        string warningType)
+    {
+        if (entity.Feedback == null)
+        {
+            _logger.LogWarning(
+                "Không thể gửi SLA warning email vì chưa load feedback. SLA: {FeedbackSlaId}.",
+                entity.FeedbackSlaId);
+
+            return;
+        }
+
+        /*
+         * FeedbackProviderReport mới nhất được xem là assignment
+         * provider hiện tại của feedback.
+         */
+        var providerReport = entity.Feedback
+            .FeedbackProviderReports
+            .Where(x =>
+                x.Coordinator != null &&
+                x.Coordinator.IsActive)
+            .OrderByDescending(x => x.ReportedAt)
+            .ThenByDescending(x => x.ProviderReportId)
+            .FirstOrDefault();
+
+        if (providerReport == null)
+        {
+            _logger.LogWarning(
+                "Feedback {FeedbackId} chưa được gán cho provider coordinator.",
+                entity.FeedbackId);
+
+            return;
+        }
+
+        var coordinator =
+            providerReport.Coordinator;
+
+        if (string.IsNullOrWhiteSpace(
+                coordinator.Email))
+        {
+            _logger.LogWarning(
+                "Provider coordinator {CoordinatorId} của feedback {FeedbackId} chưa có email.",
+                coordinator.CoordinatorId,
+                entity.FeedbackId);
+
+            return;
+        }
+
+        var isResponseWarning =
+            warningType ==
+            SlaEventType.ResponseWarning;
+
+        var deadlineUtc =
+            isResponseWarning
+                ? entity.ResponseDueAt
+                : entity.ResolutionDueAt;
+
+        var warningLabel =
+            isResponseWarning
+                ? "phản hồi lần đầu"
+                : "hoàn thành xử lý";
+
+        var subject =
+            isResponseWarning
+                ? "[UrbanService] Cảnh báo yêu cầu sắp hết hạn phản hồi SLA"
+                : "[UrbanService] Cảnh báo yêu cầu sắp hết hạn xử lý SLA";
+
+        var htmlBody =
+            BuildSlaWarningEmailHtml(
+                coordinatorName:
+                    WebUtility.HtmlEncode(
+                        coordinator.CoordinatorName),
+                providerName:
+                    WebUtility.HtmlEncode(
+                        coordinator.ProviderName),
+                feedbackId:
+                    entity.FeedbackId.ToString(),
+                feedbackTitle:
+                    WebUtility.HtmlEncode(
+                        entity.Feedback.Title),
+                locationText:
+                    WebUtility.HtmlEncode(
+                        entity.Feedback.LocationText),
+                priority:
+                    WebUtility.HtmlEncode(
+                        entity.Priority),
+                reportStatus:
+                    WebUtility.HtmlEncode(
+                        providerReport.ReportStatus),
+                warningLabel:
+                    WebUtility.HtmlEncode(
+                        warningLabel),
+                deadlineDisplay:
+                    FormatVietnamDateTime(
+                        deadlineUtc),
+                warningThresholdPercent:
+                    Math.Clamp(
+                        _slaOptions.WarningThresholdPercent,
+                        1,
+                        99));
+
+        try
+        {
+            await _emailSender.SendAsync(
+                new EmailMessageDto
+                {
+                    To =
+                    [
+                        coordinator.Email.Trim()
+                    ],
+                    Subject = subject,
+                    Body = htmlBody,
+                    IsHtml = true
+                });
+
+            _logger.LogInformation(
+                "Đã gửi {WarningType} email đến coordinator {CoordinatorId} cho feedback {FeedbackId}.",
+                warningType,
+                coordinator.CoordinatorId,
+                entity.FeedbackId);
+        }
+        catch (Exception ex)
+        {
+            /*
+             * Email lỗi không được làm worker dừng.
+             */
+            _logger.LogError(
+                ex,
+                "Không thể gửi {WarningType} email đến coordinator {CoordinatorId}, email {Email}, feedback {FeedbackId}.",
+                warningType,
+                coordinator.CoordinatorId,
+                coordinator.Email,
+                entity.FeedbackId);
+        }
     }
 
     private async Task SendBreachNotificationsSafeAsync(
-    FeedbackSla entity,
-    bool responseJustBreached,
-    bool resolutionJustBreached)
+        FeedbackSla entity,
+        bool responseJustBreached,
+        bool resolutionJustBreached)
     {
         if (!responseJustBreached &&
             !resolutionJustBreached)
@@ -963,70 +1481,664 @@ public class SlaService : ISlaService
         if (entity.Feedback == null)
         {
             _logger.LogWarning(
-                "Không thể gửi thông báo cho SLA {FeedbackSlaId} vì chưa load Feedback.",
+                "Không thể gửi email vi phạm SLA vì chưa load feedback. SLA: {FeedbackSlaId}.",
                 entity.FeedbackSlaId);
 
             return;
         }
 
-        if (entity.Feedback.UserId == Guid.Empty)
+        /*
+         * FeedbackProviderReport mới nhất được xem là assignment
+         * provider hiện tại của feedback.
+         */
+        var providerReport = entity.Feedback
+            .FeedbackProviderReports
+            .Where(x =>
+                x.Coordinator != null &&
+                x.Coordinator.IsActive)
+            .OrderByDescending(x => x.ReportedAt)
+            .ThenByDescending(x => x.ProviderReportId)
+            .FirstOrDefault();
+
+        if (providerReport == null)
         {
             _logger.LogWarning(
-                "Không thể gửi thông báo cho SLA {FeedbackSlaId} vì UserId không hợp lệ.",
-                entity.FeedbackSlaId);
+                "Feedback {FeedbackId} chưa có provider coordinator để nhận email vi phạm SLA.",
+                entity.FeedbackId);
 
             return;
         }
 
-        var feedbackTitle =
-            string.IsNullOrWhiteSpace(entity.Feedback.Title)
-                ? "Phản ánh của bạn"
-                : entity.Feedback.Title;
+        var coordinator = providerReport.Coordinator;
 
-        var targetUrl =
-            $"/feedbacks/{entity.FeedbackId}";
+        if (string.IsNullOrWhiteSpace(coordinator.Email))
+        {
+            _logger.LogWarning(
+                "Provider coordinator {CoordinatorId} của feedback {FeedbackId} chưa có email.",
+                coordinator.CoordinatorId,
+                entity.FeedbackId);
+
+            return;
+        }
 
         if (responseJustBreached)
         {
-            try
-            {
-                await _notificationService.SendAsync(
-                    entity.Feedback.UserId,
-                    "Phản ánh đang chậm phản hồi",
-                    $"Phản ánh \"{feedbackTitle}\" đã vượt quá thời hạn phản hồi dự kiến. " +
-                    "Hệ thống đã ghi nhận và đang tiếp tục theo dõi.",
-                    SlaEventType.ResponseBreached,
-                    targetUrl);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(
-                    ex,
-                    "Không thể gửi thông báo quá hạn phản hồi cho SLA {FeedbackSlaId}.",
-                    entity.FeedbackSlaId);
-            }
+            await SendBreachEmailToProviderAsync(
+                entity,
+                providerReport,
+                SlaEventType.ResponseBreached);
         }
 
         if (resolutionJustBreached)
         {
-            try
-            {
-                await _notificationService.SendAsync(
-                    entity.Feedback.UserId,
-                    "Phản ánh đang chậm xử lý",
-                    $"Phản ánh \"{feedbackTitle}\" đã vượt quá thời hạn hoàn thành xử lý dự kiến. " +
-                    "Hệ thống đã ghi nhận và đang tiếp tục theo dõi.",
-                    SlaEventType.ResolutionBreached,
-                    targetUrl);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(
-                    ex,
-                    "Không thể gửi thông báo quá hạn xử lý cho SLA {FeedbackSlaId}.",
-                    entity.FeedbackSlaId);
-            }
+            await SendBreachEmailToProviderAsync(
+                entity,
+                providerReport,
+                SlaEventType.ResolutionBreached);
         }
+    }
+
+    private async Task SendBreachEmailToProviderAsync(
+        FeedbackSla entity,
+        FeedbackProviderReport providerReport,
+        string breachType)
+    {
+        var coordinator = providerReport.Coordinator;
+
+        if (string.IsNullOrWhiteSpace(coordinator.Email))
+        {
+            return;
+        }
+
+        var isResponseBreach =
+            breachType == SlaEventType.ResponseBreached;
+
+        var deadlineUtc =
+            isResponseBreach
+                ? entity.ResponseDueAt
+                : entity.ResolutionDueAt;
+
+        var breachLabel =
+            isResponseBreach
+                ? "phản hồi lần đầu"
+                : "hoàn thành xử lý";
+
+        var subject =
+            isResponseBreach
+                ? "[UrbanService] Yêu cầu đã vi phạm thời hạn phản hồi SLA"
+                : "[UrbanService] Yêu cầu đã vi phạm thời hạn xử lý SLA";
+
+        var htmlBody =
+            BuildSlaBreachEmailHtml(
+                coordinatorName:
+                    WebUtility.HtmlEncode(
+                        coordinator.CoordinatorName),
+                providerName:
+                    WebUtility.HtmlEncode(
+                        coordinator.ProviderName),
+                feedbackId:
+                    entity.FeedbackId.ToString(),
+                feedbackTitle:
+                    WebUtility.HtmlEncode(
+                        entity.Feedback.Title),
+                locationText:
+                    WebUtility.HtmlEncode(
+                        entity.Feedback.LocationText),
+                priority:
+                    WebUtility.HtmlEncode(
+                        entity.Priority),
+                reportStatus:
+                    WebUtility.HtmlEncode(
+                        providerReport.ReportStatus),
+                breachLabel:
+                    WebUtility.HtmlEncode(
+                        breachLabel),
+                deadlineDisplay:
+                    FormatVietnamDateTime(
+                        deadlineUtc),
+                breachedAtDisplay:
+                    FormatVietnamDateTime(
+                        DateTime.UtcNow));
+
+        try
+        {
+            await _emailSender.SendAsync(
+                new EmailMessageDto
+                {
+                    To =
+                    [
+                        coordinator.Email.Trim()
+                    ],
+                    Subject = subject,
+                    Body = htmlBody,
+                    IsHtml = true
+                });
+
+            _logger.LogInformation(
+                "Đã gửi email {BreachType} đến coordinator {CoordinatorId} cho feedback {FeedbackId}.",
+                breachType,
+                coordinator.CoordinatorId,
+                entity.FeedbackId);
+        }
+        catch (Exception ex)
+        {
+            /*
+             * Email lỗi không được làm worker dừng.
+             */
+            _logger.LogError(
+                ex,
+                "Không thể gửi email {BreachType} đến coordinator {CoordinatorId}, email {Email}, feedback {FeedbackId}.",
+                breachType,
+                coordinator.CoordinatorId,
+                coordinator.Email,
+                entity.FeedbackId);
+        }
+    }
+
+    private static string BuildSlaBreachEmailHtml(
+        string coordinatorName,
+        string providerName,
+        string feedbackId,
+        string feedbackTitle,
+        string locationText,
+        string priority,
+        string reportStatus,
+        string breachLabel,
+        string deadlineDisplay,
+        string breachedAtDisplay)
+    {
+        var labelCellStyle =
+            "width:34%;" +
+            "padding:11px 12px;" +
+            "background:#f9fafb;" +
+            "border:1px solid #e5e7eb;" +
+            "font-weight:600;" +
+            "vertical-align:top;";
+
+        var valueCellStyle =
+            "padding:11px 12px;" +
+            "border:1px solid #e5e7eb;" +
+            "vertical-align:top;";
+
+        return $$"""
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+</head>
+<body style="
+    margin:0;
+    padding:0;
+    background-color:#f4f6f8;
+    font-family:Arial, Helvetica, sans-serif;
+    color:#1f2937;">
+
+    <table width="100%"
+           cellpadding="0"
+           cellspacing="0"
+           role="presentation"
+           style="background-color:#f4f6f8;
+                  padding:24px 12px;">
+        <tr>
+            <td align="center">
+                <table width="640"
+                       cellpadding="0"
+                       cellspacing="0"
+                       role="presentation"
+                       style="
+                           width:100%;
+                           max-width:640px;
+                           background:#ffffff;
+                           border-radius:12px;
+                           overflow:hidden;
+                           box-shadow:0 4px 16px rgba(0,0,0,0.08);">
+
+                    <tr>
+                        <td style="
+                            background:#dc2626;
+                            color:#ffffff;
+                            padding:22px 28px;">
+                            <div style="
+                                font-size:22px;
+                                font-weight:700;">
+                                UrbanService
+                            </div>
+                            <div style="
+                                margin-top:6px;
+                                font-size:15px;">
+                                Thông báo vi phạm SLA
+                            </div>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td style="padding:28px;">
+                            <p style="
+                                margin:0 0 16px;
+                                font-size:16px;">
+                                Kính gửi
+                                <strong>{{coordinatorName}}</strong>,
+                            </p>
+
+                            <p style="
+                                margin:0 0 20px;
+                                line-height:1.6;
+                                font-size:15px;">
+                                Hệ thống UrbanService ghi nhận yêu cầu
+                                được giao cho
+                                <strong>{{providerName}}</strong>
+                                đã vượt quá thời hạn
+                                <strong>{{breachLabel}}</strong>
+                                theo chính sách SLA.
+                            </p>
+
+                            <div style="
+                                background:#fef2f2;
+                                border-left:5px solid #dc2626;
+                                padding:16px 18px;
+                                margin-bottom:22px;
+                                border-radius:6px;">
+                                <strong style="color:#991b1b;">
+                                    Vi phạm SLA:
+                                </strong>
+                                Yêu cầu đã vượt quá thời hạn cam kết.
+                                Đề nghị kiểm tra và xử lý ngay.
+                            </div>
+
+                            <table width="100%"
+                                   cellpadding="0"
+                                   cellspacing="0"
+                                   role="presentation"
+                                   style="
+                                       border-collapse:collapse;
+                                       font-size:14px;
+                                       margin-bottom:24px;">
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Mã phản ánh
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{feedbackId}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Tiêu đề
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{feedbackTitle}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Địa điểm
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{locationText}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Mức ưu tiên
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{priority}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Trạng thái báo cáo
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{reportStatus}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Loại thời hạn
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{breachLabel}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Hạn SLA
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        <strong style="color:#dc2626;">
+                                            {{deadlineDisplay}}
+                                        </strong>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Thời điểm ghi nhận vi phạm
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{breachedAtDisplay}}
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="
+                                margin:0 0 16px;
+                                line-height:1.6;
+                                font-size:15px;">
+                                Đề nghị Quý đơn vị khẩn trương kiểm tra,
+                                cập nhật tiến độ và hoàn thành xử lý.
+                                Vi phạm này đã được ghi nhận trong lịch sử SLA
+                                của hệ thống.
+                            </p>
+
+                            <p style="
+                                margin:24px 0 0;
+                                line-height:1.6;
+                                font-size:15px;">
+                                Trân trọng,<br>
+                                <strong>UrbanService System</strong>
+                            </p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td style="
+                            background:#f9fafb;
+                            padding:16px 28px;
+                            color:#6b7280;
+                            font-size:12px;
+                            line-height:1.5;">
+                            Đây là email tự động từ hệ thống UrbanService.
+                            Vui lòng không trả lời trực tiếp email này.
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+""";
+    }
+
+    private static string BuildSlaWarningEmailHtml(
+        string coordinatorName,
+        string providerName,
+        string feedbackId,
+        string feedbackTitle,
+        string locationText,
+        string priority,
+        string reportStatus,
+        string warningLabel,
+        string deadlineDisplay,
+        int warningThresholdPercent)
+    {
+        var labelCellStyle =
+            "width:34%;" +
+            "padding:11px 12px;" +
+            "background:#f9fafb;" +
+            "border:1px solid #e5e7eb;" +
+            "font-weight:600;" +
+            "vertical-align:top;";
+
+        var valueCellStyle =
+            "padding:11px 12px;" +
+            "border:1px solid #e5e7eb;" +
+            "vertical-align:top;";
+
+        return $$"""
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+</head>
+<body style="
+    margin:0;
+    padding:0;
+    background-color:#f4f6f8;
+    font-family:Arial, Helvetica, sans-serif;
+    color:#1f2937;">
+
+    <table width="100%"
+           cellpadding="0"
+           cellspacing="0"
+           role="presentation"
+           style="background-color:#f4f6f8;
+                  padding:24px 12px;">
+        <tr>
+            <td align="center">
+                <table width="640"
+                       cellpadding="0"
+                       cellspacing="0"
+                       role="presentation"
+                       style="
+                           width:100%;
+                           max-width:640px;
+                           background:#ffffff;
+                           border-radius:12px;
+                           overflow:hidden;
+                           box-shadow:0 4px 16px rgba(0,0,0,0.08);">
+
+                    <tr>
+                        <td style="
+                            background:#f59e0b;
+                            color:#ffffff;
+                            padding:22px 28px;">
+                            <div style="
+                                font-size:22px;
+                                font-weight:700;">
+                                UrbanService
+                            </div>
+                            <div style="
+                                margin-top:6px;
+                                font-size:15px;">
+                                Cảnh báo thời hạn SLA
+                            </div>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td style="padding:28px;">
+                            <p style="
+                                margin:0 0 16px;
+                                font-size:16px;">
+                                Kính gửi
+                                <strong>{{coordinatorName}}</strong>,
+                            </p>
+
+                            <p style="
+                                margin:0 0 20px;
+                                line-height:1.6;
+                                font-size:15px;">
+                                Hệ thống UrbanService ghi nhận yêu cầu
+                                được giao cho
+                                <strong>{{providerName}}</strong>
+                                đang gần hết thời hạn
+                                <strong>{{warningLabel}}</strong>
+                                theo chính sách SLA.
+                            </p>
+
+                            <div style="
+                                background:#fff7ed;
+                                border-left:5px solid #f59e0b;
+                                padding:16px 18px;
+                                margin-bottom:22px;
+                                border-radius:6px;">
+                                <strong style="color:#b45309;">
+                                    Cảnh báo:
+                                </strong>
+                                Yêu cầu hiện chỉ còn khoảng
+                                <strong>{{warningThresholdPercent}}%</strong>
+                                thời gian SLA.
+                            </div>
+
+                            <table width="100%"
+                                   cellpadding="0"
+                                   cellspacing="0"
+                                   role="presentation"
+                                   style="
+                                       border-collapse:collapse;
+                                       font-size:14px;
+                                       margin-bottom:24px;">
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Mã phản ánh
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{feedbackId}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Tiêu đề
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{feedbackTitle}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Địa điểm
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{locationText}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Mức ưu tiên
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{priority}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Trạng thái báo cáo
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{reportStatus}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Loại thời hạn
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        {{warningLabel}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="{{labelCellStyle}}">
+                                        Hạn SLA
+                                    </td>
+                                    <td style="{{valueCellStyle}}">
+                                        <strong style="color:#dc2626;">
+                                            {{deadlineDisplay}}
+                                        </strong>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="
+                                margin:0 0 16px;
+                                line-height:1.6;
+                                font-size:15px;">
+                                Đề nghị Quý đơn vị kiểm tra tiến độ,
+                                cập nhật trạng thái và hoàn thành xử lý
+                                trước thời hạn trên để tránh phát sinh
+                                vi phạm SLA.
+                            </p>
+
+                            <p style="
+                                margin:24px 0 0;
+                                line-height:1.6;
+                                font-size:15px;">
+                                Trân trọng,<br>
+                                <strong>UrbanService System</strong>
+                            </p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td style="
+                            background:#f9fafb;
+                            padding:16px 28px;
+                            color:#6b7280;
+                            font-size:12px;
+                            line-height:1.5;">
+                            Đây là email tự động từ hệ thống UrbanService.
+                            Vui lòng không trả lời trực tiếp email này.
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+""";
+    }
+
+    private static string FormatVietnamDateTime(
+        DateTime utcDateTime)
+    {
+        var utcValue =
+            utcDateTime.Kind == DateTimeKind.Utc
+                ? utcDateTime
+                : DateTime.SpecifyKind(
+                    utcDateTime,
+                    DateTimeKind.Utc);
+
+        TimeZoneInfo vietnamTimeZone;
+
+        try
+        {
+            /*
+             * Linux / Docker.
+             */
+            vietnamTimeZone =
+                TimeZoneInfo.FindSystemTimeZoneById(
+                    "Asia/Ho_Chi_Minh");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            /*
+             * Windows.
+             */
+            vietnamTimeZone =
+                TimeZoneInfo.FindSystemTimeZoneById(
+                    "SE Asia Standard Time");
+        }
+
+        var vietnamTime =
+            TimeZoneInfo.ConvertTimeFromUtc(
+                utcValue,
+                vietnamTimeZone);
+
+        return vietnamTime.ToString(
+            "dd/MM/yyyy HH:mm");
+    }
+
+    private sealed class SlaMonitoringCheckResult
+    {
+        public bool ResponseWarningCreated { get; set; }
+
+        public bool ResolutionWarningCreated { get; set; }
+
+        public bool ResponseJustBreached { get; set; }
+
+        public bool ResolutionJustBreached { get; set; }
+
+        public bool HasChanges =>
+            ResponseWarningCreated ||
+            ResolutionWarningCreated ||
+            ResponseJustBreached ||
+            ResolutionJustBreached;
     }
 
     private async Task<SlaPolicy>
@@ -1350,142 +2462,8 @@ public class SlaService : ISlaService
         };
     }
 
-    private async Task<bool> CheckWarningAsync(
-    FeedbackSla entity)
-    {
-        var now = DateTime.UtcNow;
-
-        var changed = false;
-
-
-        /*
-         * Response warning
-         */
-
-        if (!entity.RespondedAt.HasValue)
-        {
-            var warningTime =
-                entity.StartedAt.AddMinutes(
-                    (entity.ResponseDueAt - entity.StartedAt)
-                    .TotalMinutes *
-                    (100 - _slaOptions.WarningThresholdPercent)
-                    / 100);
-
-
-            if (now >= warningTime &&
-                !HasWarningEvent(
-                    entity.FeedbackSlaId,
-                    SlaEventType.Warning))
-            {
-                await AddEventAsync(
-                    entity.FeedbackSlaId,
-                    SlaEventType.Warning,
-                    entity.Status,
-                    entity.Status,
-                    "Sắp hết hạn phản hồi SLA.",
-                    null,
-                    SlaTriggerSource.System);
-
-
-                await SendWarningNotificationAsync(
-                    entity,
-                    "Phản ánh sắp hết hạn phản hồi.");
-
-                changed = true;
-            }
-        }
-
-
-
-
-        /*
-         * Resolution warning
-         */
-
-        if (!entity.ResolvedAt.HasValue)
-        {
-            var warningTime =
-                entity.StartedAt.AddMinutes(
-                    (entity.ResolutionDueAt - entity.StartedAt)
-                    .TotalMinutes *
-                    (100 - _slaOptions.WarningThresholdPercent)
-                    / 100);
-
-
-            if (now >= warningTime &&
-                !HasWarningEvent(
-                    entity.FeedbackSlaId,
-                    SlaEventType.Warning))
-            {
-
-                await AddEventAsync(
-                    entity.FeedbackSlaId,
-                    SlaEventType.Warning,
-                    entity.Status,
-                    entity.Status,
-                    "Sắp hết hạn xử lý SLA.",
-                    null,
-                    SlaTriggerSource.System);
-
-
-                await SendWarningNotificationAsync(
-                    entity,
-                    "Phản ánh sắp hết hạn xử lý.");
-
-
-                changed = true;
-            }
-        }
-
-
-        return changed;
-    }
-
-    private async Task SendWarningNotificationAsync(
-    FeedbackSla entity,
-    string message)
-    {
-        if (entity.Feedback == null)
-            return;
-
-
-        try
-        {
-            await _notificationService.SendAsync(
-                entity.Feedback.UserId,
-
-                "Cảnh báo SLA",
-
-                message +
-                $" Feedback: {entity.Feedback.Title}",
-
-                SlaEventType.Warning,
-
-                $"/feedbacks/{entity.FeedbackId}");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Không thể gửi SLA warning notification.");
-        }
-    }
-
-    private bool HasWarningEvent(
-    long feedbackSlaId,
-    string eventType)
-    {
-        return _unitOfWork
-            .GetRepository<SlaEvent>()
-            .Entities
-            .Any(x =>
-                x.FeedbackSlaId == feedbackSlaId &&
-                x.EventType == eventType);
-    }
-
-
     private static void ValidateFeedbackId(
-        Guid feedbackId)
+            Guid feedbackId)
     {
         if (feedbackId == Guid.Empty)
         {
@@ -1599,5 +2577,28 @@ public class SlaService : ISlaService
         return string.IsNullOrWhiteSpace(value)
             ? null
             : value.Trim();
+    }
+
+    private static double CalculatePercent(
+    double used,
+    double total)
+    {
+        if (total <= 0)
+        {
+            return 100;
+        }
+
+
+        var value =
+            used / total * 100;
+
+
+        return Math.Round(
+            Math.Min(
+                100,
+                Math.Max(
+                    0,
+                    value)),
+            2);
     }
 }

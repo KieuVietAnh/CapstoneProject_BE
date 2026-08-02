@@ -7,8 +7,8 @@ using UrbanService.BLL.DTOs.AI;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
-using UrbanService.DAL.UnitOfWork;
 using UrbanService.BLL.DTOs.SLA;
+
 
 
 namespace UrbanService.BLL.Services;
@@ -504,11 +504,21 @@ public class FeedbackService : IFeedbackService
     }
 
     public async Task<FeedbackDetailDto> UpdateByStaffAsync(
-        Guid currentUserId,
-        Guid feedbackId,
-        StaffFeedbackUpdateRequest request)
+    Guid currentUserId,
+    Guid feedbackId,
+    StaffFeedbackUpdateRequest request)
     {
-        var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: false);
+        var feedback = await GetFeedbackWithDetailsAsync(
+            feedbackId,
+            asNoTracking: false);
+
+
+        var oldCategoryId = feedback.CategoryId;
+
+        var oldPriority = feedback.Priority;
+
+
+
         var hasContentChanges =
             request.AreaId.HasValue ||
             request.CategoryId.HasValue ||
@@ -522,48 +532,164 @@ public class FeedbackService : IFeedbackService
             !string.IsNullOrWhiteSpace(request.Priority) ||
             request.DueDate.HasValue;
 
-        var updatedAreaId = request.AreaId ?? feedback.AreaId;
-        var updatedLatitude = request.Latitude ?? feedback.Latitude;
-        var updatedLongitude = request.Longitude ?? feedback.Longitude;
-        await EnsureAreaMatchesLocationAsync(updatedAreaId, updatedLatitude, updatedLongitude);
 
-        if (request.AreaId.HasValue && request.AreaId.Value != feedback.AreaId)
+
+        var updatedAreaId =
+            request.AreaId ?? feedback.AreaId;
+
+
+        var updatedLatitude =
+            request.Latitude ?? feedback.Latitude;
+
+
+        var updatedLongitude =
+            request.Longitude ?? feedback.Longitude;
+
+
+
+        await EnsureAreaMatchesLocationAsync(
+            updatedAreaId,
+            updatedLatitude,
+            updatedLongitude);
+
+
+
+        if (request.AreaId.HasValue &&
+            request.AreaId.Value != feedback.AreaId)
         {
-            feedback.AreaId = request.AreaId.Value;
+            feedback.AreaId =
+                request.AreaId.Value;
         }
 
-        if (request.CategoryId.HasValue && request.CategoryId.Value != feedback.CategoryId)
+
+
+        if (request.CategoryId.HasValue &&
+            request.CategoryId.Value != feedback.CategoryId)
         {
-            await EnsureCategoryExistsAsync(request.CategoryId.Value);
-            feedback.CategoryId = request.CategoryId.Value;
+            await EnsureCategoryExistsAsync(
+                request.CategoryId.Value);
+
+
+            feedback.CategoryId =
+                request.CategoryId.Value;
         }
+
+
 
         if (!string.IsNullOrWhiteSpace(request.Title))
         {
-            feedback.Title = request.Title.Trim();
+            feedback.Title =
+                request.Title.Trim();
         }
+
+
 
         if (!string.IsNullOrWhiteSpace(request.Description))
         {
-            feedback.Description = request.Description.Trim();
+            feedback.Description =
+                request.Description.Trim();
         }
+
+
 
         if (!string.IsNullOrWhiteSpace(request.LocationText))
         {
-            feedback.LocationText = request.LocationText.Trim();
+            feedback.LocationText =
+                request.LocationText.Trim();
         }
 
-        feedback.Latitude = request.Latitude ?? feedback.Latitude;
-        feedback.Longitude = request.Longitude ?? feedback.Longitude;
-        feedback.LocationAccuracyMeters = request.LocationAccuracyMeters ?? feedback.LocationAccuracyMeters;
-        feedback.GeoSource = request.GeoSource != null ? NormalizeOptional(request.GeoSource) : feedback.GeoSource;
+
+
+        feedback.Latitude =
+            request.Latitude ??
+            feedback.Latitude;
+
+
+        feedback.Longitude =
+            request.Longitude ??
+            feedback.Longitude;
+
+
+
+        feedback.LocationAccuracyMeters =
+            request.LocationAccuracyMeters ??
+            feedback.LocationAccuracyMeters;
+
+
+
+        feedback.GeoSource =
+            request.GeoSource != null
+            ? NormalizeOptional(request.GeoSource)
+            : feedback.GeoSource;
+
+
+
         feedback.IsLocationVerified = true;
-        feedback.Priority = string.IsNullOrWhiteSpace(request.Priority) ? feedback.Priority : request.Priority.Trim();
-        feedback.DueDate = request.DueDate ?? feedback.DueDate;
-        feedback.UpdatedAt = DateTime.UtcNow;
+
+
+
+        if (!string.IsNullOrWhiteSpace(request.Priority))
+        {
+            feedback.Priority =
+                request.Priority.Trim();
+        }
+
+
+
+        feedback.DueDate =
+            request.DueDate ??
+            feedback.DueDate;
+
+
+
+        feedback.UpdatedAt =
+            DateTime.UtcNow;
+
+
+
+        /*
+         * Kiểm tra thay đổi ảnh hưởng SLA
+         */
+        var categoryChanged =
+            oldCategoryId != feedback.CategoryId;
+
+
+
+        var priorityChanged =
+            !string.Equals(
+                oldPriority,
+                feedback.Priority,
+                StringComparison.OrdinalIgnoreCase);
+
+
+
+        if(categoryChanged || priorityChanged)
+{
+            await _slaService.RecalculateAsync(
+                feedback.FeedbackId,
+                currentUserId,
+                new RecalculateSlaRequest
+                {
+                    CategoryId =
+                        feedback.CategoryId,
+
+                    Priority =
+                        feedback.Priority,
+
+                    Note =
+                        $"Staff cập nhật SLA. " +
+                        $"Category: {oldCategoryId} -> {feedback.CategoryId}. " +
+                        $"Priority: {oldPriority} -> {feedback.Priority}."
+                });
+        }
+
+
 
         FeedbackStatusHistory? statusHistory = null;
+
         string? oldStatus = null;
+
+
 
         if (!string.IsNullOrWhiteSpace(request.Status) &&
             !string.Equals(
@@ -571,30 +697,67 @@ public class FeedbackService : IFeedbackService
                 request.Status.Trim(),
                 StringComparison.OrdinalIgnoreCase))
         {
-            var newStatus = FeedbackStatus.Normalize(
-                request.Status);
+            var newStatus =
+                FeedbackStatus.Normalize(
+                    request.Status);
 
-            await EnsureDuplicateMasterStatusInvariantAsync(feedback, newStatus);
-            await EnsureDuplicateReviewCompletedBeforeWorkflowAsync(feedback, newStatus);
 
-            oldStatus = feedback.Status;
 
-            statusHistory = new FeedbackStatusHistory
-            {
-                FeedbackId = feedbackId,
-                ChangedByUserId = currentUserId,
-                OldStatus = oldStatus,
-                NewStatus = newStatus,
-                Note = request.StatusNote?.Trim(),
-                ChangedAt = DateTime.UtcNow
-            };
+            await EnsureDuplicateMasterStatusInvariantAsync(
+                feedback,
+                newStatus);
 
-            feedback.Status = newStatus;
+
+
+            await EnsureDuplicateReviewCompletedBeforeWorkflowAsync(
+                feedback,
+                newStatus);
+
+
+
+            oldStatus =
+                feedback.Status;
+
+
+
+            statusHistory =
+                new FeedbackStatusHistory
+                {
+                    FeedbackId =
+                        feedbackId,
+
+                    ChangedByUserId =
+                        currentUserId,
+
+                    OldStatus =
+                        oldStatus,
+
+                    NewStatus =
+                        newStatus,
+
+                    Note =
+                        request.StatusNote?.Trim(),
+
+                    ChangedAt =
+                        DateTime.UtcNow
+                };
+
+
+
+            feedback.Status =
+                newStatus;
+
+
+
             feedback.FeedbackStatusHistories.Add(
                 statusHistory);
         }
 
+
+
         await _uow.SaveAsync();
+
+
 
         if (statusHistory != null &&
             oldStatus != null)
@@ -606,10 +769,14 @@ public class FeedbackService : IFeedbackService
                 currentUserId,
                 statusHistory.Note);
 
+
+
             await SendStatusUpdatedNotificationAsync(
                 feedback,
                 statusHistory);
         }
+
+
 
         if (hasContentChanges)
         {
@@ -618,6 +785,8 @@ public class FeedbackService : IFeedbackService
                 "Phản ánh đã được nhân viên cập nhật",
                 $"Thông tin phản ánh \"{feedback.Title}\" đã được nhân viên cập nhật.");
         }
+
+
 
         return await GetFeedbackDetailAsync(
             currentUserId,
