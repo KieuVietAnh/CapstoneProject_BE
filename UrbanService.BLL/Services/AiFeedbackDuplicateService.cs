@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -11,6 +12,9 @@ namespace UrbanService.BLL.Services;
 
 public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
 {
+    private const long DuplicateClassificationLockNamespace = 0x4455504C00000000L;
+    private static readonly ConcurrentDictionary<int, SemaphoreSlim> AreaClassificationLocks = new();
+
     private readonly IUnitOfWork _uow;
     private readonly IAiClient _aiClient;
     private readonly ILogger<AiFeedbackDuplicateService> _logger;
@@ -36,8 +40,83 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
 
     public async Task CheckAndLinkDuplicateAsync(Feedback feedback, Guid reviewedByUserId)
     {
+        var initialIsMasterTicket = feedback.IsMasterTicket;
+        var areaLock = AreaClassificationLocks.GetOrAdd(feedback.AreaId, _ => new SemaphoreSlim(1, 1));
+        await areaLock.WaitAsync();
+        var transactionStarted = false;
+
+        try
+        {
+            _uow.BeginTransaction();
+            transactionStarted = true;
+            await _uow.AcquireTransactionAdvisoryLockAsync(GetAreaAdvisoryLockKey(feedback.AreaId));
+
+            await ClassifyUnderAreaLockAsync(feedback);
+
+            _uow.CommitTransaction();
+            transactionStarted = false;
+        }
+        catch (Exception ex)
+        {
+            if (transactionStarted)
+            {
+                try
+                {
+                    _uow.RollBack();
+                }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(
+                        rollbackException,
+                        "Failed to roll back duplicate classification transaction for feedback {FeedbackId}.",
+                        feedback.FeedbackId);
+                }
+            }
+
+            // Rollback clears EF tracking, but the worker still owns this object reference.
+            // Keep it unresolved so the existing Submitted queue will retry classification.
+            feedback.IsMasterTicket = initialIsMasterTicket;
+            _logger.LogWarning(
+                ex,
+                "AI duplicate check failed for feedback {FeedbackId}. Feedback creation will continue.",
+                feedback.FeedbackId);
+        }
+        finally
+        {
+            areaLock.Release();
+        }
+    }
+
+    private async Task ClassifyUnderAreaLockAsync(Feedback feedback)
+    {
+        var currentState = await _uow.GetRepository<Feedback>().Entities
+            .Where(current => current.FeedbackId == feedback.FeedbackId)
+            .Select(current => new
+            {
+                current.IsMasterTicket,
+                current.ParentTicketId
+            })
+            .FirstOrDefaultAsync();
+
+        if (currentState is null ||
+            currentState.IsMasterTicket ||
+            currentState.ParentTicketId.HasValue)
+        {
+            return;
+        }
+
+        if (await HasOlderUnresolvedFeedbackAsync(feedback))
+        {
+            _logger.LogInformation(
+                "Deferred duplicate classification for feedback {FeedbackId} because an older unresolved feedback exists in area {AreaId}.",
+                feedback.FeedbackId,
+                feedback.AreaId);
+            return;
+        }
+
         if (!feedback.Latitude.HasValue || !feedback.Longitude.HasValue)
         {
+            await PromoteToMasterIfUnresolvedAsync(feedback);
             return;
         }
 
@@ -45,73 +124,137 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
 
         if (nearbyCandidates.Count == 0)
         {
+            await PromoteToMasterIfUnresolvedAsync(feedback);
             return;
         }
 
-        try
+        var prompt = BuildDuplicatePrompt(feedback, nearbyCandidates);
+        var rawResponse = await _aiClient.ChatAsync(prompt, jsonFormat: true);
+        var result = ParseDuplicateResult(rawResponse);
+
+        if (!result.IsDuplicate)
         {
-            var prompt = BuildDuplicatePrompt(feedback, nearbyCandidates);
-            var rawResponse = await _aiClient.ChatAsync(prompt, jsonFormat: true);
-            var result = ParseDuplicateResult(rawResponse);
-
-            if (!result.IsDuplicate || !result.ParentFeedbackId.HasValue)
-            {
-                return;
-            }
-
-            var parentFeedbackId = result.ParentFeedbackId.Value;
-            var parentFeedback = nearbyCandidates
-                .Select(c => c.Feedback)
-                .FirstOrDefault(f => f.FeedbackId == parentFeedbackId);
-
-            if (parentFeedback is null)
-            {
-                _logger.LogWarning(
-                    "AI duplicate result for feedback {FeedbackId} returned invalid parentFeedbackId {ParentFeedbackId}.",
-                    feedback.FeedbackId,
-                    parentFeedbackId);
-                return;
-            }
-
-            var duplicateCandidateRepository = _uow.GetRepository<FeedbackDuplicateCandidate>();
-            var existingCandidate = await duplicateCandidateRepository.Entities
-                .FirstOrDefaultAsync(candidate =>
-                    candidate.FeedbackId == feedback.FeedbackId &&
-                    candidate.PotentialParentFeedbackId == parentFeedback.FeedbackId);
-
-            var now = DateTime.UtcNow;
-            if (existingCandidate is null)
-            {
-                await duplicateCandidateRepository.AddAsync(new FeedbackDuplicateCandidate
-                {
-                    FeedbackId = feedback.FeedbackId,
-                    PotentialParentFeedbackId = parentFeedback.FeedbackId,
-                    Status = "Pending",
-                    ConfidenceScore = result.ConfidenceScore,
-                    Reason = result.Reason,
-                    CreatedAt = now,
-                    UpdatedAt = now
-                });
-            }
-            else if (existingCandidate.Status == "Rejected")
-            {
-                existingCandidate.Status = "Pending";
-                existingCandidate.ConfidenceScore = result.ConfidenceScore;
-                existingCandidate.Reason = result.Reason;
-                existingCandidate.ReviewedByUserId = null;
-                existingCandidate.ReviewedAt = null;
-                existingCandidate.UpdatedAt = now;
-            }
-
-            await _uow.SaveAsync();
+            await PromoteToMasterIfUnresolvedAsync(feedback);
+            return;
         }
-        catch (Exception ex)
+
+        if (!result.ParentFeedbackId.HasValue)
         {
             _logger.LogWarning(
-                ex,
-                "AI duplicate check failed for feedback {FeedbackId}. Feedback creation will continue.",
+                "AI marked feedback {FeedbackId} as duplicate without a parentFeedbackId.",
                 feedback.FeedbackId);
+            return;
         }
+
+        var parentFeedbackId = result.ParentFeedbackId.Value;
+        var parentFeedback = nearbyCandidates
+            .Select(c => c.Feedback)
+            .FirstOrDefault(f => f.FeedbackId == parentFeedbackId);
+
+        if (parentFeedback is null)
+        {
+            _logger.LogWarning(
+                "AI duplicate result for feedback {FeedbackId} returned invalid parentFeedbackId {ParentFeedbackId}.",
+                feedback.FeedbackId,
+                parentFeedbackId);
+            return;
+        }
+
+        var duplicateCandidateRepository = _uow.GetRepository<FeedbackDuplicateCandidate>();
+        var activeCandidate = await duplicateCandidateRepository.Entities
+            .FirstOrDefaultAsync(candidate =>
+                candidate.FeedbackId == feedback.FeedbackId &&
+                (candidate.Status == "Pending" || candidate.Status == "Confirmed"));
+
+        if (activeCandidate is not null)
+        {
+            // A feedback may have only one actionable duplicate relation. In particular,
+            // a retry must not create a competing parent while staff is reviewing one.
+            return;
+        }
+
+        var existingCandidate = await duplicateCandidateRepository.Entities
+            .FirstOrDefaultAsync(candidate =>
+                candidate.FeedbackId == feedback.FeedbackId &&
+                candidate.PotentialParentFeedbackId == parentFeedback.FeedbackId);
+
+        if (existingCandidate is not null)
+        {
+            // A staff rejection is authoritative. Do not silently reopen the same pair;
+            // with no other active candidate, this feedback becomes its own master.
+            if (existingCandidate.Status == "Rejected")
+            {
+                await PromoteToMasterIfUnresolvedAsync(feedback);
+            }
+
+            return;
+        }
+
+        if (!await IsValidCanonicalMasterAsync(feedback, parentFeedback.FeedbackId))
+        {
+            _logger.LogWarning(
+                "AI duplicate parent {ParentFeedbackId} is no longer a valid canonical master for feedback {FeedbackId}.",
+                parentFeedback.FeedbackId,
+                feedback.FeedbackId);
+            return;
+        }
+
+        var feedbackRepository = _uow.GetRepository<Feedback>();
+        var childIsStillUnresolved = await feedbackRepository.Entities.AnyAsync(current =>
+            current.FeedbackId == feedback.FeedbackId &&
+            !current.IsMasterTicket &&
+            current.ParentTicketId == null);
+
+        if (!childIsStillUnresolved)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        await duplicateCandidateRepository.AddAsync(new FeedbackDuplicateCandidate
+        {
+            FeedbackId = feedback.FeedbackId,
+            PotentialParentFeedbackId = parentFeedback.FeedbackId,
+            Status = "Pending",
+            ConfidenceScore = result.ConfidenceScore,
+            Reason = result.Reason,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+
+        await _uow.SaveAsync();
+    }
+
+    private static long GetAreaAdvisoryLockKey(int areaId)
+    {
+        return DuplicateClassificationLockNamespace | (uint)areaId;
+    }
+
+    private async Task<bool> HasOlderUnresolvedFeedbackAsync(Feedback feedback)
+    {
+        var excludedStatuses = new[]
+        {
+            FeedbackStatus.Closed,
+            FeedbackStatus.Cancelled,
+            FeedbackStatus.Rejected
+        };
+
+        var activeCandidateFeedbackIds = _uow.GetRepository<FeedbackDuplicateCandidate>().Entities
+            .Where(candidate => candidate.Status == "Pending" || candidate.Status == "Confirmed")
+            .Select(candidate => candidate.FeedbackId);
+
+        var unresolvedFeedbacks = await _uow.GetRepository<Feedback>().Entities
+            .Where(candidate =>
+                candidate.FeedbackId != feedback.FeedbackId &&
+                candidate.AreaId == feedback.AreaId &&
+                candidate.CreatedAt <= feedback.CreatedAt &&
+                !candidate.IsMasterTicket &&
+                candidate.ParentTicketId == null &&
+                !excludedStatuses.Contains(candidate.Status) &&
+                !activeCandidateFeedbackIds.Contains(candidate.FeedbackId))
+            .ToListAsync();
+
+        return unresolvedFeedbacks.Any(candidate => IsOlderThan(candidate, feedback));
     }
 
     private async Task<IReadOnlyCollection<NearbyFeedbackCandidate>> FindNearbyCandidatesAsync(Feedback feedback)
@@ -127,6 +270,9 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
             .Where(f =>
                 f.FeedbackId != feedback.FeedbackId &&
                 f.AreaId == feedback.AreaId &&
+                f.CreatedAt <= feedback.CreatedAt &&
+                f.IsMasterTicket &&
+                f.ParentTicketId == null &&
                 f.Latitude.HasValue &&
                 f.Longitude.HasValue &&
                 !excludedStatuses.Contains(f.Status))
@@ -135,6 +281,7 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
             .ToListAsync();
 
         return candidates
+            .Where(candidate => IsOlderThan(candidate, feedback))
             .Select(candidate => new NearbyFeedbackCandidate(
                 candidate,
                 CalculateDistanceMeters(
@@ -146,6 +293,74 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
             .OrderBy(candidate => candidate.DistanceMeters)
             .Take(_maxCandidates)
             .ToList();
+    }
+
+    private async Task PromoteToMasterIfUnresolvedAsync(Feedback feedback)
+    {
+        var feedbackRepository = _uow.GetRepository<Feedback>();
+        var currentFeedback = await feedbackRepository.Entities
+            .FirstOrDefaultAsync(current => current.FeedbackId == feedback.FeedbackId);
+
+        if (currentFeedback is null ||
+            currentFeedback.IsMasterTicket ||
+            currentFeedback.ParentTicketId.HasValue)
+        {
+            return;
+        }
+
+        var hasActiveCandidate = await _uow.GetRepository<FeedbackDuplicateCandidate>().Entities
+            .AnyAsync(candidate =>
+                candidate.FeedbackId == feedback.FeedbackId &&
+                (candidate.Status == "Pending" || candidate.Status == "Confirmed"));
+
+        if (hasActiveCandidate)
+        {
+            return;
+        }
+
+        currentFeedback.IsMasterTicket = true;
+        currentFeedback.UpdatedAt = DateTime.UtcNow;
+        try
+        {
+            await _uow.SaveAsync();
+        }
+        catch
+        {
+            currentFeedback.IsMasterTicket = false;
+            throw;
+        }
+    }
+
+    private async Task<bool> IsValidCanonicalMasterAsync(Feedback childFeedback, Guid parentFeedbackId)
+    {
+        var excludedStatuses = new[]
+        {
+            FeedbackStatus.Closed,
+            FeedbackStatus.Cancelled,
+            FeedbackStatus.Rejected
+        };
+
+        var parentFeedback = await _uow.GetRepository<Feedback>().Entities
+            .FirstOrDefaultAsync(parent =>
+                parent.FeedbackId == parentFeedbackId &&
+                parent.FeedbackId != childFeedback.FeedbackId &&
+                parent.AreaId == childFeedback.AreaId &&
+                parent.IsMasterTicket &&
+                parent.ParentTicketId == null &&
+                parent.Latitude.HasValue &&
+                parent.Longitude.HasValue &&
+                !excludedStatuses.Contains(parent.Status));
+
+        return parentFeedback is not null && IsOlderThan(parentFeedback, childFeedback);
+    }
+
+    private static bool IsOlderThan(Feedback candidate, Feedback feedback)
+    {
+        return candidate.CreatedAt < feedback.CreatedAt ||
+            (candidate.CreatedAt == feedback.CreatedAt &&
+             string.CompareOrdinal(
+                 candidate.FeedbackId.ToString("D"),
+                 feedback.FeedbackId.ToString("D")) < 0);
     }
 
     private static double CalculateDistanceMeters(

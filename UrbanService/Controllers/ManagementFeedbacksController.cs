@@ -16,13 +16,16 @@ public class ManagementFeedbacksController : ControllerBase
 {
     private readonly IFeedbackService _feedbackService;
     private readonly IAreaAlertService _areaAlertService;
+    private readonly IFeedbackDuplicateCandidateService _feedbackDuplicateCandidateService;
 
     public ManagementFeedbacksController(
         IFeedbackService feedbackService,
-        IAreaAlertService areaAlertService)
+        IAreaAlertService areaAlertService,
+        IFeedbackDuplicateCandidateService feedbackDuplicateCandidateService)
     {
         _feedbackService = feedbackService;
         _areaAlertService = areaAlertService;
+        _feedbackDuplicateCandidateService = feedbackDuplicateCandidateService;
     }
 
     /// <summary>Xem danh sách tất cả feedback trong hệ thống.</summary>
@@ -62,6 +65,30 @@ public class ManagementFeedbacksController : ControllerBase
     public async Task<IActionResult> GetFeedbackDetail(Guid feedbackId)
     {
         var result = await _feedbackService.GetFeedbackDetailAsync(GetCurrentUserId(), feedbackId);
+        return Ok(result);
+    }
+
+    /// <summary>Lấy các phản ánh trùng đã được liên kết vào phản ánh chính.</summary>
+    [HttpGet("{feedbackId:guid}/linked-feedbacks")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<FeedbackListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetLinkedFeedbacks(Guid feedbackId)
+    {
+        var result = await _feedbackDuplicateCandidateService.GetLinkedFeedbacksAsync(feedbackId);
+        return Ok(result);
+    }
+
+    /// <summary>Lấy phản ánh chính và các phản ánh cùng được liên kết.</summary>
+    [HttpGet("{feedbackId:guid}/related")]
+    [ProducesResponseType(typeof(RelatedFeedbacksDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetRelatedFeedbacks(Guid feedbackId)
+    {
+        var result = await _feedbackDuplicateCandidateService.GetRelatedFeedbacksAsync(feedbackId);
         return Ok(result);
     }
 

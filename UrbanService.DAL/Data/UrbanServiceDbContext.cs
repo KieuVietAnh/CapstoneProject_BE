@@ -325,7 +325,22 @@ public partial class UrbanServiceDbContext : DbContext
         modelBuilder.Entity<Feedback>(entity =>
         {
             entity.HasKey(e => e.FeedbackId).HasName("feedbacks_pkey");
-            entity.ToTable("feedbacks");
+            entity.ToTable("feedbacks", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_feedback_master_has_no_parent",
+                    "NOT is_master_ticket OR parent_ticket_id IS NULL");
+                table.HasCheckConstraint(
+                    "ck_feedback_parent_not_self",
+                    "parent_ticket_id IS NULL OR parent_ticket_id <> feedback_id");
+            });
+
+            entity.HasIndex(
+                    e => new { e.AreaId, e.IsMasterTicket, e.CreatedAt },
+                    "ix_feedbacks_duplicate_master_lookup")
+                .HasFilter("is_master_ticket = TRUE AND parent_ticket_id IS NULL");
+
+            entity.HasIndex(e => e.AreaId, "IX_feedbacks_area_id");
 
             entity.Property(e => e.FeedbackId).HasDefaultValueSql("gen_random_uuid()").HasColumnName("feedback_id");
             entity.Property(e => e.UserId).HasColumnName("user_id");
@@ -378,11 +393,25 @@ public partial class UrbanServiceDbContext : DbContext
         modelBuilder.Entity<FeedbackDuplicateCandidate>(entity =>
         {
             entity.HasKey(e => e.DuplicateCandidateId).HasName("feedback_duplicate_candidates_pkey");
-            entity.ToTable("feedback_duplicate_candidates");
+            entity.ToTable("feedback_duplicate_candidates", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_feedback_duplicate_candidate_not_self",
+                    "feedback_id <> potential_parent_feedback_id");
+                table.HasCheckConstraint(
+                    "ck_feedback_duplicate_candidate_status",
+                    "status IN ('Pending', 'Confirmed', 'Rejected')");
+            });
 
             entity.HasIndex(e => new { e.FeedbackId, e.PotentialParentFeedbackId }, "uq_feedback_duplicate_candidate_pair").IsUnique();
 
             entity.HasIndex(e => e.Status, "ix_feedback_duplicate_candidates_status");
+
+            entity.HasIndex(
+                    e => e.FeedbackId,
+                    "uq_feedback_duplicate_candidate_active_child")
+                .IsUnique()
+                .HasFilter("status IN ('Pending', 'Confirmed')");
 
             entity.Property(e => e.DuplicateCandidateId).HasDefaultValueSql("gen_random_uuid()").HasColumnName("duplicate_candidate_id");
             entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");

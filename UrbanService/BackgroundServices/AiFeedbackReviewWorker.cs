@@ -120,8 +120,58 @@ public class AiFeedbackReviewWorker : BackgroundService
             try
             {
                 using var scope = _scopeFactory.CreateScope();
+                var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+                var duplicateService =
+                    scope.ServiceProvider.GetRequiredService<IAiFeedbackDuplicateService>();
                 var aiFeedbackAnalysisService =
                     scope.ServiceProvider.GetRequiredService<IAiFeedbackAnalysisService>();
+
+                var feedback = await uow.GetRepository<Feedback>().Entities
+                    .FirstOrDefaultAsync(
+                        f => f.FeedbackId == item.FeedbackId,
+                        stoppingToken)
+                    ?? throw new InvalidOperationException(
+                        $"Feedback {item.FeedbackId} không còn tồn tại.");
+
+                var hasActiveDuplicateCandidate = await uow
+                    .GetRepository<FeedbackDuplicateCandidate>()
+                    .Entities
+                    .AsNoTracking()
+                    .AnyAsync(
+                        candidate =>
+                            candidate.FeedbackId == item.FeedbackId &&
+                            (candidate.Status == "Pending" || candidate.Status == "Confirmed"),
+                        stoppingToken);
+
+                // Duplicate classification must finish before the normal AI review can
+                // move the feedback out of Submitted. A failed duplicate check therefore
+                // stays in the existing retry queue instead of becoming a master by accident.
+                if (!feedback.IsMasterTicket &&
+                    !feedback.ParentTicketId.HasValue &&
+                    !hasActiveDuplicateCandidate)
+                {
+                    await duplicateService.CheckAndLinkDuplicateAsync(
+                        feedback,
+                        item.RequestedByUserId);
+
+                    hasActiveDuplicateCandidate = await uow
+                        .GetRepository<FeedbackDuplicateCandidate>()
+                        .Entities
+                        .AsNoTracking()
+                        .AnyAsync(
+                            candidate =>
+                                candidate.FeedbackId == item.FeedbackId &&
+                                (candidate.Status == "Pending" || candidate.Status == "Confirmed"),
+                            stoppingToken);
+
+                    if (!feedback.IsMasterTicket &&
+                        !feedback.ParentTicketId.HasValue &&
+                        !hasActiveDuplicateCandidate)
+                    {
+                        throw new InvalidOperationException(
+                            $"Duplicate classification for feedback {item.FeedbackId} has not completed.");
+                    }
+                }
 
                 _logger.LogInformation(
                     "Starting AI review for feedback {FeedbackId}.",

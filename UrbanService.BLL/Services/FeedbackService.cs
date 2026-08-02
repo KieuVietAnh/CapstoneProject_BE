@@ -19,8 +19,6 @@ public class FeedbackService : IFeedbackService
     private static readonly IReadOnlyCollection<string> AllowedProviderReportStatuses =
     [
         "Reported",
-        "Contacted",
-        "Accepted",
         "InProgress",
         "Done",
         "Failed",
@@ -162,7 +160,10 @@ public class FeedbackService : IFeedbackService
                 UpdatedAt = f.UpdatedAt,
                 AttachmentCount = f.FeedbackAttachments.Count,
                 CommentCount = f.FeedbackComments.Count,
-                SupportCount = f.FeedbackSupports.Count
+                SupportCount = f.FeedbackSupports.Count,
+                DuplicateWarning = f.FeedbackDuplicateCandidates.Any(candidate => candidate.Status == "Pending"),
+                ParentTicketId = f.ParentTicketId,
+                IsMasterTicket = f.IsMasterTicket
             })
             .ToListAsync();
 
@@ -249,7 +250,10 @@ public class FeedbackService : IFeedbackService
                 UpdatedAt = f.UpdatedAt,
                 AttachmentCount = f.FeedbackAttachments.Count,
                 CommentCount = f.FeedbackComments.Count,
-                SupportCount = f.FeedbackSupports.Count
+                SupportCount = f.FeedbackSupports.Count,
+                DuplicateWarning = f.FeedbackDuplicateCandidates.Any(candidate => candidate.Status == "Pending"),
+                ParentTicketId = f.ParentTicketId,
+                IsMasterTicket = f.IsMasterTicket
             })
             .ToListAsync();
 
@@ -271,8 +275,7 @@ public class FeedbackService : IFeedbackService
         var status = query.Status?.Trim().ToLower();
 
         var feedbacks = _uow.GetRepository<Feedback>().Entities
-            .AsNoTracking()
-            .Where(f => f.ParentTicketId == null);
+            .AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -314,7 +317,10 @@ public class FeedbackService : IFeedbackService
                 UpdatedAt = f.UpdatedAt,
                 AttachmentCount = f.FeedbackAttachments.Count,
                 CommentCount = f.FeedbackComments.Count,
-                SupportCount = f.FeedbackSupports.Count
+                SupportCount = f.FeedbackSupports.Count,
+                DuplicateWarning = f.FeedbackDuplicateCandidates.Any(candidate => candidate.Status == "Pending"),
+                ParentTicketId = f.ParentTicketId,
+                IsMasterTicket = f.IsMasterTicket
             })
             .ToListAsync();
 
@@ -375,7 +381,10 @@ public class FeedbackService : IFeedbackService
                     UpdatedAt = f.UpdatedAt,
                     AttachmentCount = f.FeedbackAttachments.Count,
                     CommentCount = f.FeedbackComments.Count,
-                    SupportCount = f.FeedbackSupports.Count
+                    SupportCount = f.FeedbackSupports.Count,
+                    DuplicateWarning = f.FeedbackDuplicateCandidates.Any(candidate => candidate.Status == "Pending"),
+                    ParentTicketId = f.ParentTicketId,
+                    IsMasterTicket = f.IsMasterTicket
                 },
                 AnalysisResult = f.AnalysisResults
                     .OrderByDescending(a => a.CreatedAt)
@@ -565,6 +574,9 @@ public class FeedbackService : IFeedbackService
             var newStatus = FeedbackStatus.Normalize(
                 request.Status);
 
+            await EnsureDuplicateMasterStatusInvariantAsync(feedback, newStatus);
+            await EnsureDuplicateReviewCompletedBeforeWorkflowAsync(feedback, newStatus);
+
             oldStatus = feedback.Status;
 
             statusHistory = new FeedbackStatusHistory
@@ -692,6 +704,9 @@ public class FeedbackService : IFeedbackService
                 $"Feedback đã ở trạng thái {newStatus}.");
         }
 
+        await EnsureDuplicateMasterStatusInvariantAsync(feedback, newStatus);
+        await EnsureDuplicateReviewCompletedBeforeWorkflowAsync(feedback, newStatus);
+
         var now = DateTime.UtcNow;
         var oldStatus = feedback.Status;
 
@@ -810,6 +825,68 @@ public class FeedbackService : IFeedbackService
     {
         return InternalFeedbackStatuses.Any(internalStatus =>
             string.Equals(internalStatus, status, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task EnsureDuplicateMasterStatusInvariantAsync(
+        Feedback feedback,
+        string newStatus)
+    {
+        if (FeedbackStatus.IsEligibleDuplicateMasterStatus(newStatus))
+        {
+            return;
+        }
+
+        var hasLinkedDuplicates = await _uow.GetRepository<Feedback>().Entities
+            .AsNoTracking()
+            .AnyAsync(child => child.ParentTicketId == feedback.FeedbackId);
+
+        if (!hasLinkedDuplicates)
+        {
+            hasLinkedDuplicates = await _uow
+                .GetRepository<FeedbackDuplicateCandidate>()
+                .Entities
+                .AsNoTracking()
+                .AnyAsync(candidate =>
+                    candidate.PotentialParentFeedbackId == feedback.FeedbackId &&
+                    candidate.Status == "Confirmed");
+        }
+
+        if (hasLinkedDuplicates)
+        {
+            throw new Exception(
+                "Phản ánh đang là phản ánh chính của các phản ánh trùng nên phải giữ trạng thái công khai, hợp lệ.");
+        }
+    }
+
+    private async Task EnsureDuplicateReviewCompletedBeforeWorkflowAsync(
+        Feedback feedback,
+        string newStatus)
+    {
+        if (feedback.ParentTicketId.HasValue)
+        {
+            throw new Exception(
+                "Phản ánh đã được đánh dấu trùng và được xử lý theo phản ánh chính; không thể cập nhật quy trình riêng.");
+        }
+
+        if (string.Equals(newStatus, FeedbackStatus.Submitted, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(newStatus, FeedbackStatus.AiReviewed, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var hasPendingDuplicateReview = await _uow
+            .GetRepository<FeedbackDuplicateCandidate>()
+            .Entities
+            .AsNoTracking()
+            .AnyAsync(candidate =>
+                candidate.FeedbackId == feedback.FeedbackId &&
+                candidate.Status == "Pending");
+
+        if (hasPendingDuplicateReview)
+        {
+            throw new Exception(
+                "Phản ánh đang chờ xác nhận trùng; cần xác nhận hoặc từ chối đề xuất trước khi tiếp tục quy trình xử lý.");
+        }
     }
 
     private async Task<Feedback> GetFeedbackWithDetailsAsync(Guid feedbackId, bool asNoTracking)
@@ -1207,6 +1284,7 @@ public class FeedbackService : IFeedbackService
             DuplicateWarning = false,
             PotentialDuplicate = null,
             ParentTicketId = feedback.ParentTicketId,
+            IsMasterTicket = feedback.IsMasterTicket,
             IsSupportedByCurrentUser = feedback.FeedbackSupports.Any(s => s.UserId == userId),
             Attachments = feedback.FeedbackAttachments
                 .OrderBy(a => a.UploadedAt)
@@ -1241,11 +1319,21 @@ public class FeedbackService : IFeedbackService
 
     private async Task PopulateDuplicateInfoAsync(FeedbackListItemDto dto)
     {
-        dto.ParentTicketId = await _uow.GetRepository<Feedback>().Entities
+        var duplicateState = await _uow.GetRepository<Feedback>().Entities
             .AsNoTracking()
             .Where(feedback => feedback.FeedbackId == dto.FeedbackId)
-            .Select(feedback => feedback.ParentTicketId)
+            .Select(feedback => new
+            {
+                feedback.ParentTicketId,
+                feedback.IsMasterTicket
+            })
             .FirstOrDefaultAsync();
+
+        if (duplicateState is not null)
+        {
+            dto.ParentTicketId = duplicateState.ParentTicketId;
+            dto.IsMasterTicket = duplicateState.IsMasterTicket;
+        }
 
         var pendingCandidate = await _uow.GetRepository<FeedbackDuplicateCandidate>().Entities
             .AsNoTracking()
@@ -1475,8 +1563,10 @@ public class FeedbackService : IFeedbackService
     string? note = null)
     {
         var oldStatus = feedback.Status;
+        var normalizedStatus = FeedbackStatus.Normalize(newStatus);
+        await EnsureDuplicateReviewCompletedBeforeWorkflowAsync(feedback, normalizedStatus);
 
-        feedback.Status = FeedbackStatus.Normalize(newStatus);
+        feedback.Status = normalizedStatus;
         feedback.UpdatedAt = DateTime.UtcNow;
 
         var history = new FeedbackStatusHistory
@@ -1703,7 +1793,8 @@ public class FeedbackService : IFeedbackService
 
         FeedbackStatusHistory? statusHistory = null;
         if (newStatus == "InProgress" &&
-            report.Feedback.Status == FeedbackStatus.Assigned)
+            (report.Feedback.Status == FeedbackStatus.Assigned ||
+             report.Feedback.Status == FeedbackStatus.NeedRework))
         {
             statusHistory = await ChangeStatusAsync(
                 report.Feedback,
@@ -1765,13 +1856,41 @@ public class FeedbackService : IFeedbackService
 
         await _uow.GetRepository<ProviderContactLog>().AddAsync(log);
 
-        if (string.Equals(report.ReportStatus, "Reported", StringComparison.OrdinalIgnoreCase))
+        FeedbackStatusHistory? statusHistory = null;
+        var isSuccessfulContact = IsSuccessfulCoordinatorContact(log.ContactResult);
+
+        if (string.Equals(report.ReportStatus, "Reported", StringComparison.OrdinalIgnoreCase) &&
+            isSuccessfulContact)
         {
-            report.ReportStatus = "Contacted";
+            report.ReportStatus = "InProgress";
             report.UpdatedAt = now;
+
+            if (report.Feedback.Status == FeedbackStatus.Assigned ||
+                report.Feedback.Status == FeedbackStatus.NeedRework)
+            {
+                statusHistory = await ChangeStatusAsync(
+                    report.Feedback,
+                    FeedbackStatus.InProgress,
+                    currentUserId,
+                    "Liên hệ coordinator thành công, bắt đầu xử lý.");
+            }
         }
 
         await _uow.SaveAsync();
+
+        if (statusHistory != null)
+        {
+            await SynchronizeSlaByStatusAsync(
+                report.Feedback.FeedbackId,
+                statusHistory.OldStatus!,
+                statusHistory.NewStatus,
+                currentUserId,
+                statusHistory.Note);
+
+            await SendStatusUpdatedNotificationAsync(
+                report.Feedback,
+                statusHistory);
+        }
         await SendFeedbackNotificationAsync(
             report.Feedback,
             "Đã cập nhật liên hệ nhà cung cấp",
@@ -1784,6 +1903,38 @@ public class FeedbackService : IFeedbackService
             .FirstAsync(l => l.ContactLogId == log.ContactLogId);
 
         return MapContactLog(saved);
+    }
+
+    private static bool IsSuccessfulCoordinatorContact(string? contactResult)
+    {
+        if (string.IsNullOrWhiteSpace(contactResult))
+        {
+            return false;
+        }
+
+        var normalized = contactResult.Trim().ToLowerInvariant();
+
+        if (normalized.Contains("liên hệ lại") ||
+            normalized.Contains("lien he lai") ||
+            normalized.Contains("cần gọi lại") ||
+            normalized.Contains("can goi lai") ||
+            normalized.Contains("không") ||
+            normalized.Contains("khong") ||
+            normalized.Contains("chưa") ||
+            normalized.Contains("chua") ||
+            normalized.Contains("thất bại") ||
+            normalized.Contains("that bai") ||
+            normalized.Contains("failed"))
+        {
+            return false;
+        }
+
+        return normalized.Contains("thành công") ||
+            normalized.Contains("thanh cong") ||
+            normalized.Contains("đã liên hệ") ||
+            normalized.Contains("da lien he") ||
+            normalized.Contains("successful") ||
+            normalized.Contains("success");
     }
 
     public async Task<IReadOnlyCollection<ProviderContactLogDto>> GetProviderContactLogsAsync(int providerReportId)
@@ -1934,6 +2085,19 @@ public class FeedbackService : IFeedbackService
             }
         }
 
+        if (feedback.Status != FeedbackStatus.InProgress &&
+            feedback.Status != FeedbackStatus.NeedRework)
+        {
+            throw new Exception("Feedback must be InProgress or NeedRework before submitting resolution.");
+        }
+
+        if (report != null &&
+            !string.Equals(report.ReportStatus, "InProgress", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(report.ReportStatus, "Done", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception("Provider report must be InProgress before submitting resolution.");
+        }
+
         var resolution =
             new FeedbackResolution
             {
@@ -2016,6 +2180,11 @@ public class FeedbackService : IFeedbackService
             ?? throw new Exception(
                 "Không tìm thấy resolution để phê duyệt.");
 
+        if (feedback.Status != FeedbackStatus.SubmittedForApproval)
+        {
+            throw new Exception("Feedback must be SubmittedForApproval before approval.");
+        }
+
         var oldStatus = feedback.Status;
 
         resolution.Status =
@@ -2073,8 +2242,27 @@ public class FeedbackService : IFeedbackService
         resolution.Status =
             FeedbackStatus.NeedRework;
 
+        if (feedback.Status != FeedbackStatus.SubmittedForApproval)
+        {
+            throw new Exception("Feedback must be SubmittedForApproval before requiring rework.");
+        }
+
         resolution.ResultNote =
             reason;
+
+        var latestProviderReport = await _uow
+            .GetRepository<FeedbackProviderReport>()
+            .Entities
+            .Where(x => x.FeedbackId == feedbackId)
+            .OrderByDescending(x => x.ReportedAt)
+            .FirstOrDefaultAsync();
+
+        if (latestProviderReport != null &&
+            string.Equals(latestProviderReport.ReportStatus, "Done", StringComparison.OrdinalIgnoreCase))
+        {
+            latestProviderReport.ReportStatus = "InProgress";
+            latestProviderReport.UpdatedAt = DateTime.UtcNow;
+        }
 
         var history = await ChangeStatusAsync(
             feedback,

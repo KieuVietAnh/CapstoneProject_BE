@@ -80,66 +80,168 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
 
     public async Task<FeedbackDuplicateCandidateDto> ConfirmAsync(Guid duplicateCandidateId, Guid staffUserId)
     {
-        var candidate = await _uow.GetRepository<FeedbackDuplicateCandidate>().Entities
-            .Include(c => c.Feedback)
-            .Include(c => c.PotentialParentFeedback)
-            .FirstOrDefaultAsync(c => c.DuplicateCandidateId == duplicateCandidateId)
-            ?? throw new Exception("Không tìm thấy duplicate candidate.");
+        Feedback childFeedback;
+        Feedback parentFeedback;
 
-        if (!string.Equals(candidate.Status, PendingStatus, StringComparison.OrdinalIgnoreCase))
+        _uow.BeginTransaction();
+        try
         {
-            throw new Exception("Duplicate candidate không ở trạng thái Pending.");
-        }
+            var candidateRepository = _uow.GetRepository<FeedbackDuplicateCandidate>();
+            var feedbackRepository = _uow.GetRepository<Feedback>();
 
-        if (candidate.FeedbackId == candidate.PotentialParentFeedbackId)
+            var candidate = await candidateRepository.Entities
+                .Include(c => c.Feedback)
+                .Include(c => c.PotentialParentFeedback)
+                .FirstOrDefaultAsync(c => c.DuplicateCandidateId == duplicateCandidateId)
+                ?? throw new Exception("Không tìm thấy đề xuất phản ánh trùng.");
+
+            if (!string.Equals(candidate.Status, PendingStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception("Chỉ có thể xác nhận đề xuất đang ở trạng thái Pending.");
+            }
+
+            if (candidate.FeedbackId == candidate.PotentialParentFeedbackId)
+            {
+                throw new Exception("Phản ánh không thể là phản ánh cha của chính nó.");
+            }
+
+            childFeedback = candidate.Feedback;
+            parentFeedback = candidate.PotentialParentFeedback;
+
+            if (childFeedback.ParentTicketId.HasValue)
+            {
+                throw new Exception("Phản ánh này đã được liên kết với một phản ánh cha khác.");
+            }
+
+            if (!parentFeedback.IsMasterTicket || parentFeedback.ParentTicketId.HasValue)
+            {
+                throw new Exception("Phản ánh được chọn không còn là phản ánh cha hợp lệ.");
+            }
+
+            if (parentFeedback.AreaId != childFeedback.AreaId)
+            {
+                throw new Exception("Phản ánh cha và phản ánh trùng phải thuộc cùng một khu vực.");
+            }
+
+            if (!FeedbackStatus.IsEligibleDuplicateMasterStatus(parentFeedback.Status))
+            {
+                throw new Exception("Phản ánh cha chưa được công khai hoặc không còn ở trạng thái hợp lệ.");
+            }
+
+            if (parentFeedback.CreatedAt > childFeedback.CreatedAt ||
+                (parentFeedback.CreatedAt == childFeedback.CreatedAt &&
+                 string.CompareOrdinal(
+                     parentFeedback.FeedbackId.ToString("D"),
+                     childFeedback.FeedbackId.ToString("D")) >= 0))
+            {
+                throw new Exception("Phản ánh cha phải được tạo trước phản ánh trùng.");
+            }
+
+            var childHasLinkedFeedbacks = await feedbackRepository.Entities
+                .AnyAsync(feedback => feedback.ParentTicketId == childFeedback.FeedbackId);
+
+            if (childHasLinkedFeedbacks)
+            {
+                throw new Exception("Phản ánh đang có phản ánh con nên không thể chuyển thành phản ánh trùng.");
+            }
+
+            var competingCandidates = await candidateRepository.Entities
+                .Where(other =>
+                    other.FeedbackId == childFeedback.FeedbackId
+                    && other.DuplicateCandidateId != candidate.DuplicateCandidateId
+                    && (other.Status == PendingStatus || other.Status == ConfirmedStatus))
+                .ToListAsync();
+
+            if (competingCandidates.Any(other =>
+                    string.Equals(other.Status, ConfirmedStatus, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new Exception("Phản ánh này đã có một liên kết trùng được xác nhận.");
+            }
+
+            var reviewedAt = DateTime.UtcNow;
+
+            foreach (var competingCandidate in competingCandidates)
+            {
+                competingCandidate.Status = RejectedStatus;
+                competingCandidate.ReviewedByUserId = staffUserId;
+                competingCandidate.ReviewedAt = reviewedAt;
+                competingCandidate.UpdatedAt = reviewedAt;
+            }
+
+            childFeedback.ParentTicketId = parentFeedback.FeedbackId;
+            childFeedback.IsMasterTicket = false;
+            childFeedback.UpdatedAt = reviewedAt;
+
+            parentFeedback.IsMasterTicket = true;
+            parentFeedback.UpdatedAt = reviewedAt;
+
+            candidate.Status = ConfirmedStatus;
+            candidate.ReviewedByUserId = staffUserId;
+            candidate.ReviewedAt = reviewedAt;
+            candidate.UpdatedAt = reviewedAt;
+
+            await _uow.SaveAsync();
+            _uow.CommitTransaction();
+        }
+        catch
         {
-            throw new Exception("Feedback con và feedback chính không hợp lệ.");
+            _uow.RollBack();
+            throw;
         }
-
-        var childFeedback = candidate.Feedback;
-        var parentFeedback = candidate.PotentialParentFeedback;
-
-        childFeedback.ParentTicketId = parentFeedback.FeedbackId;
-        childFeedback.IsMasterTicket = false;
-        childFeedback.UpdatedAt = DateTime.UtcNow;
-
-        parentFeedback.IsMasterTicket = true;
-        parentFeedback.UpdatedAt = DateTime.UtcNow;
-
-        candidate.Status = ConfirmedStatus;
-        candidate.ReviewedByUserId = staffUserId;
-        candidate.ReviewedAt = DateTime.UtcNow;
-        candidate.UpdatedAt = DateTime.UtcNow;
-
-        await _uow.SaveAsync();
 
         await _notificationService.SendAsync(
             childFeedback.UserId,
             "Phản ánh bị đánh dấu trùng",
             "Phản ánh của bạn đã bị đánh dấu trùng với một phản ánh khác.",
             NotificationType.TicketUpdated,
-            $"/feedbacks/{parentFeedback.FeedbackId}");
+            $"/community/feed/{parentFeedback.FeedbackId}");
 
         return await GetCandidateDetailAsync(duplicateCandidateId);
     }
 
     public async Task<FeedbackDuplicateCandidateDto> RejectAsync(Guid duplicateCandidateId, Guid staffUserId)
     {
-        var candidate = await _uow.GetRepository<FeedbackDuplicateCandidate>().Entities
-            .FirstOrDefaultAsync(c => c.DuplicateCandidateId == duplicateCandidateId)
-            ?? throw new Exception("Không tìm thấy duplicate candidate.");
-
-        if (!string.Equals(candidate.Status, PendingStatus, StringComparison.OrdinalIgnoreCase))
+        _uow.BeginTransaction();
+        try
         {
-            throw new Exception("Duplicate candidate không ở trạng thái Pending.");
+            var candidateRepository = _uow.GetRepository<FeedbackDuplicateCandidate>();
+            var candidate = await candidateRepository.Entities
+                .Include(c => c.Feedback)
+                .FirstOrDefaultAsync(c => c.DuplicateCandidateId == duplicateCandidateId)
+                ?? throw new Exception("Không tìm thấy đề xuất phản ánh trùng.");
+
+            if (!string.Equals(candidate.Status, PendingStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception("Chỉ có thể từ chối đề xuất đang ở trạng thái Pending.");
+            }
+
+            var reviewedAt = DateTime.UtcNow;
+
+            candidate.Status = RejectedStatus;
+            candidate.ReviewedByUserId = staffUserId;
+            candidate.ReviewedAt = reviewedAt;
+            candidate.UpdatedAt = reviewedAt;
+
+            var hasOtherActiveCandidate = await candidateRepository.Entities
+                .AnyAsync(other =>
+                    other.FeedbackId == candidate.FeedbackId
+                    && other.DuplicateCandidateId != candidate.DuplicateCandidateId
+                    && (other.Status == PendingStatus || other.Status == ConfirmedStatus));
+
+            if (!candidate.Feedback.ParentTicketId.HasValue && !hasOtherActiveCandidate)
+            {
+                candidate.Feedback.IsMasterTicket = true;
+                candidate.Feedback.UpdatedAt = reviewedAt;
+            }
+
+            await _uow.SaveAsync();
+            _uow.CommitTransaction();
         }
-
-        candidate.Status = RejectedStatus;
-        candidate.ReviewedByUserId = staffUserId;
-        candidate.ReviewedAt = DateTime.UtcNow;
-        candidate.UpdatedAt = DateTime.UtcNow;
-
-        await _uow.SaveAsync();
+        catch
+        {
+            _uow.RollBack();
+            throw;
+        }
 
         return await GetCandidateDetailAsync(duplicateCandidateId);
     }
@@ -287,7 +389,8 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             SupportCount = feedback.FeedbackSupports.Count,
             DuplicateWarning = false,
             PotentialDuplicate = null,
-            ParentTicketId = feedback.ParentTicketId
+            ParentTicketId = feedback.ParentTicketId,
+            IsMasterTicket = feedback.IsMasterTicket
         };
     }
 }

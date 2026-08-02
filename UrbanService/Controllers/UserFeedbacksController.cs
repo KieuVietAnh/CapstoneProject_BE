@@ -16,11 +16,16 @@ public class UserFeedbacksController : ControllerBase
 {
     private readonly IFeedbackService _feedbackService;
     private readonly ICloudinaryService _cloudinaryService;
+    private readonly IFeedbackDuplicateCandidateService _feedbackDuplicateCandidateService;
 
-    public UserFeedbacksController(IFeedbackService feedbackService, ICloudinaryService cloudinaryService)
+    public UserFeedbacksController(
+        IFeedbackService feedbackService,
+        ICloudinaryService cloudinaryService,
+        IFeedbackDuplicateCandidateService feedbackDuplicateCandidateService)
     {
         _feedbackService = feedbackService;
         _cloudinaryService = cloudinaryService;
+        _feedbackDuplicateCandidateService = feedbackDuplicateCandidateService;
     }
 
     /// <summary>Xem danh sách feedback do người dân hiện tại tạo.</summary>
@@ -69,6 +74,27 @@ public class UserFeedbacksController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Lấy phản ánh đã có mà một phản ánh công khai được đánh dấu trùng.</summary>
+    [HttpGet("feed/{feedbackId:guid}/related")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(RelatedFeedbacksDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetResidentFeedRelatedFeedback(Guid feedbackId)
+    {
+        await _feedbackService.GetResidentFeedFeedbackDetailAsync(GetCurrentUserIdOrEmpty(), feedbackId);
+        var result = await _feedbackDuplicateCandidateService.GetRelatedFeedbacksAsync(feedbackId);
+
+        if (result.MasterFeedbackId != feedbackId)
+        {
+            await _feedbackService.GetResidentFeedFeedbackDetailAsync(
+                GetCurrentUserIdOrEmpty(),
+                result.MasterFeedbackId);
+        }
+
+        result.LinkedFeedbacks = [];
+        return Ok(result);
+    }
+
     /// <summary>Xem chi tiết một feedback của người dân hiện tại.</summary>
     /// <remarks>Chỉ chủ sở hữu feedback có role `SERVICEUSER` được xem.</remarks>
     [HttpGet("{feedbackId:guid}")]
@@ -79,6 +105,20 @@ public class UserFeedbacksController : ControllerBase
     public async Task<IActionResult> GetMyFeedbackDetail(Guid feedbackId)
     {
         var result = await _feedbackService.GetMyFeedbackDetailAsync(GetCurrentUserId(), feedbackId);
+        return Ok(result);
+    }
+
+    /// <summary>Lấy phản ánh đã có mà phản ánh của người dân được đánh dấu trùng.</summary>
+    [HttpGet("{feedbackId:guid}/related")]
+    [ProducesResponseType(typeof(RelatedFeedbacksDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetMyRelatedFeedback(Guid feedbackId)
+    {
+        await _feedbackService.GetMyFeedbackDetailAsync(GetCurrentUserId(), feedbackId);
+        var result = await _feedbackDuplicateCandidateService.GetRelatedFeedbacksAsync(feedbackId);
+        result.LinkedFeedbacks = [];
         return Ok(result);
     }
 
