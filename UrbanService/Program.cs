@@ -15,6 +15,11 @@ using UrbanService.Hubs;
 using UrbanService.Middlewares;
 using UrbanService.BLL.Options;
 
+// The database schema uses PostgreSQL `timestamp without time zone` for DateTime columns.
+// Existing services store UTC DateTime values (DateTime.UtcNow). Enable Npgsql's legacy
+// timestamp behavior so these UTC DateTime values can be written to the current schema.
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 

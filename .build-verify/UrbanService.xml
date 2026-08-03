@@ -1,0 +1,591 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>UrbanService</name>
+    </assembly>
+    <members>
+        <member name="M:UrbanService.Controllers.AiController.Health(System.Threading.CancellationToken)">
+            <summary>Kiem tra BE co ket noi duoc AI server khong.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.AiController.FeedbackReviewQueueStatus(System.Threading.CancellationToken)">
+            <summary>Kiem tra hang doi AI review feedback.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.AiController.GetMyConversations(System.Threading.CancellationToken)">
+            <summary>Chatbot UrbanService cho nguoi dan.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.AiController.GetConversationMessages(System.Int32,System.Threading.CancellationToken)">
+            <summary>Lay cac message cu trong mot AI conversation cua nguoi dung hien tai.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.AiController.Chat(UrbanService.BLL.DTOs.AI.AiChatRequest,System.Threading.CancellationToken)">
+            <summary>Chatbot UrbanService cho nguoi dan.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.AiController.CreateFeedbackDraft(UrbanService.BLL.DTOs.AI.AiFeedbackDraftRequest,System.Threading.CancellationToken)">
+            <summary>Tao ban nhap phan anh tu noi dung, vi tri va anh nguoi dung cung cap.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.AuthController.Register(UrbanService.BLL.Dtos.RegisterRequest)">
+            <summary>Đăng ký tài khoản người dùng mới.</summary>
+            <remarks>
+            API công khai, không yêu cầu JWT. Role mặc định được lấy từ cấu hình
+            `Auth:DefaultRole`, thông thường là `SERVICEUSER`.
+            </remarks>
+            <response code="200">Đăng ký thành công, trả về JWT và thông tin tài khoản.</response>
+            <response code="400">Dữ liệu không hợp lệ hoặc tài khoản đã tồn tại.</response>
+        </member>
+        <member name="M:UrbanService.Controllers.AuthController.Login(UrbanService.BLL.Dtos.LoginRequest)">
+            <summary>
+            Đăng nhập để lấy JWT dùng cho các API yêu cầu xác thực.
+            </summary>
+            <remarks>
+            Sau khi đăng nhập, sao chép giá trị `token` trong response, bấm nút
+            **Authorize** trên Swagger và nhập token. API tạo feedback yêu cầu tài
+            khoản có role `SERVICEUSER`.
+            </remarks>
+            <response code="200">Đăng nhập thành công, trả về JWT và thông tin người dùng.</response>
+            <response code="400">Email hoặc mật khẩu không hợp lệ.</response>
+        </member>
+        <member name="M:UrbanService.Controllers.AuthController.RefreshToken(UrbanService.BLL.Dtos.RefreshTokenRequest)">
+            <summary>Cấp access token mới bằng refresh token.</summary>
+            <remarks>
+            API công khai. Client gửi refresh token nhận từ login/register/google-login.
+            Refresh token sẽ được rotate sau mỗi lần gọi thành công.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.AuthController.GoogleLogin(UrbanService.BLL.Dtos.GoogleLoginRequest)">
+             <summary>Đăng nhập bằng tài khoản Google đã xác thực.</summary>
+             <remarks>
+             Frontend gửi Google ID token nhận từ Google Identity Services.
+             Backend xác minh token và chỉ đăng nhập khi email đã tồn tại trong
+             UrbanService, `isVerified = true` và tài khoản đang hoạt động.
+            
+             API không tự động tạo tài khoản mới.
+             </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.AuthController.SendEmailVerificationOtp">
+            <summary>Gửi OTP xác thực email tới email của người dùng hiện tại.</summary>
+            <remarks>
+            Yêu cầu JWT hợp lệ. OTP có hiệu lực trong 5 phút. Brevo API phải được
+            cấu hình trong section `Brevo`.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.AuthController.VerifyEmail(UrbanService.BLL.Dtos.VerifyEmailRequest)">
+            <summary>Xác thực email bằng OTP.</summary>
+            <remarks>
+            Yêu cầu JWT hợp lệ. Sau khi OTP đúng, trường `isVerified` của người
+            dùng được cập nhật thành `true`.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.InteractionMessagesController.GetTicketMessages(System.Guid,System.Boolean)">
+            <summary>Lấy danh sách trao đổi/chat theo ticket.</summary>
+            <remarks>
+            Resident chỉ xem được tin nhắn public của ticket do chính mình tạo.
+            Staff/Manager/SystemAdmin xem được tin nhắn public; truyền `includeInternal=true` để xem cả ghi chú nội bộ.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.InteractionMessagesController.SendMessage(System.Guid,UrbanService.BLL.DTOs.InteractionMessageCreateRequest)">
+            <summary>Gửi tin nhắn trao đổi theo ticket.</summary>
+            <remarks>
+            Resident được gửi tin nhắn public cho ticket của mình.
+            Staff/Manager/SystemAdmin được gửi tin nhắn public hoặc ghi chú nội bộ (`isInternal=true`).
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.InteractionMessagesController.AddSystemMessage(System.Guid,UrbanService.BLL.DTOs.SystemInteractionMessageCreateRequest)">
+            <summary>Tạo system message cho ticket.</summary>
+            <remarks>
+            Chỉ SystemAdmin/InteractionManager được tạo system message. Mặc định là ghi chú nội bộ.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementAreaAlertsController.CreateManualAlert(UrbanService.BLL.Dtos.CreateAreaAlertRequest)">
+            <summary>Staff tạo cảnh báo khu vực thủ công.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.GetAllFeedbacks(UrbanService.BLL.Dtos.FeedbackQueryParameters)">
+            <summary>Xem danh sách tất cả feedback trong hệ thống.</summary>
+            <remarks>
+            Role được phép: `SYSTEMADMIN`, `SYSTEMSTAFF`, `INTERACTIONMANAGER`.
+            Hỗ trợ phân trang và lọc theo `status`, `categoryId`, `search`.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.GetAiReviewedFeedbacks(UrbanService.BLL.Dtos.FeedbackQueryParameters)">
+            <summary>Xem danh sach feedback da duoc AI review.</summary>
+            <remarks>Role duoc phep: SYSTEMADMIN, SYSTEMSTAFF, INTERACTIONMANAGER.</remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.GetFeedbackDetail(System.Guid)">
+            <summary>Xem chi tiết một feedback bất kỳ.</summary>
+            <remarks>Role được phép: `SYSTEMADMIN`, `SYSTEMSTAFF`, `INTERACTIONMANAGER`.</remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.GetLinkedFeedbacks(System.Guid)">
+            <summary>Lấy các phản ánh trùng đã được liên kết vào phản ánh chính.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.GetRelatedFeedbacks(System.Guid)">
+            <summary>Lấy phản ánh chính và các phản ánh cùng được liên kết.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.GetProviderCandidates(System.Guid)">
+            <summary>Lay danh sach Service Provider phu hop voi area/category cua feedback.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.GetProviderReports(System.Guid)">
+            <summary>Xem cac lan feedback da duoc report sang Service Provider.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.GetFeedbackResolutions(System.Guid)">
+            <summary>Xem lich su ket qua xu ly staff da submit cho feedback.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.GetResolution(System.Int32)">
+            <summary>Xem chi tiet mot ket qua xu ly.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.CreateAreaAlertFromFeedback(System.Guid,UrbanService.BLL.Dtos.CreateAreaAlertFromFeedbackRequest)">
+            <summary>Tao canh bao khu vuc tu feedback nghiem trong.</summary>
+            <remarks>Role duoc phep: SYSTEMSTAFF, INTERACTIONMANAGER.</remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.NotifyProviderResult(System.Guid,UrbanService.BLL.DTOs.NotifyProviderResultRequest)">
+            <summary>Gui notification thu cong cho nguoi dan ve ket qua/provider status cua feedback.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.UpdateFeedback(System.Guid,UrbanService.BLL.Dtos.StaffFeedbackUpdateRequest)">
+            <summary>Staff chỉnh sửa feedback của người dân.</summary>
+            <remarks>
+            Chỉ role `SYSTEMSTAFF` được phép sử dụng. Có thể sửa category, priority,
+            nội dung và status. Nếu `status` thay đổi, người tạo feedback sẽ nhận
+            notification và event SignalR `NotificationReceived`.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.UpdateStatus(System.Guid,UrbanService.BLL.Dtos.UpdateFeedbackStatusRequest)">
+             <summary>Staff hoặc Admin cập nhật trạng thái feedback.</summary>
+             <remarks>
+             Role được phép: `SYSTEMSTAFF`, `SYSTEMADMIN`.
+            
+             Sau khi cập nhật thành công, hệ thống lưu notification và gửi realtime
+             event `NotificationReceived` qua SignalR tới người tạo feedback.
+            
+             Status hợp lệ: `Submitted`, `AiReviewed`, `Verified`, `Assigned`, `InProgress`, `Resolved`,
+             `SubmittedForApproval`, `Approved`, `Rejected`, `NeedRework`, `Closed`,
+             `Cancelled`.
+             </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.VerifyFeedback(System.Guid)">
+            <summary>
+            Staff verify feedback
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.AssignFeedback(UrbanService.BLL.DTOs.AssignFeedbackRequest)">
+            <summary>
+            Staff report feedback cho coordinator
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.SubmitResolution(UrbanService.BLL.DTOs.SubmitResolutionRequest)">
+            <summary>
+            Operator gửi kết quả xử lý
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementFeedbacksController.ApproveResolution(System.Guid,System.String)">
+            <summary>
+            Manager duyệt kết quả xử lý
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementProviderReportsController.UpdateStatus(System.Int32,UrbanService.BLL.DTOs.UpdateProviderReportStatusRequest)">
+            <summary>Cap nhat trang thai report gui Service Provider.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementProviderReportsController.GetContactLogs(System.Int32)">
+            <summary>Xem lich su lien he Service Provider cua mot provider report.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementProviderReportsController.AddContactLog(System.Int32,UrbanService.BLL.DTOs.ProviderContactLogCreateRequest)">
+            <summary>Staff ghi lai ket qua da goi/email/nhan tin Service Provider.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementProviderReportsController.GetCompletionDocuments(System.Int32)">
+            <summary>Xem tai lieu/anh hoan thanh cua mot provider report.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.ManagementProviderReportsController.AddCompletionDocuments(System.Int32,UrbanService.Controllers.CompletionDocumentUploadRequest)">
+            <summary>Upload anh/tai lieu hoan thanh cho provider report.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.NotificationsController.GetMyNotifications(System.Int32,System.Int32,System.Nullable{System.Boolean})">
+            <summary>Xem danh sách notification của tài khoản đang đăng nhập.</summary>
+            <remarks>
+            Yêu cầu JWT hợp lệ. Hỗ trợ phân trang và lọc trạng thái đọc bằng `isRead`.
+            Notification realtime được nhận qua SignalR hub `/hubs/notifications`,
+            event `NotificationReceived`.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.NotificationsController.MarkAsRead(System.Int32)">
+            <summary>Đánh dấu một notification là đã đọc.</summary>
+            <remarks>Chỉ cập nhật notification thuộc tài khoản đang đăng nhập.</remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.NotificationsController.MarkAllAsRead">
+            <summary>Đánh dấu tất cả notification của tài khoản là đã đọc.</summary>
+            <remarks>Yêu cầu JWT hợp lệ và chỉ tác động đến notification của tài khoản hiện tại.</remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.Start(System.Guid)">
+            <summary>
+            Manager/Admin bắt đầu SLA cho feedback sau khi xác minh.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.GetCurrent(System.Guid)">
+            <summary>
+            Lấy SLA hiện tại của feedback.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.MarkResponded(System.Guid,System.String)">
+            <summary>
+            Nhân viên ghi nhận phản hồi đầu tiên.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.Pause(System.Guid,UrbanService.BLL.DTOs.SLA.PauseSlaRequest)">
+            <summary>
+            Manager/Admin tạm dừng SLA.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.Resume(System.Guid,UrbanService.BLL.DTOs.SLA.ResumeSlaRequest)">
+            <summary>
+            Manager/Admin tiếp tục SLA.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.Complete(System.Guid,UrbanService.BLL.DTOs.SLA.CompleteSlaRequest)">
+            <summary>
+            Hoàn thành SLA sau khi xử lý xong.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.Recalculate(System.Guid,UrbanService.BLL.DTOs.SLA.RecalculateSlaRequest)">
+            <summary>
+            Manager/Admin tính lại SLA khi thay đổi Category/Priority.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.Cancel(System.Guid,System.String)">
+            <summary>
+            Hủy SLA.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.CheckViolation(System.Int64)">
+            <summary>
+            Kiểm tra vi phạm SLA thủ công.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.GetStatus(System.Guid)">
+            <summary>
+            Lấy trạng thái SLA.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaController.GetTimeline(System.Guid)">
+            <summary>
+            Lấy timeline SLA.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaDashboardController.Overview">
+            <summary>
+            Lấy tổng quan SLA Dashboard.
+            </summary>
+            <remarks>
+            API dùng để hiển thị các KPI tổng quan của SLA:
+            - Tổng số SLA
+            - SLA đang chạy
+            - SLA đã hoàn thành
+            - SLA bị vi phạm
+            - SLA đang cảnh báo
+            - Tỷ lệ SLA đạt yêu cầu
+            - Thời gian xử lý trung bình
+            
+            Dùng cho các thẻ thống kê ở đầu màn hình SLA Dashboard.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaDashboardController.Compliance">
+             <summary>
+             Lấy tỷ lệ tuân thủ SLA.
+             </summary>
+             <remarks>
+             Trả về phần trăm SLA đạt yêu cầu theo:
+             - Hôm nay
+             - Tuần hiện tại
+             - Tháng hiện tại
+            
+             Dùng để hiển thị biểu đồ Gauge SLA Compliance.
+             </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaDashboardController.Performance">
+             <summary>
+             Lấy hiệu suất xử lý SLA.
+             </summary>
+             <remarks>
+             Bao gồm:
+             - Thời gian phản hồi trung bình (Response SLA)
+             - Thời gian hoàn thành trung bình (Resolution SLA)
+             - Tỷ lệ đạt Response SLA
+             - Tỷ lệ đạt Resolution SLA
+            
+             Dùng cho khu vực Performance trên dashboard.
+             </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaDashboardController.ViolationChart">
+             <summary>
+             Lấy dữ liệu biểu đồ SLA bị vi phạm theo thời gian.
+             </summary>
+             <remarks>
+             Trả về số lượng SLA breach theo từng ngày.
+            
+             Bao gồm:
+             - Response SLA bị quá hạn
+             - Resolution SLA bị quá hạn
+            
+             Dùng cho biểu đồ Line Chart hoặc Bar Chart.
+             </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaDashboardController.NearingBreach(System.Int32)">
+             <summary>
+             Lấy danh sách feedback sắp vi phạm SLA.
+             </summary>
+             <remarks>
+             Trả về các SLA đang chạy và gần tới thời hạn.
+            
+             Dùng để hiển thị bảng:
+             "Tickets nearing SLA breach".
+            
+             Query parameter:
+             limit: số lượng bản ghi trả về.
+             Mặc định 10.
+             </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaDashboardController.RecentBreach(System.Int32)">
+             <summary>
+             Lấy danh sách SLA vừa bị vi phạm.
+             </summary>
+             <remarks>
+             Trả về các SLA breach gần đây nhất.
+            
+             Bao gồm:
+             - Feedback bị vi phạm
+             - Loại vi phạm Response hoặc Resolution
+             - Thời điểm vi phạm
+             - Số phút quá hạn
+            
+             Dùng cho bảng:
+             "Recently breached SLA".
+            
+             Query parameter:
+             limit: số lượng bản ghi trả về.
+             Mặc định 10.
+             </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaPolicyController.GetAll(UrbanService.BLL.DTOs.SLA.SlaPolicyQueryParameters)">
+            <summary>
+            Lấy danh sách SLA policy có phân trang.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaPolicyController.GetById(System.Int32)">
+            <summary>
+            Lấy chi tiết SLA policy.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaPolicyController.Create(UrbanService.BLL.DTOs.SLA.SlaPolicyCreateRequest)">
+            <summary>
+            Tạo SLA policy mới.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaPolicyController.Update(System.Int32,UrbanService.BLL.DTOs.SLA.SlaPolicyUpdateRequest)">
+            <summary>
+            Cập nhật SLA policy.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaPolicyController.SetActive(System.Int32,UrbanService.BLL.DTOs.SLA.SlaPolicySetActiveRequest)">
+            <summary>
+            Kích hoạt hoặc vô hiệu hóa SLA policy.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.SlaPolicyController.Delete(System.Int32)">
+            <summary>
+            Xóa SLA policy.
+            </summary>
+        </member>
+        <member name="M:UrbanService.Controllers.StaffFeedbackDuplicatesController.GetSummary">
+            <summary>Lấy số lượng case feedback nghi trùng theo trạng thái.</summary>
+            <remarks>
+            Role được phép: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER.
+            FE dùng để hiển thị badge/card pending count trên staff dashboard.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.StaffFeedbackDuplicatesController.GetCandidates(UrbanService.BLL.Dtos.FeedbackDuplicateQueryParameters)">
+            <summary>Lấy danh sách case feedback nghi trùng.</summary>
+            <remarks>
+            Role được phép: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER.
+            Hỗ trợ filter theo status, ví dụ Pending/Confirmed/Rejected, và phân trang.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.StaffFeedbackDuplicatesController.GetCandidateDetail(System.Guid)">
+            <summary>Xem chi tiết một case feedback nghi trùng.</summary>
+            <remarks>
+            Role được phép: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER.
+            FE dùng response này để render màn compare feedback mới và potential parent feedback.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.StaffFeedbackDuplicatesController.Confirm(System.Guid)">
+            <summary>Staff xác nhận hai feedback là trùng nhau và thực hiện gộp ticket.</summary>
+            <remarks>
+            Chỉ role SYSTEMSTAFF/SYSTEMADMIN/INTERACTIONMANAGER được phép.
+            Khi confirm:
+            - feedback con được set ParentTicketId = parentFeedbackId
+            - feedback con IsMasterTicket = false
+            - feedback chính IsMasterTicket = true
+            - duplicate candidate chuyển Confirmed
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.StaffFeedbackDuplicatesController.Reject(System.Guid)">
+            <summary>Staff từ chối case nghi trùng, không gộp ticket.</summary>
+            <remarks>
+            Chỉ role SYSTEMSTAFF/SYSTEMADMIN/INTERACTIONMANAGER được phép.
+            Khi reject, hệ thống chỉ chuyển duplicate candidate sang Rejected và không set ParentTicketId.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserAreaAlertsController.GetAreaAlerts(UrbanService.BLL.Dtos.AreaAlertQueryParameters)">
+            <summary>User xem danh sách cảnh báo khu vực.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.UserAreaSubscriptionsController.GetMySubscriptions">
+            <summary>User xem danh sách khu vực đã đăng ký nhận cảnh báo.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.UserAreaSubscriptionsController.CreateSubscription(UrbanService.BLL.Dtos.CreateAreaSubscriptionRequest)">
+            <summary>User đăng ký khu vực nhận cảnh báo.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.UserAreaSubscriptionsController.DeleteSubscription(System.Int32)">
+            <summary>User hủy đăng ký khu vực nhận cảnh báo.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.GetMyFeedbacks(UrbanService.BLL.Dtos.FeedbackQueryParameters)">
+            <summary>Xem danh sách feedback do người dân hiện tại tạo.</summary>
+            <remarks>
+            Yêu cầu role `SERVICEUSER`. Hỗ trợ phân trang và lọc theo `status`,
+            `categoryId`, `search`.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.GetResidentFeedFeedbacks(UrbanService.BLL.Dtos.FeedbackQueryParameters)">
+            <summary>Xem bang tin feedback cua nguoi dan.</summary>
+            <remarks>
+            API công khai, không yêu cầu đăng nhập. Trả về tất cả feedback đã qua bước nội bộ,
+            loại các feedback đang `Submitted` hoặc `AiReviewed`.
+            Hỗ trợ phân trang và lọc theo `status`, `categoryId`, `search`.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.GetResidentFeedFeedbackDetail(System.Guid)">
+            <summary>Xem chi tiết một feedback công khai trên bảng tin người dân.</summary>
+            <remarks>
+            API công khai, không yêu cầu đăng nhập. Cho phép xem feedback đã được công khai
+            trên bảng tin, loại các feedback đang `Submitted` hoặc `AiReviewed`.
+            Nếu có JWT hợp lệ, hệ thống vẫn tính trạng thái `IsSupportedByCurrentUser`.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.GetResidentFeedRelatedFeedback(System.Guid)">
+            <summary>Lấy phản ánh đã có mà một phản ánh công khai được đánh dấu trùng.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.GetMyFeedbackDetail(System.Guid)">
+            <summary>Xem chi tiết một feedback của người dân hiện tại.</summary>
+            <remarks>Chỉ chủ sở hữu feedback có role `SERVICEUSER` được xem.</remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.GetMyRelatedFeedback(System.Guid)">
+            <summary>Lấy phản ánh đã có mà phản ánh của người dân được đánh dấu trùng.</summary>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.CreateFeedback(UrbanService.Controllers.FeedbackCreateFormRequest)">
+             <summary>
+             Người dân tạo một feedback mới, có thể đính kèm file.
+             </summary>
+             <remarks>
+             Yêu cầu tài khoản có role `SERVICEUSER` và JWT hợp lệ.
+            
+             Gửi dữ liệu dưới dạng `multipart/form-data`. Các trường bắt buộc gồm
+             `categoryId`, `title`, `description` và `locationText`.
+            
+             Quy trình xử lý:
+             1. File trong `attachments` được tải lên Cloudinary.
+             2. Hệ thống kiểm tra `categoryId` tồn tại và đang hoạt động.
+             3. Feedback được tạo với `status = Submitted`.
+             4. Nếu không truyền `priority`, hệ thống dùng `Medium`.
+             5. Hệ thống tạo lịch sử trạng thái đầu tiên với ghi chú `Feedback created`.
+            
+             Hiện tại hệ thống chưa có API công khai để lấy danh sách category; client
+             cần sử dụng một `categoryId` hợp lệ đã được cung cấp.
+             </remarks>
+             <response code="200">Tạo feedback thành công, trả về toàn bộ chi tiết feedback.</response>
+             <response code="400">Dữ liệu thiếu/không hợp lệ, category không tồn tại hoặc upload file thất bại.</response>
+             <response code="401">JWT thiếu, hết hạn hoặc không hợp lệ.</response>
+             <response code="403">Tài khoản không có role SERVICEUSER.</response>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.UpdateFeedback(System.Guid,UrbanService.BLL.Dtos.FeedbackUpdateRequest)">
+            <summary>Chỉnh sửa feedback của người dân hiện tại.</summary>
+            <remarks>
+            Yêu cầu role `SERVICEUSER` và phải là chủ sở hữu feedback. Chỉ các trường
+            được truyền trong body mới được cập nhật.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.DeleteFeedback(System.Guid)">
+            <summary>Xóa feedback của người dân hiện tại.</summary>
+            <remarks>Yêu cầu role `SERVICEUSER` và phải là chủ sở hữu feedback.</remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.AddAttachments(System.Guid,UrbanService.Controllers.FeedbackAttachmentUploadRequest)">
+            <summary>Thêm file đính kèm vào feedback.</summary>
+            <remarks>
+            Yêu cầu role `SERVICEUSER`, phải là chủ sở hữu feedback và gửi file bằng
+            `multipart/form-data`. File được tải lên Cloudinary.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.DeleteAttachment(System.Guid,System.Int32)">
+            <summary>Xóa một file đính kèm khỏi feedback.</summary>
+            <remarks>Yêu cầu role `SERVICEUSER` và phải là chủ sở hữu feedback.</remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.AddComment(System.Guid,UrbanService.BLL.Dtos.FeedbackCommentCreateRequest)">
+            <summary>Thêm bình luận vào một feedback.</summary>
+            <remarks>
+            Yêu cầu role `SERVICEUSER`. Có thể bình luận vào feedback tồn tại, không
+            bắt buộc là chủ sở hữu.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.Support(System.Guid)">
+            <summary>Đồng tình với một feedback.</summary>
+            <remarks>
+            Yêu cầu role `SERVICEUSER`. Gọi lại nhiều lần không tạo bản ghi trùng.
+            </remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.Unsupport(System.Guid)">
+            <summary>Hủy đồng tình với một feedback.</summary>
+            <remarks>Yêu cầu role `SERVICEUSER`. Nếu chưa đồng tình, API vẫn trả về thành công.</remarks>
+        </member>
+        <member name="M:UrbanService.Controllers.UserFeedbacksController.ReviewResolution(System.Guid,UrbanService.BLL.DTOs.CitizenResolutionReviewRequest)">
+            <summary>Nguoi dan danh gia ket qua xu ly sau khi feedback duoc duyet.</summary>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.AreaId">
+            <summary>ID cua khu vuc van hanh.</summary>
+            <example>1</example>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.CategoryId">
+            <summary>ID của danh mục dịch vụ đô thị đang hoạt động.</summary>
+            <example>1</example>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.Title">
+            <summary>Tiêu đề ngắn mô tả vấn đề.</summary>
+            <example>Đèn đường không hoạt động</example>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.Description">
+            <summary>Mô tả chi tiết vấn đề người dân muốn phản ánh.</summary>
+            <example>Đèn đường trước số 12 đã tắt ba ngày liên tiếp.</example>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.LocationText">
+            <summary>Địa chỉ hoặc mô tả vị trí xảy ra vấn đề.</summary>
+            <example>12 Nguyễn Huệ, Quận 1</example>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.Latitude">
+            <summary>Vĩ độ của vị trí, nếu có.</summary>
+            <example>10.7731</example>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.Longitude">
+            <summary>Kinh độ của vị trí, nếu có.</summary>
+            <example>106.7043</example>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.LocationAccuracyMeters">
+            <summary>Do chinh xac vi tri tinh bang met, neu co.</summary>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.GeoSource">
+            <summary>Nguon lay toa do, vi du GPS hoac Manual.</summary>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.Priority">
+            <summary>Mức độ ưu tiên. Mặc định là Medium nếu bỏ trống.</summary>
+            <example>Medium</example>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.DueDate">
+            <summary>Thời hạn mong muốn xử lý, nếu có. Dùng định dạng ISO 8601.</summary>
+            <example>2026-06-15T10:00:00Z</example>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackCreateFormRequest.Attachments">
+            <summary>Danh sách file ảnh hoặc tài liệu đính kèm, nếu có.</summary>
+        </member>
+        <member name="P:UrbanService.Controllers.FeedbackAttachmentUploadRequest.Files">
+            <summary>Danh sách file cần thêm vào feedback.</summary>
+        </member>
+    </members>
+</doc>
