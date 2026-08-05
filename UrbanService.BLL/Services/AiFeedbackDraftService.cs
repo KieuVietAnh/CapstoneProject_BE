@@ -83,7 +83,7 @@ Yêu cầu:
 4. title ngắn gọn, rõ vấn đề.
 5. description viết lại phản ánh lịch sự, đầy đủ, dùng tiếng Việt.
 6. suggestedCategory là nhóm vấn đề đô thị phù hợp nếu suy luận được.
-7. urgencyLevel chỉ dùng một trong các giá trị: Low, Medium, High, Critical.
+7. urgencyLevel chỉ dùng một trong các giá trị: Low, Medium, High, Urgent.
 8. Nếu ảnh giúp nhận diện vấn đề, dùng ảnh để bổ sung mô tả nhưng không khẳng định quá mức.
 
 Schema JSON:
@@ -94,7 +94,7 @@ Schema JSON:
   "latitude": number|null,
   "longitude": number|null,
   "suggestedCategory": "string|null",
-  "urgencyLevel": "Low|Medium|High|Critical|null",
+  "urgencyLevel": "Low|Medium|High|Urgent|null",
   "summary": "string|null",
   "missingFields": ["string"],
   "confirmationMessage": "string"

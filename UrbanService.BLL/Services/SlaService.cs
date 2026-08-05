@@ -2560,15 +2560,15 @@ public class SlaService : ISlaService
         }
 
         if (normalized.Equals(
-                "Critical",
-                StringComparison.OrdinalIgnoreCase))
+            "Urgent",
+            StringComparison.OrdinalIgnoreCase))
         {
-            return "Critical";
+            return "Urgent";
         }
 
         throw new ArgumentException(
             "Priority không hợp lệ. " +
-            "Chỉ chấp nhận Low, Medium, High hoặc Critical.");
+            "Chỉ chấp nhận Low, Medium, High hoặc Urgent.");
     }
 
     private static string? NormalizeOptionalText(
