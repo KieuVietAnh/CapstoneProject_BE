@@ -180,22 +180,26 @@ public class InteractionMessageService : IInteractionMessageService
 
     private static bool IsStaffOrManager(User user)
     {
-        var role = user.Role?.RoleName;
-        return role is UserRole.SYSTEMADMIN or UserRole.SYSTEMSTAFF or UserRole.INTERACTIONMANAGER;
+        var role = user.Role?.RoleName?.ToUpperInvariant();
+        return role is UserRole.SYSTEMADMIN
+            or UserRole.SYSTEMSTAFF
+            or UserRole.INTERACTIONMANAGER
+            or UserRole.SERVICEOPERATORSTAFF;
     }
 
     private static bool IsSystemActor(User user)
     {
-        var role = user.Role?.RoleName;
+        var role = user.Role?.RoleName?.ToUpperInvariant();
         return role is UserRole.SYSTEMADMIN or UserRole.INTERACTIONMANAGER;
     }
 
     private static string ResolveSenderType(User user)
     {
-        return user.Role?.RoleName switch
+        return user.Role?.RoleName?.ToUpperInvariant() switch
         {
             UserRole.SERVICEUSER => "Resident",
             UserRole.SYSTEMSTAFF => "Staff",
+            UserRole.SERVICEOPERATORSTAFF => "OperatorStaff",
             UserRole.INTERACTIONMANAGER => "Manager",
             UserRole.SYSTEMADMIN => "System",
             _ => "User"
