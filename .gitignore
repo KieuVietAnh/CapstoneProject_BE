@@ -370,3 +370,8 @@ FodyWeavers.xsd
 appsettings.json
 appsettings.Development.json
 appsettings.Production.json
+
+# Local deployment secrets
+.env
+.env.*
+!.env.example

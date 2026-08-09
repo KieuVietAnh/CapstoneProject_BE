@@ -11,8 +11,33 @@ env:
   CONTAINER_NAME: urban-service-api
   APP_DIR: /var/www/urban-service-be
 
+permissions:
+  contents: read
+
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore UrbanService.sln
+
+      - name: Build
+        run: dotnet build UrbanService.sln --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test UrbanService.sln --configuration Release --no-build
+
   build-and-deploy:
+    needs: test
     runs-on: ubuntu-latest
 
     environment:
@@ -90,6 +115,16 @@ jobs:
             OPENROUTER_BASE_URL=${{ secrets.OPENROUTER_BASE_URL }}
             OPENROUTER_HTTP_REFERER=${{ secrets.OPENROUTER_HTTP_REFERER }}
             OPENROUTER_X_TITLE=${{ secrets.OPENROUTER_X_TITLE }}
+            MESSENGER_PAGE_ACCESS_TOKEN=${{ secrets.MESSENGER_PAGE_ACCESS_TOKEN }}
+            MESSENGER_VERIFY_TOKEN=${{ secrets.MESSENGER_VERIFY_TOKEN }}
+            MESSENGER_APP_SECRET=${{ secrets.MESSENGER_APP_SECRET }}
+            MESSENGER_SUBMISSION_USER_ID=${{ secrets.MESSENGER_SUBMISSION_USER_ID }}
+            MESSENGER_GRAPH_API_VERSION=v25.0
+            SLA_MONITORING_ENABLED=${{ secrets.SLA_MONITORING_ENABLED }}
+            SLA_MONITORING_INTERVAL_MINUTES=${{ secrets.SLA_MONITORING_INTERVAL_MINUTES }}
+            SLA_MONITORING_INITIAL_DELAY_SECONDS=${{ secrets.SLA_MONITORING_INITIAL_DELAY_SECONDS }}
+            SLA_MONITORING_WARNING_THRESHOLD_PERCENT=${{ secrets.SLA_MONITORING_WARNING_THRESHOLD_PERCENT }}
+            DATABASE_MIGRATE_ON_STARTUP=true
             EOF
 
             echo "Stopping old container if exists..."
@@ -114,15 +149,16 @@ jobs:
           key: ${{ secrets.DO_SSH_KEY }}
           port: ${{ secrets.DO_PORT }}
           script: |
-            echo "Waiting for container to start..."
-            sleep 15
+            echo "Waiting for API health check..."
+            for attempt in {1..12}; do
+              if curl --fail --silent http://localhost:8080/health; then
+                echo "API is healthy."
+                docker logs --tail 50 ${{ env.CONTAINER_NAME }}
+                exit 0
+              fi
+              sleep 5
+            done
 
-            if docker ps | grep -q ${{ env.CONTAINER_NAME }}; then
-              echo "Container is running!"
-              docker logs --tail 50 ${{ env.CONTAINER_NAME }}
-              curl -I http://localhost:8080/swagger || true
-            else
-              echo "Container failed to start!"
-              docker logs ${{ env.CONTAINER_NAME }} || true
-              exit 1
-            fi
+            echo "API health check failed."
+            docker logs ${{ env.CONTAINER_NAME }} || true
+            exit 1

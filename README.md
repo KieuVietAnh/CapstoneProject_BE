@@ -136,6 +136,37 @@ Notification REST APIs:
 - `PATCH /api/notifications/{notificationId}/read`: mark one as read.
 - `PATCH /api/notifications/read-all`: mark all as read.
 
+## Messenger feedback intake
+
+Required environment variables:
+
+```text
+MESSENGER_PAGE_ACCESS_TOKEN=...
+MESSENGER_VERIFY_TOKEN=...
+MESSENGER_APP_SECRET=...
+MESSENGER_SUBMISSION_USER_ID=...
+MESSENGER_GRAPH_API_VERSION=v25.0
+```
+
+`MESSENGER_SUBMISSION_USER_ID` must be the ID of an active `SERVICEUSER` account.
+Feedback created from Messenger is owned by this service account; the Page-scoped
+sender ID and draft are stored in `messenger_feedback_conversations`.
+
+Use this public HTTPS callback URL in Meta Developer Dashboard:
+
+```text
+https://your-api-domain/api/integrations/messenger/webhook
+```
+
+Subscribe the Page to the `messages` and `messaging_postbacks` webhook fields.
+The bot collects title, description, location and area, then creates feedback after
+the citizen sends `XAC NHAN`.
+
+Management APIs (JWT role `SYSTEMADMIN`, `SYSTEMSTAFF` or `INTERACTIONMANAGER`):
+
+- `GET /api/integrations/messenger/conversations/{senderPsid}`
+- `POST /api/integrations/messenger/conversations/{senderPsid}/reset`
+
 ## Database update
 dotnet ef database update `
   --project .\UrbanService.DAL\UrbanService.DAL.csproj `

@@ -82,6 +82,9 @@ public partial class Feedback
 
     public virtual ICollection<InteractionMessage> InteractionMessages { get; set; } = new List<InteractionMessage>();
 
+    public virtual ICollection<MessengerFeedbackConversation> MessengerFeedbackConversations { get; set; }
+        = new List<MessengerFeedbackConversation>();
+
     public virtual ICollection<Feedback> InverseParentTicket { get; set; } = new List<Feedback>();
 
     public virtual Feedback? ParentTicket { get; set; }

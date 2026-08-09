@@ -18,14 +18,28 @@ RUN dotnet publish "UrbanService/UrbanService.csproj" -c Release -o /app/publish
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/publish .
 
 ENV ASPNETCORE_URLS=http://+:8080 \
     Brevo__ApiKey="" \
     Brevo__SenderEmail="" \
     Brevo__SenderName=UrbanService \
-    GoogleAuth__ClientId=""
+    GoogleAuth__ClientId="" \
+    Messenger__GraphApiVersion=v25.0 \
+    SlaMonitoring__Enabled=true \
+    SlaMonitoring__IntervalMinutes=5 \
+    SlaMonitoring__InitialDelaySeconds=10 \
+    SlaMonitoring__WarningThresholdPercent=30
 
 EXPOSE 8080
+
+USER $APP_UID
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl --fail --silent http://localhost:8080/health || exit 1
 
 ENTRYPOINT ["dotnet", "UrbanService.dll"]
