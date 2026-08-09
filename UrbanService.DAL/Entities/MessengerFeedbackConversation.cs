@@ -29,4 +29,7 @@ public class MessengerFeedbackConversation
     public virtual OperatingArea? Area { get; set; }
 
     public virtual Feedback? Feedback { get; set; }
+
+    public virtual ICollection<MessengerFeedbackSubmission> Submissions { get; set; }
+        = new List<MessengerFeedbackSubmission>();
 }

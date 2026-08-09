@@ -27,6 +27,8 @@ public partial class Feedback
 
     public string? GeoSource { get; set; }
 
+    public string SubmissionChannel { get; set; } = null!;
+
     public bool IsLocationVerified { get; set; }
 
     public string? Priority { get; set; }
@@ -84,6 +86,9 @@ public partial class Feedback
 
     public virtual ICollection<MessengerFeedbackConversation> MessengerFeedbackConversations { get; set; }
         = new List<MessengerFeedbackConversation>();
+
+    public virtual ICollection<MessengerFeedbackSubmission> MessengerFeedbackSubmissions { get; set; }
+        = new List<MessengerFeedbackSubmission>();
 
     public virtual ICollection<Feedback> InverseParentTicket { get; set; } = new List<Feedback>();
 

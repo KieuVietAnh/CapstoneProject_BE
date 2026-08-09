@@ -68,6 +68,7 @@ public class FeedbackService : IFeedbackService
             Longitude = request.Longitude,
             LocationAccuracyMeters = request.LocationAccuracyMeters,
             GeoSource = NormalizeOptional(request.GeoSource),
+            SubmissionChannel = NormalizeSubmissionChannel(request.SubmissionChannel),
             IsLocationVerified = false,
             Priority = null,
             Status = FeedbackStatus.Submitted,
@@ -115,6 +116,7 @@ public class FeedbackService : IFeedbackService
         var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
         var search = query.Search?.Trim().ToLower();
         var status = query.Status?.Trim().ToLower();
+        var submissionChannel = query.SubmissionChannel?.Trim().ToLower();
 
         var feedbacks = _uow.GetRepository<Feedback>().Entities
             .AsNoTracking()
@@ -123,6 +125,11 @@ public class FeedbackService : IFeedbackService
         if (!string.IsNullOrWhiteSpace(status))
         {
             feedbacks = feedbacks.Where(f => f.Status.ToLower() == status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(submissionChannel))
+        {
+            feedbacks = feedbacks.Where(f => f.SubmissionChannel.ToLower() == submissionChannel);
         }
 
         if (query.CategoryId.HasValue)
@@ -156,6 +163,7 @@ public class FeedbackService : IFeedbackService
                 LocationText = f.LocationText,
                 Priority = f.Priority,
                 Status = f.Status,
+                SubmissionChannel = f.SubmissionChannel,
                 CreatedAt = f.CreatedAt,
                 UpdatedAt = f.UpdatedAt,
                 AttachmentCount = f.FeedbackAttachments.Count,
@@ -205,6 +213,7 @@ public class FeedbackService : IFeedbackService
         var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
         var search = query.Search?.Trim().ToLower();
         var status = query.Status?.Trim().ToLower();
+        var submissionChannel = query.SubmissionChannel?.Trim().ToLower();
 
         var feedbacks = _uow.GetRepository<Feedback>().Entities
             .AsNoTracking()
@@ -213,6 +222,11 @@ public class FeedbackService : IFeedbackService
         if (!string.IsNullOrWhiteSpace(status))
         {
             feedbacks = feedbacks.Where(f => f.Status.ToLower() == status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(submissionChannel))
+        {
+            feedbacks = feedbacks.Where(f => f.SubmissionChannel.ToLower() == submissionChannel);
         }
 
         if (query.CategoryId.HasValue)
@@ -246,6 +260,7 @@ public class FeedbackService : IFeedbackService
                 LocationText = f.LocationText,
                 Priority = f.Priority,
                 Status = f.Status,
+                SubmissionChannel = f.SubmissionChannel,
                 CreatedAt = f.CreatedAt,
                 UpdatedAt = f.UpdatedAt,
                 AttachmentCount = f.FeedbackAttachments.Count,
@@ -273,6 +288,7 @@ public class FeedbackService : IFeedbackService
         var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
         var search = query.Search?.Trim().ToLower();
         var status = query.Status?.Trim().ToLower();
+        var submissionChannel = query.SubmissionChannel?.Trim().ToLower();
 
         var feedbacks = _uow.GetRepository<Feedback>().Entities
             .AsNoTracking();
@@ -280,6 +296,11 @@ public class FeedbackService : IFeedbackService
         if (!string.IsNullOrWhiteSpace(status))
         {
             feedbacks = feedbacks.Where(f => f.Status.ToLower() == status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(submissionChannel))
+        {
+            feedbacks = feedbacks.Where(f => f.SubmissionChannel.ToLower() == submissionChannel);
         }
 
         if (query.CategoryId.HasValue)
@@ -313,6 +334,7 @@ public class FeedbackService : IFeedbackService
                 LocationText = f.LocationText,
                 Priority = f.Priority,
                 Status = f.Status,
+                SubmissionChannel = f.SubmissionChannel,
                 CreatedAt = f.CreatedAt,
                 UpdatedAt = f.UpdatedAt,
                 AttachmentCount = f.FeedbackAttachments.Count,
@@ -339,10 +361,16 @@ public class FeedbackService : IFeedbackService
         var pageNumber = query.PageNumber < 1 ? 1 : query.PageNumber;
         var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
         var search = query.Search?.Trim().ToLower();
+        var submissionChannel = query.SubmissionChannel?.Trim().ToLower();
 
         var feedbacks = _uow.GetRepository<Feedback>().Entities
             .AsNoTracking()
             .Where(f => f.Status.ToLower() == FeedbackStatus.AiReviewed.ToLower());
+
+        if (!string.IsNullOrWhiteSpace(submissionChannel))
+        {
+            feedbacks = feedbacks.Where(f => f.SubmissionChannel.ToLower() == submissionChannel);
+        }
 
         if (query.CategoryId.HasValue)
         {
@@ -377,6 +405,7 @@ public class FeedbackService : IFeedbackService
                     LocationText = f.LocationText,
                     Priority = f.Priority,
                     Status = f.Status,
+                    SubmissionChannel = f.SubmissionChannel,
                     CreatedAt = f.CreatedAt,
                     UpdatedAt = f.UpdatedAt,
                     AttachmentCount = f.FeedbackAttachments.Count,
@@ -1441,6 +1470,7 @@ public class FeedbackService : IFeedbackService
             Longitude = feedback.Longitude,
             LocationAccuracyMeters = feedback.LocationAccuracyMeters,
             GeoSource = feedback.GeoSource,
+            SubmissionChannel = feedback.SubmissionChannel,
             IsLocationVerified = feedback.IsLocationVerified,
             Priority = feedback.Priority,
             Status = feedback.Status,
@@ -1714,6 +1744,22 @@ public class FeedbackService : IFeedbackService
     private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string NormalizeSubmissionChannel(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            string.Equals(value, FeedbackSubmissionChannel.Web, StringComparison.OrdinalIgnoreCase))
+        {
+            return FeedbackSubmissionChannel.Web;
+        }
+
+        if (string.Equals(value, FeedbackSubmissionChannel.Messenger, StringComparison.OrdinalIgnoreCase))
+        {
+            return FeedbackSubmissionChannel.Messenger;
+        }
+
+        throw new Exception("SubmissionChannel khong hop le.");
     }
 
     private static string NormalizeProviderReportStatus(string status)
