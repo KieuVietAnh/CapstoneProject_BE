@@ -9,6 +9,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      Database__MigrateOnStartup: ${DATABASE_MIGRATE_ON_STARTUP:-true}
       ConnectionStrings__DefaultConnection: ${DEFAULT_CONNECTION}
       Jwt__Key: ${JWT_KEY}
       Jwt__Issuer: ${JWT_ISSUER}
@@ -40,4 +41,13 @@ services:
       OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OpenRouter__HttpReferer: ${OPENROUTER_HTTP_REFERER:-https://urban-mind-fe-web.vercel.app}
       OpenRouter__XTitle: ${OPENROUTER_X_TITLE:-UrbanService}
+      Messenger__PageAccessToken: ${MESSENGER_PAGE_ACCESS_TOKEN}
+      Messenger__VerifyToken: ${MESSENGER_VERIFY_TOKEN}
+      Messenger__AppSecret: ${MESSENGER_APP_SECRET}
+      Messenger__SubmissionUserId: ${MESSENGER_SUBMISSION_USER_ID}
+      Messenger__GraphApiVersion: ${MESSENGER_GRAPH_API_VERSION:-v25.0}
+      SlaMonitoring__Enabled: ${SLA_MONITORING_ENABLED:-true}
+      SlaMonitoring__IntervalMinutes: ${SLA_MONITORING_INTERVAL_MINUTES:-5}
+      SlaMonitoring__InitialDelaySeconds: ${SLA_MONITORING_INITIAL_DELAY_SECONDS:-10}
+      SlaMonitoring__WarningThresholdPercent: ${SLA_MONITORING_WARNING_THRESHOLD_PERCENT:-30}
     restart: unless-stopped

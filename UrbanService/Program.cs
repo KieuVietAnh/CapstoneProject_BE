@@ -38,6 +38,12 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IAreaAlertService, AreaAlertService>();
 builder.Services.AddScoped<IInteractionMessageService, InteractionMessageService>();
+builder.Services.AddHttpClient<IMessengerService, MessengerService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddSingleton<IMessengerWebhookQueue, MessengerWebhookQueue>();
+builder.Services.AddHostedService<MessengerWebhookWorker>();
 builder.Services.AddScoped<
     ISlaDashboardService,
     SlaDashboardService>();
@@ -109,6 +115,7 @@ builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
 builder.Services.AddScoped<IRealtimeNotificationSender, SignalRNotificationSender>();
 builder.Services.AddMemoryCache();
 builder.Services.AddSignalR();
+builder.Services.AddHealthChecks();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -204,6 +211,13 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
+if (builder.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+{
+    using var migrationScope = app.Services.CreateScope();
+    var dbContext = migrationScope.ServiceProvider.GetRequiredService<UrbanServiceDbContext>();
+    dbContext.Database.Migrate();
+}
+
 // Configure the HTTP request pipeline.
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -221,5 +235,6 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHealthChecks("/health");
 
 app.Run();

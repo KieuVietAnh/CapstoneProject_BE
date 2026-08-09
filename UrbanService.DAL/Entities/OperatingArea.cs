@@ -45,6 +45,9 @@ public partial class OperatingArea
 
     public virtual ICollection<Feedback> Feedbacks { get; set; } = new List<Feedback>();
 
+    public virtual ICollection<MessengerFeedbackConversation> MessengerFeedbackConversations { get; set; }
+        = new List<MessengerFeedbackConversation>();
+
     public virtual ICollection<ProviderContract> ProviderContracts { get; set; } = new List<ProviderContract>();
 
     public virtual ICollection<SlaPolicy> SlaPolicies { get; set; }

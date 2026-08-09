@@ -51,6 +51,8 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<MessageAttachment> MessageAttachments { get; set; }
 
+    public virtual DbSet<MessengerFeedbackConversation> MessengerFeedbackConversations { get; set; }
+
     public virtual DbSet<Notification> Notifications { get; set; }
 
     public virtual DbSet<OperatingArea> OperatingAreas { get; set; }
@@ -781,6 +783,50 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.AlertId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_notification_area_alert");
+        });
+
+        modelBuilder.Entity<MessengerFeedbackConversation>(entity =>
+        {
+            entity.HasKey(e => e.ConversationId)
+                .HasName("messenger_feedback_conversations_pkey");
+            entity.ToTable("messenger_feedback_conversations");
+
+            entity.Property(e => e.ConversationId).HasColumnName("conversation_id");
+            entity.Property(e => e.PageId).HasMaxLength(100).HasColumnName("page_id");
+            entity.Property(e => e.SenderPsid).HasMaxLength(100).HasColumnName("sender_psid");
+            entity.Property(e => e.State).HasMaxLength(50).HasColumnName("state");
+            entity.Property(e => e.Title).HasMaxLength(200).HasColumnName("title");
+            entity.Property(e => e.Description).HasColumnName("description");
+            entity.Property(e => e.LocationText).HasMaxLength(500).HasColumnName("location_text");
+            entity.Property(e => e.AreaId).HasColumnName("area_id");
+            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
+            entity.Property(e => e.LastMessageId).HasMaxLength(200).HasColumnName("last_message_id");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => new { e.PageId, e.SenderPsid })
+                .IsUnique()
+                .HasDatabaseName("uq_messenger_feedback_conversations_page_sender");
+
+            entity.HasIndex(e => e.FeedbackId)
+                .HasDatabaseName("ix_messenger_feedback_conversations_feedback_id");
+
+            entity.HasOne(d => d.Area)
+                .WithMany(p => p.MessengerFeedbackConversations)
+                .HasForeignKey(d => d.AreaId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_messenger_feedback_conversation_area");
+
+            entity.HasOne(d => d.Feedback)
+                .WithMany(p => p.MessengerFeedbackConversations)
+                .HasForeignKey(d => d.FeedbackId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_messenger_feedback_conversation_feedback");
         });
 
         modelBuilder.Entity<InteractionMessage>(entity =>

@@ -8,6 +8,10 @@ public class UrbanServiceDbContextFactory : IDesignTimeDbContextFactory<UrbanSer
 {
     public UrbanServiceDbContext CreateDbContext(string[] args)
     {
+        // Keep migration scaffolding aligned with the existing model snapshot.
+        // Runtime still enables legacy timestamp behavior in Program.cs for the current schema.
+        AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", false);
+
         var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
             ?? "Development";
         var currentDirectory = Directory.GetCurrentDirectory();
