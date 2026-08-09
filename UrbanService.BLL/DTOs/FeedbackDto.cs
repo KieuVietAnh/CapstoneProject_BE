@@ -10,6 +10,8 @@ public class FeedbackQueryParameters
 
     public string? Status { get; set; }
 
+    public string? SubmissionChannel { get; set; }
+
     public int? CategoryId { get; set; }
 
     public string? Search { get; set; }
@@ -34,6 +36,8 @@ public class FeedbackCreateRequest
     public int? LocationAccuracyMeters { get; set; }
 
     public string? GeoSource { get; set; }
+
+    public string? SubmissionChannel { get; set; }
 
     public string? Priority { get; set; }
 
@@ -126,6 +130,8 @@ public class FeedbackListItemDto
     public string? Priority { get; set; }
 
     public string Status { get; set; } = null!;
+
+    public string SubmissionChannel { get; set; } = null!;
 
     public DateTime CreatedAt { get; set; }
 

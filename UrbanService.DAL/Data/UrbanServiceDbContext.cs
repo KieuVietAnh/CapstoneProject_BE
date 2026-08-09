@@ -53,6 +53,8 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<MessengerFeedbackConversation> MessengerFeedbackConversations { get; set; }
 
+    public virtual DbSet<MessengerFeedbackSubmission> MessengerFeedbackSubmissions { get; set; }
+
     public virtual DbSet<Notification> Notifications { get; set; }
 
     public virtual DbSet<OperatingArea> OperatingAreas { get; set; }
@@ -355,6 +357,10 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.Longitude).HasPrecision(10, 7).HasColumnName("longitude");
             entity.Property(e => e.LocationAccuracyMeters).HasColumnName("location_accuracy_meters");
             entity.Property(e => e.GeoSource).HasMaxLength(50).HasColumnName("geo_source");
+            entity.Property(e => e.SubmissionChannel)
+                .HasMaxLength(20)
+                .HasDefaultValue("Web")
+                .HasColumnName("submission_channel");
             entity.Property(e => e.IsLocationVerified).HasDefaultValue(false).HasColumnName("is_location_verified");
             entity.Property(e => e.Priority).HasMaxLength(50).HasDefaultValueSql("'Medium'::character varying").HasColumnName("priority");
             entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValueSql("'Submitted'::character varying").HasColumnName("status");
@@ -827,6 +833,40 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.FeedbackId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_messenger_feedback_conversation_feedback");
+        });
+
+        modelBuilder.Entity<MessengerFeedbackSubmission>(entity =>
+        {
+            entity.HasKey(e => e.SubmissionId)
+                .HasName("messenger_feedback_submissions_pkey");
+            entity.ToTable("messenger_feedback_submissions");
+
+            entity.Property(e => e.SubmissionId).HasColumnName("submission_id");
+            entity.Property(e => e.ConversationId).HasColumnName("conversation_id");
+            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.HasIndex(e => new { e.ConversationId, e.CreatedAt })
+                .HasDatabaseName("ix_messenger_feedback_submissions_conversation_created_at");
+
+            entity.HasIndex(e => e.FeedbackId)
+                .IsUnique()
+                .HasDatabaseName("uq_messenger_feedback_submissions_feedback_id");
+
+            entity.HasOne(d => d.Conversation)
+                .WithMany(p => p.Submissions)
+                .HasForeignKey(d => d.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_messenger_feedback_submission_conversation");
+
+            entity.HasOne(d => d.Feedback)
+                .WithMany(p => p.MessengerFeedbackSubmissions)
+                .HasForeignKey(d => d.FeedbackId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_messenger_feedback_submission_feedback");
         });
 
         modelBuilder.Entity<InteractionMessage>(entity =>

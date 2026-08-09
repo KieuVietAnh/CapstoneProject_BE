@@ -1,175 +1,165 @@
 # UrbanService Backend
 
-UrbanService is an ASP.NET Core backend for an urban service provider platform. It offers services operated by the platform and connects users with services from external providers. The project uses a layered structure with API controllers, business services, and Entity Framework Core data access.
+Backend ASP.NET Core cho nền tảng tiếp nhận và xử lý phản ánh đô thị. Hệ thống hỗ
+trợ phản ánh từ web và Messenger, phân quyền nhân sự, SLA, thông báo realtime và
+AI hỗ trợ phân loại, kiểm tra trùng lặp.
 
-## Tech Stack
+## Công nghệ
 
-- .NET 9
-- ASP.NET Core Web API
-- Entity Framework Core
-- PostgreSQL via Npgsql
-- JWT authentication
-- SignalR realtime notifications
-- Swagger / OpenAPI
-- Cloudinary media upload
-- Docker / Docker Compose
+.NET 9, ASP.NET Core Web API, Entity Framework Core 8, PostgreSQL, JWT,
+SignalR, Swagger, xUnit và Docker.
 
-## Solution Layout
+## Cấu trúc
 
 ```text
-UrbanService.sln
-UrbanService/          API layer: controllers, middleware, Program.cs, appsettings
-UrbanService.BLL/      Business layer: DTOs, interfaces, services, common helpers
-UrbanService.DAL/      Data layer: EF DbContext, entities, repositories, unit of work, migrations
-DAL/                   Legacy or placeholder class library
-.github/              GitHub workflow/config files
-Dockerfile
-docker-compose.yml
-docker-compose.prod.yml
+UrbanService/            API, controller, middleware và cấu hình DI
+UrbanService.BLL/        DTO, interface và business service
+UrbanService.DAL/        Entity, DbContext, repository và migration
+UrbanService.BLL.Tests/  Unit test
 ```
 
-## Main Features
+## Chạy local
 
-- User registration and login with JWT.
-- Role-based authorization using roles such as `SERVICEUSER`, `SYSTEMADMIN`, `SYSTEMSTAFF`, `INTERACTIONMANAGER`, and `SERVICEOPERATORSTAFF`.
-- Feedback CRUD for service users.
-- User feedback list/detail with pagination.
-- Feedback attachments stored through Cloudinary.
-- Feedback status update with status history.
-- Realtime notification to the feedback owner when staff or admin updates its status.
-- Feedback comments.
-- Feedback support / unsupport.
-- Service catalog grouped by category and service operator.
-- Clear distinction between system-operated and external services.
-- Payment records for services operated by the system.
+Yêu cầu:
 
-## Run Locally
+- .NET SDK 9
+- PostgreSQL và một database có thể truy cập
+- EF Core CLI 8.0.23
 
-From the solution root:
+Cài công cụ và restore package:
 
 ```powershell
-dotnet run --project .\UrbanService\UrbanService.csproj
+dotnet tool update --global dotnet-ef --version 8.0.23
+dotnet restore
 ```
 
-Swagger is available at the URL printed by `dotnet run`, usually:
+Nếu chưa từng cài `dotnet-ef`, dùng `dotnet tool install` thay cho `update`.
 
-```text
-http://localhost:5219/swagger
-```
+### 1. Cấu hình
 
-or the HTTPS URL shown in the terminal.
-
-## Configuration
-
-The API reads configuration from `UrbanService/appsettings.json`.
-
-Required sections:
+Tạo `UrbanService/appsettings.Development.json`:
 
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "..."
+    "DefaultConnection": "Host=localhost;Port=5432;Database=urban_service;Username=postgres;Password=YOUR_PASSWORD"
   },
   "Jwt": {
-    "Key": "...",
+    "Key": "YOUR_LOCAL_JWT_KEY_AT_LEAST_32_CHARACTERS",
     "Issuer": "UrbanService",
     "Audience": "UrbanServiceClient",
-    "ExpireMinutes": 60
-  },
-  "Cloudinary": {
-    "CloudName": "...",
-    "ApiKey": "...",
-    "ApiSecret": "..."
-  },
-  "Brevo": {
-    "ApiKey": "xkeysib-...",
-    "SenderEmail": "your-verified-email@example.com",
-    "SenderName": "UrbanService"
-  },
-  "GoogleAuth": {
-    "ClientId": "your-google-oauth-client-id.apps.googleusercontent.com"
+    "ExpireMinutes": 60,
+    "RefreshTokenExpireDays": 7
   }
 }
 ```
 
-`CloudName` must be copied from the Cloudinary dashboard credentials. It is not the local project name.
+File này đã được `.gitignore`. Không đưa password hoặc token thật vào Git.
 
-## Build
+Có thể dùng biến môi trường thay thế:
 
 ```powershell
-dotnet build UrbanService.sln
+$env:ConnectionStrings__DefaultConnection = "Host=localhost;Port=5432;Database=urban_service;Username=postgres;Password=YOUR_PASSWORD"
+$env:Jwt__Key = "YOUR_LOCAL_JWT_KEY_AT_LEAST_32_CHARACTERS"
 ```
 
-## SignalR Notifications
+### 2. Cập nhật database
 
-Authenticated clients connect to:
-
-```text
-/hubs/notifications
-```
-
-Pass the JWT through SignalR's `accessTokenFactory` and listen for the
-`NotificationReceived` event:
-
-```javascript
-const connection = new signalR.HubConnectionBuilder()
-  .withUrl("/hubs/notifications", {
-    accessTokenFactory: () => token
-  })
-  .withAutomaticReconnect()
-  .build();
-
-connection.on("NotificationReceived", notification => {
-  console.log(notification);
-});
-
-await connection.start();
-```
-
-When `SYSTEMSTAFF` or `SYSTEMADMIN` calls
-`PATCH /api/management/feedbacks/{feedbackId}/status`, the feedback owner
-receives the event and the notification is stored in the database.
-
-Notification REST APIs:
-
-- `GET /api/notifications`: list the current user's notifications.
-- `PATCH /api/notifications/{notificationId}/read`: mark one as read.
-- `PATCH /api/notifications/read-all`: mark all as read.
-
-## Messenger feedback intake
-
-Required environment variables:
-
-```text
-MESSENGER_PAGE_ACCESS_TOKEN=...
-MESSENGER_VERIFY_TOKEN=...
-MESSENGER_APP_SECRET=...
-MESSENGER_SUBMISSION_USER_ID=...
-MESSENGER_GRAPH_API_VERSION=v25.0
-```
-
-`MESSENGER_SUBMISSION_USER_ID` must be the ID of an active `SERVICEUSER` account.
-Feedback created from Messenger is owned by this service account; the Page-scoped
-sender ID and draft are stored in `messenger_feedback_conversations`.
-
-Use this public HTTPS callback URL in Meta Developer Dashboard:
-
-```text
-https://your-api-domain/api/integrations/messenger/webhook
-```
-
-Subscribe the Page to the `messages` and `messaging_postbacks` webhook fields.
-The bot collects title, description, location and area, then creates feedback after
-the citizen sends `XAC NHAN`.
-
-Management APIs (JWT role `SYSTEMADMIN`, `SYSTEMSTAFF` or `INTERACTIONMANAGER`):
-
-- `GET /api/integrations/messenger/conversations/{senderPsid}`
-- `POST /api/integrations/messenger/conversations/{senderPsid}/reset`
-
-## Database update
+```powershell
 dotnet ef database update `
   --project .\UrbanService.DAL\UrbanService.DAL.csproj `
   --startup-project .\UrbanService\UrbanService.csproj
+```
 
-Last verified build: `dotnet build UrbanService.sln` completed with `0 Warning(s)` and `0 Error(s)`.
+### 3. Chạy API
+
+```powershell
+dotnet run --project .\UrbanService\UrbanService.csproj --launch-profile http
+```
+
+- Swagger: `http://localhost:5219/swagger`
+- Health check: `http://localhost:5219/health`
+- SignalR notification hub: `/hubs/notifications`
+
+## Build và test
+
+```powershell
+dotnet build UrbanService.sln
+dotnet test UrbanService.sln
+```
+
+Khi sửa entity hoặc EF mapping, tạo migration mới bằng `dotnet ef migrations add`
+và chạy test trước khi commit.
+
+## Chạy bằng Docker
+
+Tạo `.env` ở root:
+
+```dotenv
+DEFAULT_CONNECTION=Host=host.docker.internal;Port=5432;Database=urban_service;Username=postgres;Password=YOUR_PASSWORD
+JWT_KEY=YOUR_LOCAL_JWT_KEY_AT_LEAST_32_CHARACTERS
+JWT_ISSUER=UrbanService
+JWT_AUDIENCE=UrbanServiceClient
+DATABASE_MIGRATE_ON_STARTUP=true
+```
+
+Chạy backend:
+
+```powershell
+docker compose up --build
+```
+
+Swagger nằm tại `http://localhost:8080/swagger`. Compose chỉ chạy backend, không
+tạo PostgreSQL. Nếu database chạy trong cùng Docker network, dùng tên service
+database thay cho `host.docker.internal`.
+
+## Tích hợp tùy chọn
+
+| Tính năng | Section cấu hình |
+| --- | --- |
+| Upload ảnh | `Cloudinary` |
+| Email | `Brevo` |
+| Google login | `GoogleAuth` |
+| AI | `AI`, `OpenRouter` |
+| Messenger bot | `Messenger` |
+| Theo dõi SLA | `SlaMonitoring` |
+
+Xem tên biến môi trường Docker trong [docker-compose.yml](docker-compose.yml).
+
+Messenger cần `PageAccessToken`, `VerifyToken`, `AppSecret`, `SubmissionUserId`
+và `GraphApiVersion`. `SubmissionUserId` phải thuộc một `SERVICEUSER` đang hoạt
+động. Webhook cần cấu hình trên Meta:
+
+```text
+https://YOUR_DOMAIN/api/integrations/messenger/webhook
+```
+
+Page cần subscribe `messages` và `messaging_postbacks`.
+
+## Lỗi thường gặp
+
+### `Host can't be null`
+
+Connection string đang trống. Kiểm tra `appsettings.Development.json` hoặc:
+
+```powershell
+$env:ConnectionStrings__DefaultConnection
+```
+
+### Phiên bản EF CLI cũ
+
+```powershell
+dotnet tool update --global dotnet-ef --version 8.0.23
+```
+
+### Migration không được nhận diện
+
+```powershell
+dotnet build UrbanService.sln
+dotnet ef database update --project UrbanService.DAL --startup-project UrbanService
+```
+
+## Đóng góp
+
+Đọc [AGENTS.md](AGENTS.md) trước khi dùng AI agent hoặc sửa code. Không commit
+secret, `.env`, `appsettings.Development.json`, `bin/obj` hoặc dữ liệu database.

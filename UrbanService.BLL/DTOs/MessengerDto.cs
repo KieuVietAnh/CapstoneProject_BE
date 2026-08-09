@@ -70,6 +70,15 @@ public class MessengerIncomingMessage
 
     [JsonPropertyName("attachments")]
     public List<MessengerAttachment> Attachments { get; set; } = [];
+
+    [JsonPropertyName("quick_reply")]
+    public MessengerQuickReply? QuickReply { get; set; }
+}
+
+public class MessengerQuickReply
+{
+    [JsonPropertyName("payload")]
+    public string? Payload { get; set; }
 }
 
 public class MessengerAttachment
