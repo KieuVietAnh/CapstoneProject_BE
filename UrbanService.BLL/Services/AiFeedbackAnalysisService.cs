@@ -217,7 +217,7 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         1. Chon dung 1 category phu hop nhat tu danh sach category active ben duoi.
         2. Gan muc uu tien/priority dua tren muc do khan cap cua feedback.
         3. detectedCategoryName phai trung khop chinh xac voi mot CategoryName trong danh sach.
-        4. urgencyLevel phai la mot trong cac gia tri: Low, Medium, High, Critical.
+        4. urgencyLevel phai la mot trong cac gia tri: Low, Medium, High, Urgent.
 
         Danh sach category active:
         {{categoryList}}
@@ -226,7 +226,7 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         - Low: van de nho, it anh huong, khong can xu ly gap.
         - Medium: anh huong binh thuong, can xu ly theo lich.
         - High: anh huong nhieu nguoi/khu vuc, can uu tien xu ly som.
-        - Critical: nguy hiem, mat an toan, su co nghiem trong, can xu ly khan cap.
+        - Urgent: nguy hiem, mat an toan, su co nghiem trong, can xu ly khan cap.
 
         Feedback:
         - Tieu de: {{feedback.Title}}
@@ -239,7 +239,7 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
         {
           "detectedCategoryName": string,
           "sentiment": "Positive" | "Neutral" | "Negative",
-          "urgencyLevel": "Low" | "Medium" | "High" | "Critical",
+          "urgencyLevel": "Low" | "Medium" | "High" | "Urgent",
           "summary": string,
           "keywords": string[],
           "confidenceScore": number,
@@ -270,7 +270,7 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
             var value when string.Equals(value, "Low", StringComparison.OrdinalIgnoreCase) => "Low",
             var value when string.Equals(value, "Medium", StringComparison.OrdinalIgnoreCase) => "Medium",
             var value when string.Equals(value, "High", StringComparison.OrdinalIgnoreCase) => "High",
-            var value when string.Equals(value, "Critical", StringComparison.OrdinalIgnoreCase) => "Critical",
+            var value when string.Equals(value, "Urgent", StringComparison.OrdinalIgnoreCase) => "Urgent",
             _ => null
         };
     }

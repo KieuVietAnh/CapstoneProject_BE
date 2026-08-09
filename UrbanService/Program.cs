@@ -47,6 +47,9 @@ builder.Services.AddHostedService<MessengerWebhookWorker>();
 builder.Services.AddScoped<
     ISlaDashboardService,
     SlaDashboardService>();
+builder.Services.AddScoped<
+    IFeedbackDashboardService,
+    FeedbackDashboardService>();
 
 builder.Services.AddScoped<
     ISlaPolicyService,

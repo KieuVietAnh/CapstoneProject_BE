@@ -77,9 +77,9 @@ public class AreaAlertService : IAreaAlertService
 
         if (latestAnalysis != null &&
             !string.Equals(latestAnalysis.UrgencyLevel, "High", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(latestAnalysis.UrgencyLevel, "Critical", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(latestAnalysis.UrgencyLevel, "Urgent", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Only feedback with High or Critical urgency can create an area alert.");
+            throw new InvalidOperationException("Only feedback with High or Urgent urgency can create an area alert.");
         }
 
         var alert = new AreaAlert
@@ -89,7 +89,7 @@ public class AreaAlertService : IAreaAlertService
             CategoryId = feedback.CategoryId,
             Title = request.Title.Trim(),
             Message = request.Message.Trim(),
-            AlertType = "FeedbackCritical",
+            AlertType = "FeedbackUrgent",
             Severity = request.Severity.Trim(),
             Latitude = feedback.Latitude,
             Longitude = feedback.Longitude,

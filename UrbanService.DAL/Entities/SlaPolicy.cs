@@ -24,7 +24,7 @@ public partial class SlaPolicy
     public int? CategoryId { get; set; }
 
     /// <summary>
-    /// Low, Medium, High hoặc Critical.
+    /// Low, Medium, High hoặc Urgent.
     /// </summary>
     public string Priority { get; set; } = null!;
 
