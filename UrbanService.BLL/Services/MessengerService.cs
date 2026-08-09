@@ -537,7 +537,7 @@ public class MessengerService : IMessengerService
             .AnyAsync(
                 user => user.UserId == userId &&
                         user.IsActive &&
-                        user.Role.RoleName == UserRole.SERVICEUSER,
+                        user.Role.RoleName.ToUpper() == UserRole.SERVICEUSER,
                 cancellationToken);
 
         return isValidSubmissionUser
