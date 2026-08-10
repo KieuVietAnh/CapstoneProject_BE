@@ -380,6 +380,8 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             CategoryName = feedback.Category?.CategoryName,
             Title = feedback.Title,
             LocationText = feedback.LocationText,
+            Latitude = feedback.Latitude,
+            Longitude = feedback.Longitude,
             Priority = feedback.Priority,
             Status = feedback.Status,
             CreatedAt = feedback.CreatedAt,

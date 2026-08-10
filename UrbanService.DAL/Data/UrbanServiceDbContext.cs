@@ -55,6 +55,16 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<MessengerFeedbackSubmission> MessengerFeedbackSubmissions { get; set; }
 
+    public virtual DbSet<ZaloFeedbackConversation> ZaloFeedbackConversations { get; set; }
+
+    public virtual DbSet<ZaloFeedbackDraftAttachment> ZaloFeedbackDraftAttachments { get; set; }
+
+    public virtual DbSet<ZaloFeedbackSubmission> ZaloFeedbackSubmissions { get; set; }
+
+    public virtual DbSet<ZaloOauthCredential> ZaloOauthCredentials { get; set; }
+
+    public virtual DbSet<ZaloWebhookEvent> ZaloWebhookEvents { get; set; }
+
     public virtual DbSet<Notification> Notifications { get; set; }
 
     public virtual DbSet<OperatingArea> OperatingAreas { get; set; }
@@ -867,6 +877,155 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.FeedbackId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_messenger_feedback_submission_feedback");
+        });
+
+        modelBuilder.Entity<ZaloFeedbackConversation>(entity =>
+        {
+            entity.HasKey(e => e.ConversationId)
+                .HasName("zalo_feedback_conversations_pkey");
+            entity.ToTable("zalo_feedback_conversations");
+
+            entity.Property(e => e.ConversationId).HasColumnName("conversation_id");
+            entity.Property(e => e.OaId).HasMaxLength(100).HasColumnName("oa_id");
+            entity.Property(e => e.SenderUserId).HasMaxLength(100).HasColumnName("sender_user_id");
+            entity.Property(e => e.State).HasMaxLength(50).HasColumnName("state");
+            entity.Property(e => e.Title).HasMaxLength(200).HasColumnName("title");
+            entity.Property(e => e.Description).HasColumnName("description");
+            entity.Property(e => e.LocationText).HasMaxLength(500).HasColumnName("location_text");
+            entity.Property(e => e.Latitude).HasPrecision(10, 7).HasColumnName("latitude");
+            entity.Property(e => e.Longitude).HasPrecision(10, 7).HasColumnName("longitude");
+            entity.Property(e => e.AreaId).HasColumnName("area_id");
+            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
+            entity.Property(e => e.LastMessageId).HasMaxLength(200).HasColumnName("last_message_id");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => new { e.OaId, e.SenderUserId })
+                .IsUnique()
+                .HasDatabaseName("uq_zalo_feedback_conversations_oa_sender");
+
+            entity.HasIndex(e => e.FeedbackId)
+                .HasDatabaseName("ix_zalo_feedback_conversations_feedback_id");
+
+            entity.HasOne(d => d.Area)
+                .WithMany(p => p.ZaloFeedbackConversations)
+                .HasForeignKey(d => d.AreaId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_zalo_feedback_conversation_area");
+
+            entity.HasOne(d => d.Feedback)
+                .WithMany(p => p.ZaloFeedbackConversations)
+                .HasForeignKey(d => d.FeedbackId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_zalo_feedback_conversation_feedback");
+        });
+
+        modelBuilder.Entity<ZaloFeedbackSubmission>(entity =>
+        {
+            entity.HasKey(e => e.SubmissionId)
+                .HasName("zalo_feedback_submissions_pkey");
+            entity.ToTable("zalo_feedback_submissions");
+
+            entity.Property(e => e.SubmissionId).HasColumnName("submission_id");
+            entity.Property(e => e.ConversationId).HasColumnName("conversation_id");
+            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.HasIndex(e => new { e.ConversationId, e.CreatedAt })
+                .HasDatabaseName("ix_zalo_feedback_submissions_conversation_created_at");
+
+            entity.HasIndex(e => e.FeedbackId)
+                .IsUnique()
+                .HasDatabaseName("uq_zalo_feedback_submissions_feedback_id");
+
+            entity.HasOne(d => d.Conversation)
+                .WithMany(p => p.Submissions)
+                .HasForeignKey(d => d.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_zalo_feedback_submission_conversation");
+
+            entity.HasOne(d => d.Feedback)
+                .WithMany(p => p.ZaloFeedbackSubmissions)
+                .HasForeignKey(d => d.FeedbackId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_zalo_feedback_submission_feedback");
+        });
+
+        modelBuilder.Entity<ZaloFeedbackDraftAttachment>(entity =>
+        {
+            entity.HasKey(e => e.DraftAttachmentId)
+                .HasName("zalo_feedback_draft_attachments_pkey");
+            entity.ToTable("zalo_feedback_draft_attachments");
+
+            entity.Property(e => e.DraftAttachmentId).HasColumnName("draft_attachment_id");
+            entity.Property(e => e.ConversationId).HasColumnName("conversation_id");
+            entity.Property(e => e.SourceUrl).HasMaxLength(2000).HasColumnName("source_url");
+            entity.Property(e => e.FileType).HasMaxLength(100).HasColumnName("file_type");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.HasIndex(e => new { e.ConversationId, e.CreatedAt })
+                .HasDatabaseName("ix_zalo_feedback_draft_attachments_conversation_created_at");
+
+            entity.HasOne(d => d.Conversation)
+                .WithMany(p => p.DraftAttachments)
+                .HasForeignKey(d => d.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_zalo_feedback_draft_attachment_conversation");
+        });
+
+        modelBuilder.Entity<ZaloWebhookEvent>(entity =>
+        {
+            entity.HasKey(e => e.WebhookEventId)
+                .HasName("zalo_webhook_events_pkey");
+            entity.ToTable("zalo_webhook_events");
+
+            entity.Property(e => e.WebhookEventId).HasColumnName("webhook_event_id");
+            entity.Property(e => e.EventKey).HasMaxLength(64).HasColumnName("event_key");
+            entity.Property(e => e.Payload).HasColumnName("payload");
+            entity.Property(e => e.Status).HasMaxLength(20).HasColumnName("status");
+            entity.Property(e => e.AttemptCount).HasColumnName("attempt_count");
+            entity.Property(e => e.LastError).HasMaxLength(2000).HasColumnName("last_error");
+            entity.Property(e => e.ReceivedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("received_at");
+            entity.Property(e => e.ProcessedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("processed_at");
+
+            entity.HasIndex(e => e.EventKey)
+                .IsUnique()
+                .HasDatabaseName("uq_zalo_webhook_events_event_key");
+            entity.HasIndex(e => new { e.Status, e.ReceivedAt })
+                .HasDatabaseName("ix_zalo_webhook_events_status_received_at");
+        });
+
+        modelBuilder.Entity<ZaloOauthCredential>(entity =>
+        {
+            entity.HasKey(e => e.OaId)
+                .HasName("zalo_oauth_credentials_pkey");
+            entity.ToTable("zalo_oauth_credentials");
+
+            entity.Property(e => e.OaId).HasMaxLength(100).HasColumnName("oa_id");
+            entity.Property(e => e.AccessTokenCiphertext).HasColumnName("access_token_ciphertext");
+            entity.Property(e => e.RefreshTokenCiphertext).HasColumnName("refresh_token_ciphertext");
+            entity.Property(e => e.AccessTokenExpiresAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("access_token_expires_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
         });
 
         modelBuilder.Entity<InteractionMessage>(entity =>

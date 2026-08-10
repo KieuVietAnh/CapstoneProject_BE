@@ -44,6 +44,18 @@ builder.Services.AddHttpClient<IMessengerService, MessengerService>(client =>
 });
 builder.Services.AddSingleton<IMessengerWebhookQueue, MessengerWebhookQueue>();
 builder.Services.AddHostedService<MessengerWebhookWorker>();
+builder.Services.AddSingleton<ZaloTokenRefreshLock>();
+builder.Services.AddHttpClient<IZaloAccessTokenProvider, ZaloAccessTokenProvider>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient<IZaloService, ZaloService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddScoped<IZaloWebhookInbox, ZaloWebhookInbox>();
+builder.Services.AddSingleton<IZaloWebhookQueue, ZaloWebhookQueue>();
+builder.Services.AddHostedService<ZaloWebhookWorker>();
 builder.Services.AddScoped<
     ISlaDashboardService,
     SlaDashboardService>();

@@ -90,6 +90,12 @@ public partial class Feedback
     public virtual ICollection<MessengerFeedbackSubmission> MessengerFeedbackSubmissions { get; set; }
         = new List<MessengerFeedbackSubmission>();
 
+    public virtual ICollection<ZaloFeedbackConversation> ZaloFeedbackConversations { get; set; }
+        = new List<ZaloFeedbackConversation>();
+
+    public virtual ICollection<ZaloFeedbackSubmission> ZaloFeedbackSubmissions { get; set; }
+        = new List<ZaloFeedbackSubmission>();
+
     public virtual ICollection<Feedback> InverseParentTicket { get; set; } = new List<Feedback>();
 
     public virtual Feedback? ParentTicket { get; set; }

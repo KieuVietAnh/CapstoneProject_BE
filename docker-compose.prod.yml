@@ -54,6 +54,19 @@ services:
       Messenger__SubmissionUserId: ${MESSENGER_SUBMISSION_USER_ID}
       Messenger__GraphApiVersion: ${MESSENGER_GRAPH_API_VERSION:-v25.0}
 
+      Zalo__AppId: ${ZALO_APP_ID}
+      Zalo__AppSecretKey: ${ZALO_APP_SECRET_KEY}
+      Zalo__OaId: ${ZALO_OA_ID}
+      Zalo__OaSecretKey: ${ZALO_OA_SECRET_KEY}
+      Zalo__AccessToken: ${ZALO_ACCESS_TOKEN}
+      Zalo__RefreshToken: ${ZALO_REFRESH_TOKEN}
+      Zalo__AccessTokenExpiresAtUtc: ${ZALO_ACCESS_TOKEN_EXPIRES_AT_UTC}
+      Zalo__TokenEncryptionKey: ${ZALO_TOKEN_ENCRYPTION_KEY}
+      Zalo__SubmissionUserId: ${ZALO_SUBMISSION_USER_ID}
+      Zalo__AllowedMediaHostSuffixes: ${ZALO_ALLOWED_MEDIA_HOST_SUFFIXES:-zdn.vn,zadn.vn,zalo.me,zaloapp.com}
+      Zalo__MaxImagesPerFeedback: ${ZALO_MAX_IMAGES_PER_FEEDBACK:-5}
+      Zalo__MaxImageBytes: ${ZALO_MAX_IMAGE_BYTES:-5242880}
+
       SlaMonitoring__Enabled: ${SLA_MONITORING_ENABLED:-true}
       SlaMonitoring__IntervalMinutes: ${SLA_MONITORING_INTERVAL_MINUTES:-5}
       SlaMonitoring__InitialDelaySeconds: ${SLA_MONITORING_INITIAL_DELAY_SECONDS:-10}

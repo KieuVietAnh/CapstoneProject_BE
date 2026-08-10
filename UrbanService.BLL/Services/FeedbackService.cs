@@ -161,6 +161,8 @@ public class FeedbackService : IFeedbackService
                 CategoryName = f.Category.CategoryName,
                 Title = f.Title,
                 LocationText = f.LocationText,
+                Latitude = f.Latitude,
+                Longitude = f.Longitude,
                 Priority = f.Priority,
                 Status = f.Status,
                 SubmissionChannel = f.SubmissionChannel,
@@ -258,6 +260,8 @@ public class FeedbackService : IFeedbackService
                 CategoryName = f.Category.CategoryName,
                 Title = f.Title,
                 LocationText = f.LocationText,
+                Latitude = f.Latitude,
+                Longitude = f.Longitude,
                 Priority = f.Priority,
                 Status = f.Status,
                 SubmissionChannel = f.SubmissionChannel,
@@ -332,6 +336,8 @@ public class FeedbackService : IFeedbackService
                 CategoryName = f.Category.CategoryName,
                 Title = f.Title,
                 LocationText = f.LocationText,
+                Latitude = f.Latitude,
+                Longitude = f.Longitude,
                 Priority = f.Priority,
                 Status = f.Status,
                 SubmissionChannel = f.SubmissionChannel,
@@ -403,6 +409,8 @@ public class FeedbackService : IFeedbackService
                     CategoryName = f.Category.CategoryName,
                     Title = f.Title,
                     LocationText = f.LocationText,
+                    Latitude = f.Latitude,
+                    Longitude = f.Longitude,
                     Priority = f.Priority,
                     Status = f.Status,
                     SubmissionChannel = f.SubmissionChannel,
@@ -1757,6 +1765,11 @@ public class FeedbackService : IFeedbackService
         if (string.Equals(value, FeedbackSubmissionChannel.Messenger, StringComparison.OrdinalIgnoreCase))
         {
             return FeedbackSubmissionChannel.Messenger;
+        }
+
+        if (string.Equals(value, FeedbackSubmissionChannel.Zalo, StringComparison.OrdinalIgnoreCase))
+        {
+            return FeedbackSubmissionChannel.Zalo;
         }
 
         throw new Exception("SubmissionChannel khong hop le.");

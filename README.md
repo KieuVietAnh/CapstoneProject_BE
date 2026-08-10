@@ -122,6 +122,7 @@ database thay cho `host.docker.internal`.
 | Google login | `GoogleAuth` |
 | AI | `AI`, `OpenRouter` |
 | Messenger bot | `Messenger` |
+| Zalo OA bot | `Zalo` |
 | Theo dõi SLA | `SlaMonitoring` |
 
 Xem tên biến môi trường Docker trong [docker-compose.yml](docker-compose.yml).
@@ -135,6 +136,25 @@ https://YOUR_DOMAIN/api/integrations/messenger/webhook
 ```
 
 Page cần subscribe `messages` và `messaging_postbacks`.
+
+Zalo OA cần `AppId`, `AppSecretKey`, `OaId`, `OaSecretKey`, `SubmissionUserId`
+và `TokenEncryptionKey`. Có thể bootstrap bằng `RefreshToken` hoặc bằng `AccessToken`
+kèm `AccessTokenExpiresAtUtc`; token mới sẽ được mã hóa và lưu trong database.
+`SubmissionUserId` phải thuộc một `SERVICEUSER` đang hoạt động. Webhook cần dùng HTTPS:
+
+```text
+https://YOUR_DOMAIN/api/integrations/zalo/webhook
+```
+
+Trong Zalo Developers, cấp quyền gửi tin, quản lý tin nhắn và nhận sự kiện tin nhắn;
+bật các event `user_send_text`, `user_send_image`, `user_send_location`. Không bật
+`Lọc cú pháp` nếu muốn tiếp nhận tin nhắn không bắt đầu bằng `#`.
+
+Tạo khóa mã hóa token 32 byte bằng PowerShell:
+
+```powershell
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
 
 ## Lỗi thường gặp
 
