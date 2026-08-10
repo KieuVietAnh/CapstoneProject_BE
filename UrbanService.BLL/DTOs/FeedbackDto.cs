@@ -127,6 +127,10 @@ public class FeedbackListItemDto
 
     public string LocationText { get; set; } = null!;
 
+    public decimal? Latitude { get; set; }
+
+    public decimal? Longitude { get; set; }
+
     public string? Priority { get; set; }
 
     public string Status { get; set; } = null!;
@@ -155,10 +159,6 @@ public class FeedbackListItemDto
 public class FeedbackDetailDto : FeedbackListItemDto
 {
     public string Description { get; set; } = null!;
-
-    public decimal? Latitude { get; set; }
-
-    public decimal? Longitude { get; set; }
 
     public int? LocationAccuracyMeters { get; set; }
 
