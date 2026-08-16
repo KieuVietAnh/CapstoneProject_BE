@@ -85,6 +85,41 @@ namespace UrbanService.Controllers
             return Ok(result);
         }
 
+        /// <summary>Gửi OTP đặt lại mật khẩu tới email tài khoản.</summary>
+        /// <remarks>
+        /// API công khai. Luôn trả về 204 cho request hợp lệ về định dạng, kể cả khi
+        /// email không tồn tại, tài khoản bị khóa hoặc đang trong thời gian chờ gửi lại.
+        /// OTP có hiệu lực trong 5 phút.
+        /// </remarks>
+        [HttpPost("forgot-password/send-otp")]
+        [AllowAnonymous]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> SendForgotPasswordOtp(
+            [FromBody] ForgotPasswordRequest req,
+            CancellationToken cancellationToken)
+        {
+            await _auth.RequestForgotPasswordOtpAsync(req, cancellationToken);
+            return NoContent();
+        }
+
+        /// <summary>Đặt mật khẩu mới bằng OTP đã gửi qua email.</summary>
+        /// <remarks>
+        /// API công khai. OTP chỉ dùng một lần; mật khẩu mới phải có ít nhất 6 ký tự.
+        /// Reset thành công sẽ thu hồi refresh token hiện tại của tài khoản.
+        /// </remarks>
+        [HttpPost("forgot-password/reset")]
+        [AllowAnonymous]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> ResetForgottenPassword(
+            [FromBody] ResetPasswordRequest req,
+            CancellationToken cancellationToken)
+        {
+            await _auth.ResetPasswordAsync(req, cancellationToken);
+            return NoContent();
+        }
+
         /// <summary>Gửi OTP xác thực email tới email của người dùng hiện tại.</summary>
         /// <remarks>
         /// Yêu cầu JWT hợp lệ. OTP có hiệu lực trong 5 phút. Brevo API phải được

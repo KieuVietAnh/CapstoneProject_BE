@@ -12,13 +12,11 @@ namespace UrbanService.BLL.Interfaces
         Task<AuthResultDto> RefreshTokenAsync(RefreshTokenRequest req);
         Task RequestEmailVerificationOtpAsync(Guid userId);
         Task VerifyEmailAsync(Guid userId, VerifyEmailRequest req);
-
-        // --- 2 PHƯƠNG THỨC MỚI CHO FORGET PASSWORD ---
-
-        // 1. Gửi OTP quên mật khẩu vào Email
-        //Task RequestForgotPasswordOtpAsync(ForgotPasswordRequest req);
-
-        // 2. Xác nhận OTP từ Redis và đổi mật khẩu mới
-        //Task ResetPasswordAsync(ResetPasswordRequest req);
+        Task RequestForgotPasswordOtpAsync(
+            ForgotPasswordRequest req,
+            CancellationToken cancellationToken = default);
+        Task ResetPasswordAsync(
+            ResetPasswordRequest req,
+            CancellationToken cancellationToken = default);
     }
 }
