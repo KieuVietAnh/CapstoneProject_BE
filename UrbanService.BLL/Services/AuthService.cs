@@ -2,6 +2,8 @@ using Google.Apis.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using System.Net.Mail;
 using System.Security.Cryptography;
 using System.Text;
 using UrbanService.BLL.Common.Constraint;
@@ -20,22 +22,30 @@ namespace UrbanService.BLL.Services
         private readonly IJwtTokenGenerator _jwt;
         private readonly IEmailSender _emailSender;
         private readonly IMemoryCache _cache;
+        private readonly ILogger<AuthService> _logger;
         private const int VerificationOtpMinutes = 5;
         private const int VerificationOtpCooldownSeconds = 60;
+        private const int PasswordResetOtpMinutes = 5;
+        private const int PasswordResetOtpCooldownSeconds = 60;
+        private const int PasswordResetOtpMaxAttempts = 5;
         private const int DefaultRefreshTokenExpireDays = 7;
+        private const string InvalidPasswordResetOtpMessage = "OTP không hợp lệ hoặc đã hết hạn.";
+        private static readonly object PasswordResetCacheSync = new();
 
         public AuthService(
             IUnitOfWork uow,
             IConfiguration cfg,
             IJwtTokenGenerator jwt,
             IEmailSender emailSender,
-            IMemoryCache cache)
+            IMemoryCache cache,
+            ILogger<AuthService> logger)
         {
             _uow = uow;
             _cfg = cfg;
             _jwt = jwt;
             _emailSender = emailSender;
             _cache = cache;
+            _logger = logger;
         }
 
         public async Task<AuthResultDto> LoginAsync(LoginRequest req)
@@ -241,6 +251,187 @@ namespace UrbanService.BLL.Services
                 TimeSpan.FromSeconds(VerificationOtpCooldownSeconds));
         }
 
+        public async Task RequestForgotPasswordOtpAsync(
+            ForgotPasswordRequest req,
+            CancellationToken cancellationToken = default)
+        {
+            var normalizedEmail = NormalizeEmail(req.Email);
+            var user = await _uow.GetRepository<User>().Entities
+                .FirstOrDefaultAsync(
+                    candidate => candidate.IsActive && candidate.Email.ToLower() == normalizedEmail,
+                    cancellationToken);
+
+            if (user == null)
+            {
+                return;
+            }
+
+            var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+            var otpKey = GetPasswordResetOtpKey(normalizedEmail);
+            var cooldownKey = GetPasswordResetOtpCooldownKey(normalizedEmail);
+            var state = new PasswordResetOtpState
+            {
+                UserId = user.UserId,
+                OtpHash = PasswordHasher.Hash(otp)
+            };
+
+            lock (PasswordResetCacheSync)
+            {
+                if (_cache.TryGetValue(cooldownKey, out _))
+                {
+                    return;
+                }
+
+                if (_cache.TryGetValue<PasswordResetOtpState>(otpKey, out var currentState) &&
+                    currentState != null)
+                {
+                    lock (currentState.SyncRoot)
+                    {
+                        if (currentState.IsConsuming)
+                        {
+                            return;
+                        }
+                    }
+                }
+
+                _cache.Set(
+                    cooldownKey,
+                    true,
+                    TimeSpan.FromSeconds(PasswordResetOtpCooldownSeconds));
+                _cache.Set(
+                    otpKey,
+                    state,
+                    TimeSpan.FromMinutes(PasswordResetOtpMinutes));
+            }
+
+            var body = $"""
+                <h2>Đặt lại mật khẩu UrbanService</h2>
+                <p>Xin chào {System.Net.WebUtility.HtmlEncode(user.FullName)},</p>
+                <p>Mã OTP đặt lại mật khẩu của bạn là:</p>
+                <h1 style="letter-spacing: 6px">{otp}</h1>
+                <p>Mã có hiệu lực trong {PasswordResetOtpMinutes} phút.</p>
+                <p>Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.</p>
+                """;
+
+            try
+            {
+                await _emailSender.SendAsync(new EmailMessageDto
+                {
+                    To = [user.Email],
+                    Subject = "Mã OTP đặt lại mật khẩu UrbanService",
+                    Body = body
+                }, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                RemovePasswordResetIssuance(otpKey, cooldownKey, state);
+                throw;
+            }
+            catch (Exception)
+            {
+                RemovePasswordResetIssuance(otpKey, cooldownKey, state);
+                _logger.LogWarning("Không thể gửi OTP đặt lại mật khẩu do lỗi nhà cung cấp email.");
+            }
+        }
+
+        public async Task ResetPasswordAsync(
+            ResetPasswordRequest req,
+            CancellationToken cancellationToken = default)
+        {
+            var normalizedEmail = NormalizeEmail(req.Email);
+
+            if (string.IsNullOrWhiteSpace(req.NewPassword) || req.NewPassword.Length < 6)
+            {
+                throw new Exception("Mật khẩu mới phải có ít nhất 6 ký tự.");
+            }
+
+            var otp = req.Otp?.Trim();
+            if (string.IsNullOrWhiteSpace(otp) || otp.Length != 6 || !otp.All(char.IsDigit))
+            {
+                throw new Exception(InvalidPasswordResetOtpMessage);
+            }
+
+            var otpKey = GetPasswordResetOtpKey(normalizedEmail);
+            if (!_cache.TryGetValue<PasswordResetOtpState>(otpKey, out var state) || state == null)
+            {
+                throw new Exception(InvalidPasswordResetOtpMessage);
+            }
+
+            var user = await _uow.GetRepository<User>().Entities
+                .FirstOrDefaultAsync(
+                    candidate => candidate.IsActive && candidate.Email.ToLower() == normalizedEmail,
+                    cancellationToken);
+
+            if (user == null || user.UserId != state.UserId)
+            {
+                throw new Exception(InvalidPasswordResetOtpMessage);
+            }
+
+            lock (state.SyncRoot)
+            {
+                if (!_cache.TryGetValue<PasswordResetOtpState>(otpKey, out var currentState) ||
+                    !ReferenceEquals(currentState, state) ||
+                    state.IsConsuming)
+                {
+                    throw new Exception(InvalidPasswordResetOtpMessage);
+                }
+
+                if (!PasswordHasher.Verify(otp, state.OtpHash))
+                {
+                    state.FailedAttempts++;
+                    if (state.FailedAttempts >= PasswordResetOtpMaxAttempts)
+                    {
+                        _cache.Remove(otpKey);
+                    }
+
+                    throw new Exception(InvalidPasswordResetOtpMessage);
+                }
+
+                state.IsConsuming = true;
+            }
+
+            var originalPasswordHash = user.PasswordHash;
+            var originalRefreshToken = user.RefreshToken;
+            var originalIsRefreshTokenRevoked = user.IsRefreshTokenRevoked;
+            var originalUpdatedAt = user.UpdatedAt;
+
+            try
+            {
+                user.PasswordHash = PasswordHasher.Hash(req.NewPassword);
+                user.RefreshToken = null;
+                user.IsRefreshTokenRevoked = true;
+                user.UpdatedAt = DateTime.UtcNow;
+                await _uow.SaveAsync();
+
+                lock (state.SyncRoot)
+                {
+                    if (_cache.TryGetValue<PasswordResetOtpState>(otpKey, out var currentState) &&
+                        ReferenceEquals(currentState, state))
+                    {
+                        _cache.Remove(otpKey);
+                    }
+                }
+            }
+            catch
+            {
+                user.PasswordHash = originalPasswordHash;
+                user.RefreshToken = originalRefreshToken;
+                user.IsRefreshTokenRevoked = originalIsRefreshTokenRevoked;
+                user.UpdatedAt = originalUpdatedAt;
+
+                lock (state.SyncRoot)
+                {
+                    if (_cache.TryGetValue<PasswordResetOtpState>(otpKey, out var currentState) &&
+                        ReferenceEquals(currentState, state))
+                    {
+                        state.IsConsuming = false;
+                    }
+                }
+
+                throw;
+            }
+        }
+
         public async Task VerifyEmailAsync(Guid userId, VerifyEmailRequest req)
         {
             if (string.IsNullOrWhiteSpace(req.Otp))
@@ -367,5 +558,59 @@ namespace UrbanService.BLL.Services
 
         private static string GetVerificationOtpCooldownKey(Guid userId) =>
             $"email-verification-cooldown:{userId}";
+
+        private static string NormalizeEmail(string? email)
+        {
+            var normalizedEmail = email?.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(normalizedEmail) ||
+                !MailAddress.TryCreate(normalizedEmail, out var parsedEmail) ||
+                !string.Equals(parsedEmail.Address, normalizedEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception("Email không hợp lệ.");
+            }
+
+            return normalizedEmail;
+        }
+
+        private static string GetPasswordResetOtpKey(string normalizedEmail) =>
+            $"password-reset:{HashCacheSubject(normalizedEmail)}";
+
+        private static string GetPasswordResetOtpCooldownKey(string normalizedEmail) =>
+            $"password-reset-cooldown:{HashCacheSubject(normalizedEmail)}";
+
+        private static string HashCacheSubject(string value)
+        {
+            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+            return Convert.ToHexString(bytes);
+        }
+
+        private void RemovePasswordResetIssuance(
+            string otpKey,
+            string cooldownKey,
+            PasswordResetOtpState state)
+        {
+            lock (PasswordResetCacheSync)
+            {
+                if (_cache.TryGetValue<PasswordResetOtpState>(otpKey, out var currentState) &&
+                    ReferenceEquals(currentState, state))
+                {
+                    _cache.Remove(otpKey);
+                    _cache.Remove(cooldownKey);
+                }
+            }
+        }
+
+        private sealed class PasswordResetOtpState
+        {
+            public Guid UserId { get; init; }
+
+            public string OtpHash { get; init; } = null!;
+
+            public int FailedAttempts { get; set; }
+
+            public bool IsConsuming { get; set; }
+
+            public object SyncRoot { get; } = new();
+        }
     }
 }

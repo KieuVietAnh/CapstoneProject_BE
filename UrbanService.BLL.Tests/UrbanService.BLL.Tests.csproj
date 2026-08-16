@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\UrbanService\UrbanService.csproj" />
     <ProjectReference Include="..\UrbanService.BLL\UrbanService.BLL.csproj" />
     <ProjectReference Include="..\UrbanService.DAL\UrbanService.DAL.csproj" />
   </ItemGroup>
