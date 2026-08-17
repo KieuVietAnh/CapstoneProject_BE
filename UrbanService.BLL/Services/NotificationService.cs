@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using UrbanService.BLL.Common.Constraint;
+using UrbanService.BLL.Common.Helpers;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
@@ -11,6 +12,7 @@ namespace UrbanService.BLL.Services;
 public class NotificationService : INotificationService
 {
     private const int MaxPageSize = 100;
+
     private readonly IUnitOfWork _uow;
     private readonly IRealtimeNotificationSender _realtimeSender;
     private readonly ILogger<NotificationService> _logger;
@@ -26,20 +28,32 @@ public class NotificationService : INotificationService
     }
 
     public async Task<NotificationDto> SendAsync(
-    Guid userId,
-    string title,
-    string message,
-    string type,
-    string? targetUrl = null)
+        Guid userId,
+        string title,
+        string message,
+        string type,
+        string? targetUrl = null)
     {
         if (userId == Guid.Empty)
-            throw new ArgumentException(nameof(userId));
+        {
+            throw new ArgumentException(
+                "User ID không hợp lệ.",
+                nameof(userId));
+        }
 
         if (string.IsNullOrWhiteSpace(title))
-            throw new Exception("Title là bắt buộc.");
+        {
+            throw new ArgumentException(
+                "Title là bắt buộc.",
+                nameof(title));
+        }
 
         if (string.IsNullOrWhiteSpace(message))
-            throw new Exception("Message là bắt buộc.");
+        {
+            throw new ArgumentException(
+                "Message là bắt buộc.",
+                nameof(message));
+        }
 
         var notification = new Notification
         {
@@ -51,7 +65,7 @@ public class NotificationService : INotificationService
             TargetUrl = string.IsNullOrWhiteSpace(targetUrl)
                 ? null
                 : targetUrl.Trim(),
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = SlaDateTimeHelper.UtcNow
         };
 
         await _uow
@@ -83,41 +97,93 @@ public class NotificationService : INotificationService
         return dto;
     }
 
-    public async Task<PagedResultDto<NotificationDto>> GetMyNotificationsAsync(
-        Guid userId,
-        int pageNumber,
-        int pageSize,
-        bool? isRead)
+    public async Task<PagedResultDto<NotificationDto>>
+        GetMyNotificationsAsync(
+            Guid userId,
+            int pageNumber,
+            int pageSize,
+            bool? isRead)
     {
-        pageNumber = pageNumber < 1 ? 1 : pageNumber;
-        pageSize = pageSize < 1 ? 10 : Math.Min(pageSize, MaxPageSize);
+        if (userId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "User ID không hợp lệ.",
+                nameof(userId));
+        }
 
-        var query = _uow.GetRepository<Notification>().Entities
+        pageNumber =
+            pageNumber < 1
+                ? 1
+                : pageNumber;
+
+        pageSize =
+            pageSize < 1
+                ? 10
+                : Math.Min(
+                    pageSize,
+                    MaxPageSize);
+
+        var query = _uow
+            .GetRepository<Notification>()
+            .Entities
             .AsNoTracking()
-            .Where(n => n.UserId == userId);
+            .Where(n =>
+                n.UserId == userId);
 
         if (isRead.HasValue)
         {
-            query = query.Where(n => n.IsRead == isRead.Value);
+            query = query.Where(n =>
+                n.IsRead == isRead.Value);
         }
 
-        var totalItems = await query.CountAsync();
-        var items = await query
-            .OrderByDescending(n => n.CreatedAt)
-            .Skip((pageNumber - 1) * pageSize)
-            .Take(pageSize)
-            .Select(n => new NotificationDto
-            {
-                NotificationId = n.NotificationId,
-                UserId = n.UserId,
-                Title = n.Title,
-                Message = n.Message,
-                Type = n.Type,
-                IsRead = n.IsRead,
-                TargetUrl = n.TargetUrl,
-                CreatedAt = n.CreatedAt
-            })
-            .ToListAsync();
+        var totalItems =
+            await query.CountAsync();
+
+        var items =
+            await query
+                .OrderByDescending(n =>
+                    n.CreatedAt)
+                .Skip(
+                    (pageNumber - 1) *
+                    pageSize)
+                .Take(pageSize)
+                .Select(n =>
+                    new NotificationDto
+                    {
+                        NotificationId =
+                            n.NotificationId,
+
+                        UserId =
+                            n.UserId,
+
+                        Title =
+                            n.Title,
+
+                        Message =
+                            n.Message,
+
+                        Type =
+                            n.Type,
+
+                        IsRead =
+                            n.IsRead,
+
+                        TargetUrl =
+                            n.TargetUrl,
+
+                        CreatedAt =
+                            n.CreatedAt
+                    })
+                .ToListAsync();
+
+        // SQL Server datetime/datetime2 can return Kind=Unspecified.
+        // Mark the clock value as UTC so JSON serialization includes Z.
+        foreach (var item in items)
+        {
+            item.CreatedAt =
+                SlaDateTimeHelper.AsUtc(
+                    item.CreatedAt);
+        }
 
         return new PagedResultDto<NotificationDto>
         {
@@ -125,32 +191,54 @@ public class NotificationService : INotificationService
             PageNumber = pageNumber,
             PageSize = pageSize,
             TotalItems = totalItems,
-            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize)
+            TotalPages =
+                totalItems == 0
+                    ? 0
+                    : (int)Math.Ceiling(
+                        totalItems /
+                        (double)pageSize)
         };
     }
 
-    public async Task MarkAsReadAsync(Guid userId, int notificationId)
+    public async Task MarkAsReadAsync(
+        Guid userId,
+        int notificationId)
     {
-        var notification = await _uow.GetRepository<Notification>().Entities
-            .FirstOrDefaultAsync(n => n.NotificationId == notificationId && n.UserId == userId);
+        var notification = await _uow
+            .GetRepository<Notification>()
+            .Entities
+            .FirstOrDefaultAsync(n =>
+                n.NotificationId ==
+                    notificationId &&
+                n.UserId == userId);
 
         if (notification == null)
         {
-            throw new Exception("Không tìm thấy notification.");
+            throw new KeyNotFoundException(
+                "Không tìm thấy notification.");
         }
 
-        if (!notification.IsRead)
+        if (notification.IsRead)
         {
-            notification.IsRead = true;
-            notification.UpdatedAt = DateTime.UtcNow;
-            await _uow.SaveAsync();
+            return;
         }
+
+        notification.IsRead = true;
+        notification.UpdatedAt =
+            SlaDateTimeHelper.UtcNow;
+
+        await _uow.SaveAsync();
     }
 
-    public async Task MarkAllAsReadAsync(Guid userId)
+    public async Task MarkAllAsReadAsync(
+        Guid userId)
     {
-        var notifications = await _uow.GetRepository<Notification>().Entities
-            .Where(n => n.UserId == userId && !n.IsRead)
+        var notifications = await _uow
+            .GetRepository<Notification>()
+            .Entities
+            .Where(n =>
+                n.UserId == userId &&
+                !n.IsRead)
             .ToListAsync();
 
         if (notifications.Count == 0)
@@ -158,7 +246,9 @@ public class NotificationService : INotificationService
             return;
         }
 
-        var now = DateTime.UtcNow;
+        var now =
+            SlaDateTimeHelper.UtcNow;
+
         foreach (var notification in notifications)
         {
             notification.IsRead = true;
@@ -168,18 +258,35 @@ public class NotificationService : INotificationService
         await _uow.SaveAsync();
     }
 
-    private static NotificationDto Map(Notification notification)
+    private static NotificationDto Map(
+        Notification notification)
     {
         return new NotificationDto
         {
-            NotificationId = notification.NotificationId,
-            UserId = notification.UserId,
-            Title = notification.Title,
-            Message = notification.Message,
-            Type = notification.Type,
-            IsRead = notification.IsRead,
-            TargetUrl = notification.TargetUrl,
-            CreatedAt = notification.CreatedAt
+            NotificationId =
+                notification.NotificationId,
+
+            UserId =
+                notification.UserId,
+
+            Title =
+                notification.Title,
+
+            Message =
+                notification.Message,
+
+            Type =
+                notification.Type,
+
+            IsRead =
+                notification.IsRead,
+
+            TargetUrl =
+                notification.TargetUrl,
+
+            CreatedAt =
+                SlaDateTimeHelper.AsUtc(
+                    notification.CreatedAt)
         };
     }
 }
