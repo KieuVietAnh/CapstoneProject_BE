@@ -69,7 +69,13 @@ public class AiFeedbackReviewWorker : BackgroundService
 
         var pendingFeedbacks = await uow.GetRepository<Feedback>().Entities
             .AsNoTracking()
-            .Where(f => f.Status == FeedbackStatus.Submitted)
+            .Where(f =>
+                f.Status == FeedbackStatus.Submitted ||
+                (f.Status == FeedbackStatus.AiReviewed &&
+                 !f.IsMasterTicket &&
+                 f.ParentTicketId == null &&
+                 !f.FeedbackDuplicateCandidates.Any(candidate =>
+                     candidate.Status == "Pending" || candidate.Status == "Confirmed")))
             .OrderBy(f => f.CreatedAt)
             .Select(f => new
             {
@@ -105,7 +111,7 @@ public class AiFeedbackReviewWorker : BackgroundService
         if (pendingFeedbacks.Count > 0)
         {
             _logger.LogInformation(
-                "AI review scan found {SubmittedCount} Submitted feedbacks; queued {NewlyQueuedCount} new items; skipped {CooldownSkippedCount} items in retry cooldown; in-memory queue count is {QueueCount}.",
+                "AI review scan found {ReviewableCount} feedbacks; queued {NewlyQueuedCount} new items; skipped {CooldownSkippedCount} items in retry cooldown; in-memory queue count is {QueueCount}.",
                 pendingFeedbacks.Count,
                 newlyQueuedCount,
                 cooldownSkippedCount,
@@ -117,6 +123,8 @@ public class AiFeedbackReviewWorker : BackgroundService
     {
         await foreach (var item in _queue.DequeueAllAsync(stoppingToken))
         {
+            var aiReviewAttempted = false;
+
             try
             {
                 using var scope = _scopeFactory.CreateScope();
@@ -133,6 +141,11 @@ public class AiFeedbackReviewWorker : BackgroundService
                     ?? throw new InvalidOperationException(
                         $"Feedback {item.FeedbackId} không còn tồn tại.");
 
+                var needsAiReview = string.Equals(
+                    feedback.Status,
+                    FeedbackStatus.Submitted,
+                    StringComparison.OrdinalIgnoreCase);
+
                 var hasActiveDuplicateCandidate = await uow
                     .GetRepository<FeedbackDuplicateCandidate>()
                     .Entities
@@ -143,16 +156,23 @@ public class AiFeedbackReviewWorker : BackgroundService
                             (candidate.Status == "Pending" || candidate.Status == "Confirmed"),
                         stoppingToken);
 
-                // Duplicate classification must finish before the normal AI review can
-                // move the feedback out of Submitted. A failed duplicate check therefore
-                // stays in the existing retry queue instead of becoming a master by accident.
                 if (!feedback.IsMasterTicket &&
                     !feedback.ParentTicketId.HasValue &&
                     !hasActiveDuplicateCandidate)
                 {
-                    await duplicateService.CheckAndLinkDuplicateAsync(
-                        feedback,
-                        item.RequestedByUserId);
+                    try
+                    {
+                        await duplicateService.CheckAndLinkDuplicateAsync(
+                            feedback,
+                            item.RequestedByUserId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(
+                            ex,
+                            "Duplicate classification could not complete for feedback {FeedbackId}; continuing with independent AI review.",
+                            item.FeedbackId);
+                    }
 
                     hasActiveDuplicateCandidate = await uow
                         .GetRepository<FeedbackDuplicateCandidate>()
@@ -163,29 +183,61 @@ public class AiFeedbackReviewWorker : BackgroundService
                                 candidate.FeedbackId == item.FeedbackId &&
                                 (candidate.Status == "Pending" || candidate.Status == "Confirmed"),
                             stoppingToken);
-
-                    if (!feedback.IsMasterTicket &&
-                        !feedback.ParentTicketId.HasValue &&
-                        !hasActiveDuplicateCandidate)
-                    {
-                        throw new InvalidOperationException(
-                            $"Duplicate classification for feedback {item.FeedbackId} has not completed.");
-                    }
                 }
 
-                _logger.LogInformation(
-                    "Starting AI review for feedback {FeedbackId}.",
-                    item.FeedbackId);
+                var duplicateState = await uow.GetRepository<Feedback>().Entities
+                    .AsNoTracking()
+                    .Where(current => current.FeedbackId == item.FeedbackId)
+                    .Select(current => new
+                    {
+                        current.IsMasterTicket,
+                        current.ParentTicketId
+                    })
+                    .FirstOrDefaultAsync(stoppingToken);
 
-                await aiFeedbackAnalysisService.AnalyzeFeedbackAsync(
-                    item.FeedbackId,
-                    item.RequestedByUserId,
-                    stoppingToken);
+                var duplicateClassificationPending = duplicateState is not null &&
+                    !duplicateState.IsMasterTicket &&
+                    !duplicateState.ParentTicketId.HasValue &&
+                    !hasActiveDuplicateCandidate;
 
-                _logger.LogInformation(
-                    "Finished AI review for feedback {FeedbackId}.",
-                    item.FeedbackId);
-                _retryAfterUtcByFeedbackId.TryRemove(item.FeedbackId, out _);
+                if (needsAiReview && duplicateState?.ParentTicketId.HasValue == true)
+                {
+                    needsAiReview = false;
+                    _logger.LogInformation(
+                        "Skipping AI review for feedback {FeedbackId} because it is now linked to parent feedback {ParentFeedbackId}.",
+                        item.FeedbackId,
+                        duplicateState.ParentTicketId.Value);
+                }
+
+                if (needsAiReview)
+                {
+                    aiReviewAttempted = true;
+                    _logger.LogInformation(
+                        "Starting AI review for feedback {FeedbackId}.",
+                        item.FeedbackId);
+
+                    await aiFeedbackAnalysisService.AnalyzeFeedbackAsync(
+                        item.FeedbackId,
+                        item.RequestedByUserId,
+                        stoppingToken);
+
+                    _logger.LogInformation(
+                        "Finished AI review for feedback {FeedbackId}.",
+                        item.FeedbackId);
+                }
+
+                if (duplicateClassificationPending)
+                {
+                    _retryAfterUtcByFeedbackId[item.FeedbackId] = DateTime.UtcNow.Add(_failureRetryDelay);
+                    _logger.LogWarning(
+                        "Duplicate classification remains pending for feedback {FeedbackId}; AI review was not blocked. It will be retried after {RetryDelayMinutes} minutes.",
+                        item.FeedbackId,
+                        _failureRetryDelay.TotalMinutes);
+                }
+                else
+                {
+                    _retryAfterUtcByFeedbackId.TryRemove(item.FeedbackId, out _);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -199,13 +251,26 @@ public class AiFeedbackReviewWorker : BackgroundService
                     ? $" PostgreSQL {postgresException.SqlState}; Constraint={postgresException.ConstraintName}; Detail={postgresException.Detail}; Message={postgresException.MessageText}"
                     : string.Empty;
 
-                _logger.LogWarning(
-                    ex,
-                    "AI review failed for feedback {FeedbackId}. Error: {ErrorMessage}.{DatabaseError} It will remain Submitted and be retried after {RetryDelayMinutes} minutes.",
-                    item.FeedbackId,
-                    root.Message,
-                    databaseError,
-                    _failureRetryDelay.TotalMinutes);
+                if (aiReviewAttempted)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "AI review failed for feedback {FeedbackId}. Error: {ErrorMessage}.{DatabaseError} It will remain Submitted and be retried after {RetryDelayMinutes} minutes.",
+                        item.FeedbackId,
+                        root.Message,
+                        databaseError,
+                        _failureRetryDelay.TotalMinutes);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Duplicate classification retry failed for feedback {FeedbackId}. Error: {ErrorMessage}.{DatabaseError} It will be retried after {RetryDelayMinutes} minutes.",
+                        item.FeedbackId,
+                        root.Message,
+                        databaseError,
+                        _failureRetryDelay.TotalMinutes);
+                }
             }
             finally
             {
