@@ -6,6 +6,9 @@ namespace UrbanService.BLL.Services;
 
 public class AiFeedbackDraftService : IAiFeedbackDraftService
 {
+    private const int MaxReflectionChars = 1200;
+    private const int MaxLocationChars = 300;
+
     private readonly IAiClient _aiClient;
 
     public AiFeedbackDraftService(IAiClient aiClient)
@@ -58,7 +61,7 @@ public class AiFeedbackDraftService : IAiFeedbackDraftService
     {
         var locationText = string.IsNullOrWhiteSpace(request.Location)
             ? "Chưa cung cấp"
-            : request.Location.Trim();
+            : Truncate(request.Location.Trim(), MaxLocationChars);
 
         var coordinateText = request.Latitude.HasValue && request.Longitude.HasValue
             ? $"{request.Latitude}, {request.Longitude}"
@@ -66,12 +69,14 @@ public class AiFeedbackDraftService : IAiFeedbackDraftService
 
         var hasImages = request.ImageUrls.Count > 0 || request.Base64Images.Count > 0;
 
+        var reflectionText = Truncate(request.Reflection.Trim(), MaxReflectionChars);
+
         return $$"""
 Bạn là trợ lý AI của hệ thống UrbanService.
 Nhiệm vụ: tạo một bản nháp phản ánh đô thị từ thông tin người dân cung cấp.
 
 Thông tin đầu vào:
-- Nội dung người dân mô tả: {{request.Reflection.Trim()}}
+- Nội dung người dân mô tả: {{reflectionText}}
 - Vị trí dạng chữ: {{locationText}}
 - Tọa độ: {{coordinateText}}
 - Có ảnh minh chứng: {{(hasImages ? "Có" : "Không")}}
@@ -164,5 +169,10 @@ Schema JSON:
         }
 
         return normalized[..77] + "...";
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        return value.Length <= maxLength ? value : value[..maxLength];
     }
 }

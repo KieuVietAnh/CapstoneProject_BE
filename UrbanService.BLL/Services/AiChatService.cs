@@ -8,6 +8,14 @@ namespace UrbanService.BLL.Services;
 
 public class AiChatService : IAiChatService
 {
+    private const int MaxKnowledgeSources = 3;
+    private const int MaxKnowledgeSourceChars = 450;
+    private const int MaxHistoryMessages = 4;
+    private const int MaxHistoryMessageChars = 300;
+    private const int MaxFeedbackFieldChars = 350;
+    private const int MaxUserMessageChars = 700;
+    private const int MaxPromptChars = 10000;
+
     private readonly IUnitOfWork _uow;
     private readonly OpenRouterAiClient _aiClient;
 
@@ -185,7 +193,7 @@ public class AiChatService : IAiChatService
             query = query.Where(k => k.CategoryId == null);
         }
 
-        var sources = await query.Take(20).ToListAsync(cancellationToken);
+        var sources = await query.Take(12).ToListAsync(cancellationToken);
         var terms = message.ToLower()
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(t => t.Length >= 3)
@@ -202,8 +210,8 @@ public class AiChatService : IAiChatService
             })
             .OrderByDescending(x => x.Score)
             .ThenByDescending(x => x.Source.CategoryId.HasValue)
-            .Take(5)
-            .Select(x => $"- {x.Source.Title}: {Truncate(x.Source.Content, 1000)}");
+            .Take(MaxKnowledgeSources)
+            .Select(x => $"- {Truncate(x.Source.Title, 120)}: {Truncate(x.Source.Content, MaxKnowledgeSourceChars)}");
 
         return string.Join(Environment.NewLine, selected);
     }
@@ -216,7 +224,7 @@ public class AiChatService : IAiChatService
             .AsNoTracking()
             .Where(m => m.AiConversationId == conversationId)
             .OrderByDescending(m => m.CreatedAt)
-            .Take(10)
+            .Take(MaxHistoryMessages)
             .OrderBy(m => m.CreatedAt)
             .Select(m => new
             {
@@ -236,25 +244,26 @@ public class AiChatService : IAiChatService
                 ? "AI"
                 : "Nguoi dan";
 
-            return $"- {sender}: {Truncate(m.MessageText, 1000)}";
+            return $"- {sender}: {Truncate(m.MessageText, MaxHistoryMessageChars)}";
         }));
     }
 
     private static string BuildChatPrompt(string message, string knowledge, Feedback? feedback, string conversationHistory)
     {
+        var safeMessage = Truncate(message.Trim(), MaxUserMessageChars);
         var feedbackContext = feedback == null
             ? "Khong co feedback cu the."
             : $"""
               Feedback lien quan:
               - Ma feedback: {feedback.FeedbackId}
-              - Tieu de: {feedback.Title}
-              - Mo ta: {feedback.Description}
-              - Dia diem: {feedback.LocationText}
+              - Tieu de: {Truncate(feedback.Title, MaxFeedbackFieldChars)}
+              - Mo ta: {Truncate(feedback.Description, MaxFeedbackFieldChars)}
+              - Dia diem: {Truncate(feedback.LocationText, MaxFeedbackFieldChars)}
               - Trang thai: {feedback.Status}
-              - Category: {feedback.Category.CategoryName}
+              - Category: {Truncate(feedback.Category.CategoryName, 120)}
               """;
 
-        return $"""
+        var prompt = $"""
         Bạn là trợ lý UrbanService cho người dân.
         Chỉ trả lời dựa trên knowledge được cung cấp và thông tin feedback nếu có.
         Nếu không đủ thông tin, hãy nói rõ là chưa đủ thông tin và đề xuất người dân liên hệ nhân viên hỗ trợ.
@@ -270,8 +279,10 @@ public class AiChatService : IAiChatService
         {feedbackContext}
 
         Cau hoi moi nhat cua nguoi dan:
-        {message}
+        {safeMessage}
         """;
+
+        return prompt.Length <= MaxPromptChars ? prompt : prompt[..MaxPromptChars];
     }
 
     private static string? Truncate(string? value, int maxLength)
