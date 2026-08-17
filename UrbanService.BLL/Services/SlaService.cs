@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UrbanService.BLL.Common.Constraint;
+using UrbanService.BLL.Common.Helpers;
 using UrbanService.BLL.DTOs.SLA;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
@@ -55,7 +56,7 @@ public class SlaService : ISlaService
 
 
 
-        return await _unitOfWork
+        var items = await _unitOfWork
             .GetRepository<SlaEvent>()
             .Entities
             .AsNoTracking()
@@ -86,9 +87,19 @@ public class SlaService : ISlaService
                         x.TriggerSource,
 
                     CreatedAt =
-                        x.CreatedAt
+                        SlaDateTimeHelper.AsUtc(
+                            x.CreatedAt)
                 })
             .ToListAsync();
+
+        foreach (var item in items)
+        {
+            item.CreatedAt =
+                SlaDateTimeHelper.AsUtc(
+                    item.CreatedAt);
+        }
+
+        return items;
     }
 
     public async Task<SlaStatusDto> GetStatusAsync(
@@ -110,28 +121,42 @@ public class SlaService : ISlaService
         }
 
 
-        var now = DateTime.UtcNow;
+        var now =
+            SlaDateTimeHelper.UtcNow;
 
+        var startedAt =
+            SlaDateTimeHelper.AsUtc(
+                sla.StartedAt);
+
+        var responseDueAt =
+            SlaDateTimeHelper.AsUtc(
+                sla.ResponseDueAt);
+
+        var resolutionDueAt =
+            SlaDateTimeHelper.AsUtc(
+                sla.ResolutionDueAt);
 
         var responseTotal =
-            (sla.ResponseDueAt - sla.StartedAt)
-            .TotalMinutes;
-
+            Math.Max(
+                0,
+                (responseDueAt - startedAt)
+                .TotalMinutes
+                - sla.TotalPausedMinutes);
 
         var resolutionTotal =
-            (sla.ResolutionDueAt - sla.StartedAt)
-            .TotalMinutes;
-
-
+            Math.Max(
+                0,
+                (resolutionDueAt - startedAt)
+                .TotalMinutes
+                - sla.TotalPausedMinutes);
 
         var responseUsed =
-    (now - sla.StartedAt)
-    .TotalMinutes
-    - sla.TotalPausedMinutes;
-
+            (now - startedAt)
+            .TotalMinutes
+            - sla.TotalPausedMinutes;
 
         var resolutionUsed =
-            (now - sla.StartedAt)
+            (now - startedAt)
             .TotalMinutes
             - sla.TotalPausedMinutes;
 
@@ -158,15 +183,15 @@ public class SlaService : ISlaService
 
 
             StartedAt =
-                sla.StartedAt,
+                startedAt,
 
 
             ResponseDueAt =
-                sla.ResponseDueAt,
+                responseDueAt,
 
 
             ResolutionDueAt =
-                sla.ResolutionDueAt,
+                resolutionDueAt,
 
 
 
@@ -174,7 +199,7 @@ public class SlaService : ISlaService
                 Math.Max(
                     0,
                     (int)
-                    (sla.ResponseDueAt - now)
+                    (responseDueAt - now)
                     .TotalMinutes),
 
 
@@ -183,7 +208,7 @@ public class SlaService : ISlaService
                 Math.Max(
                     0,
                     (int)
-                    (sla.ResolutionDueAt - now)
+                    (resolutionDueAt - now)
                     .TotalMinutes),
 
 
@@ -285,7 +310,7 @@ public class SlaService : ISlaService
         var normalizedPriority =
             NormalizePriority(feedback.Priority);
 
-        var now = DateTime.UtcNow;
+        var now = SlaDateTimeHelper.UtcNow;
 
         var policy = await FindApplicablePolicyAsync(
             feedback.AreaId,
@@ -471,7 +496,7 @@ public class SlaService : ISlaService
                 "SLA đã được ghi nhận phản hồi đầu tiên.");
         }
 
-        var now = DateTime.UtcNow;
+        var now = SlaDateTimeHelper.UtcNow;
 
         entity.RespondedAt = now;
 
@@ -538,7 +563,7 @@ public class SlaService : ISlaService
                 "SLA đã có một lần tạm dừng chưa được tiếp tục.");
         }
 
-        var now = DateTime.UtcNow;
+        var now = SlaDateTimeHelper.UtcNow;
         var oldStatus = entity.Status;
 
         entity.Status = SlaStatus.Paused;
@@ -625,7 +650,7 @@ public class SlaService : ISlaService
                 "Không tìm thấy lịch sử tạm dừng đang mở.");
         }
 
-        var now = DateTime.UtcNow;
+        var now = SlaDateTimeHelper.UtcNow;
 
         var pausedMinutes = Math.Max(
             1,
@@ -714,7 +739,7 @@ public class SlaService : ISlaService
                 "Cần tiếp tục SLA trước khi hoàn thành.");
         }
 
-        var now = DateTime.UtcNow;
+        var now = SlaDateTimeHelper.UtcNow;
         var oldStatus = entity.Status;
 
         entity.ResolvedAt = now;
@@ -789,7 +814,7 @@ public class SlaService : ISlaService
                 "SLA đã bị hủy trước đó.");
         }
 
-        var now = DateTime.UtcNow;
+        var now = SlaDateTimeHelper.UtcNow;
         var oldStatus = entity.Status;
 
         entity.Status = SlaStatus.Cancelled;
@@ -866,7 +891,7 @@ public class SlaService : ISlaService
                 entity.AreaId,
                 newCategoryId,
                 newPriority,
-                DateTime.UtcNow);
+                SlaDateTimeHelper.UtcNow);
 
 
 
@@ -929,7 +954,7 @@ public class SlaService : ISlaService
 
 
         var now =
-            DateTime.UtcNow;
+            SlaDateTimeHelper.UtcNow;
 
 
 
@@ -1131,7 +1156,7 @@ public class SlaService : ISlaService
         ApplyMonitoringCheckAsync(
             FeedbackSla entity)
     {
-        var now = DateTime.UtcNow;
+        var now = SlaDateTimeHelper.UtcNow;
 
         var result =
             new SlaMonitoringCheckResult();
@@ -1144,46 +1169,54 @@ public class SlaService : ISlaService
         /*
          * RESPONSE WARNING
          *
-         * WarningThresholdPercent = 30 nghĩa là cảnh báo
-         * khi SLA chỉ còn khoảng 30% tổng thời gian phản hồi.
+         * Cảnh báo khi phần thời gian SLA còn lại <= threshold.
+         * TotalPausedMinutes không được tính vào active SLA duration.
          */
         if (!entity.RespondedAt.HasValue &&
             !entity.IsResponseBreached &&
             now <= entity.ResponseDueAt)
         {
             var totalResponseMinutes =
-                (entity.ResponseDueAt - entity.StartedAt)
-                .TotalMinutes;
+                Math.Max(
+                    0,
+                    (entity.ResponseDueAt - entity.StartedAt)
+                    .TotalMinutes
+                    - entity.TotalPausedMinutes);
 
-            if (totalResponseMinutes > 0)
+            var remainingResponseMinutes =
+                Math.Max(
+                    0,
+                    (entity.ResponseDueAt - now)
+                    .TotalMinutes);
+
+            var remainingResponsePercent =
+                totalResponseMinutes <= 0
+                    ? 0
+                    : remainingResponseMinutes /
+                      totalResponseMinutes *
+                      100;
+
+            var hasResponseWarning =
+                await HasSlaEventAsync(
+                    entity.FeedbackSlaId,
+                    SlaEventType.ResponseWarning);
+
+            if (remainingResponsePercent <= thresholdPercent &&
+                !hasResponseWarning)
             {
-                var responseWarningAt =
-                    entity.StartedAt.AddMinutes(
-                        totalResponseMinutes *
-                        (100 - thresholdPercent) / 100d);
+                entity.UpdatedAt = now;
 
-                var hasResponseWarning =
-                    await HasSlaEventAsync(
-                        entity.FeedbackSlaId,
-                        SlaEventType.ResponseWarning);
+                await AddEventAsync(
+                    entity.FeedbackSlaId,
+                    SlaEventType.ResponseWarning,
+                    entity.Status,
+                    entity.Status,
+                    $"SLA phản hồi chỉ còn khoảng " +
+                    $"{thresholdPercent}% thời gian.",
+                    null,
+                    SlaTriggerSource.System);
 
-                if (now >= responseWarningAt &&
-    !hasResponseWarning)
-                {
-                    entity.UpdatedAt = now;
-
-                    await AddEventAsync(
-                        entity.FeedbackSlaId,
-                        SlaEventType.ResponseWarning,
-                        entity.Status,
-                        entity.Status,
-                        $"SLA phản hồi chỉ còn khoảng " +
-                        $"{thresholdPercent}% thời gian.",
-                        null,
-                        SlaTriggerSource.System);
-
-                    result.ResponseWarningCreated = true;
-                }
+                result.ResponseWarningCreated = true;
             }
         }
 
@@ -1195,38 +1228,46 @@ public class SlaService : ISlaService
             now <= entity.ResolutionDueAt)
         {
             var totalResolutionMinutes =
-                (entity.ResolutionDueAt - entity.StartedAt)
-                .TotalMinutes;
+                Math.Max(
+                    0,
+                    (entity.ResolutionDueAt - entity.StartedAt)
+                    .TotalMinutes
+                    - entity.TotalPausedMinutes);
 
-            if (totalResolutionMinutes > 0)
+            var remainingResolutionMinutes =
+                Math.Max(
+                    0,
+                    (entity.ResolutionDueAt - now)
+                    .TotalMinutes);
+
+            var remainingResolutionPercent =
+                totalResolutionMinutes <= 0
+                    ? 0
+                    : remainingResolutionMinutes /
+                      totalResolutionMinutes *
+                      100;
+
+            var hasResolutionWarning =
+                await HasSlaEventAsync(
+                    entity.FeedbackSlaId,
+                    SlaEventType.ResolutionWarning);
+
+            if (remainingResolutionPercent <= thresholdPercent &&
+                !hasResolutionWarning)
             {
-                var resolutionWarningAt =
-                    entity.StartedAt.AddMinutes(
-                        totalResolutionMinutes *
-                        (100 - thresholdPercent) / 100d);
+                entity.UpdatedAt = now;
 
-                var hasResolutionWarning =
-                    await HasSlaEventAsync(
-                        entity.FeedbackSlaId,
-                        SlaEventType.ResolutionWarning);
+                await AddEventAsync(
+                    entity.FeedbackSlaId,
+                    SlaEventType.ResolutionWarning,
+                    entity.Status,
+                    entity.Status,
+                    $"SLA hoàn thành xử lý chỉ còn khoảng " +
+                    $"{thresholdPercent}% thời gian.",
+                    null,
+                    SlaTriggerSource.System);
 
-                if (now >= resolutionWarningAt &&
-    !hasResolutionWarning)
-                {
-                    entity.UpdatedAt = now;
-
-                    await AddEventAsync(
-                        entity.FeedbackSlaId,
-                        SlaEventType.ResolutionWarning,
-                        entity.Status,
-                        entity.Status,
-                        $"SLA hoàn thành xử lý chỉ còn khoảng " +
-                        $"{thresholdPercent}% thời gian.",
-                        null,
-                        SlaTriggerSource.System);
-
-                    result.ResolutionWarningCreated = true;
-                }
+                result.ResolutionWarningCreated = true;
             }
         }
 
@@ -1297,9 +1338,20 @@ public class SlaService : ISlaService
         FeedbackSla entity,
         SlaMonitoringCheckResult result)
     {
+        /*
+         * Provider Coordinator:
+         * vẫn giữ nguyên email warning/breach như logic hiện tại.
+         *
+         * InteractionManager + SystemAdmin:
+         * nhận in-app/realtime notification qua NotificationService.
+         */
         if (result.ResponseWarningCreated)
         {
             await SendWarningEmailToProviderAsync(
+                entity,
+                SlaEventType.ResponseWarning);
+
+            await SendInternalSlaNotificationAsync(
                 entity,
                 SlaEventType.ResponseWarning);
         }
@@ -1309,12 +1361,139 @@ public class SlaService : ISlaService
             await SendWarningEmailToProviderAsync(
                 entity,
                 SlaEventType.ResolutionWarning);
+
+            await SendInternalSlaNotificationAsync(
+                entity,
+                SlaEventType.ResolutionWarning);
         }
 
         await SendBreachNotificationsSafeAsync(
             entity,
             result.ResponseJustBreached,
             result.ResolutionJustBreached);
+
+        if (result.ResponseJustBreached)
+        {
+            await SendInternalSlaNotificationAsync(
+                entity,
+                SlaEventType.ResponseBreached);
+        }
+
+        if (result.ResolutionJustBreached)
+        {
+            await SendInternalSlaNotificationAsync(
+                entity,
+                SlaEventType.ResolutionBreached);
+        }
+    }
+
+    private async Task SendInternalSlaNotificationAsync(
+        FeedbackSla entity,
+        string eventType)
+    {
+        /*
+         * Theo database hiện tại:
+         * - InteractionManager = Manager
+         * - SystemAdmin = Admin
+         *
+         * Chỉ lấy account đang active.
+         */
+        var targetRoleIds = await _unitOfWork
+            .GetRepository<Role>()
+            .Entities
+            .AsNoTracking()
+            .Where(x =>
+                x.RoleName == "InteractionManager" ||
+                x.RoleName == "SystemAdmin")
+            .Select(x => x.RoleId)
+            .ToListAsync();
+
+        if (targetRoleIds.Count == 0)
+        {
+            _logger.LogWarning(
+                "Không tìm thấy role InteractionManager/SystemAdmin để gửi SLA notification.");
+
+            return;
+        }
+
+        var recipients = await _unitOfWork
+            .GetRepository<User>()
+            .Entities
+            .AsNoTracking()
+            .Where(x =>
+                x.IsActive &&
+                targetRoleIds.Contains(x.RoleId))
+            .Select(x => x.UserId)
+            .ToListAsync();
+
+        if (recipients.Count == 0)
+        {
+            _logger.LogDebug(
+                "Không có InteractionManager/SystemAdmin đang active để nhận SLA notification.");
+
+            return;
+        }
+
+        var isWarning =
+            eventType == SlaEventType.ResponseWarning ||
+            eventType == SlaEventType.ResolutionWarning;
+
+        var isResponse =
+            eventType == SlaEventType.ResponseWarning ||
+            eventType == SlaEventType.ResponseBreached;
+
+        var deadlineUtc =
+            isResponse
+                ? entity.ResponseDueAt
+                : entity.ResolutionDueAt;
+
+        var targetLabel =
+            isResponse
+                ? "phản hồi đầu tiên"
+                : "hoàn thành xử lý";
+
+        var deadlineDisplay =
+            SlaDateTimeHelper.FormatVietnamDateTime(
+                deadlineUtc);
+
+        var title =
+            isWarning
+                ? $"Cảnh báo SLA {targetLabel}"
+                : $"Vi phạm SLA {targetLabel}";
+
+        var message =
+            isWarning
+                ? $"Feedback \"{entity.Feedback?.Title ?? entity.FeedbackId.ToString()}\" " +
+                  $"chỉ còn khoảng {Math.Clamp(_slaOptions.WarningThresholdPercent, 1, 99)}% " +
+                  $"thời gian SLA {targetLabel}. Hạn: {deadlineDisplay}."
+                : $"Feedback \"{entity.Feedback?.Title ?? entity.FeedbackId.ToString()}\" " +
+                  $"đã vi phạm thời hạn SLA {targetLabel}. Hạn: {deadlineDisplay}.";
+
+        foreach (var userId in recipients.Distinct())
+        {
+            try
+            {
+                await _notificationService.SendAsync(
+                    userId,
+                    title,
+                    message,
+                    NotificationType.TicketUpdated,
+                    $"/feedbacks/{entity.FeedbackId}");
+            }
+            catch (Exception ex)
+            {
+                /*
+                 * Một user nhận notification lỗi không được làm
+                 * background SLA dừng hoặc chặn các user còn lại.
+                 */
+                _logger.LogError(
+                    ex,
+                    "Không thể gửi SLA notification {EventType} đến user {UserId} cho feedback {FeedbackId}.",
+                    eventType,
+                    userId,
+                    entity.FeedbackId);
+            }
+        }
     }
 
     private async Task<bool> HasSlaEventAsync(
@@ -1424,7 +1603,7 @@ public class SlaService : ISlaService
                     WebUtility.HtmlEncode(
                         warningLabel),
                 deadlineDisplay:
-                    FormatVietnamDateTime(
+                    SlaDateTimeHelper.FormatVietnamDateTime(
                         deadlineUtc),
                 warningThresholdPercent:
                     Math.Clamp(
@@ -1594,11 +1773,11 @@ public class SlaService : ISlaService
                     WebUtility.HtmlEncode(
                         breachLabel),
                 deadlineDisplay:
-                    FormatVietnamDateTime(
+                    SlaDateTimeHelper.FormatVietnamDateTime(
                         deadlineUtc),
                 breachedAtDisplay:
-                    FormatVietnamDateTime(
-                        DateTime.UtcNow));
+                    SlaDateTimeHelper.FormatVietnamDateTime(
+                        SlaDateTimeHelper.UtcNow));
 
         try
         {
@@ -2084,46 +2263,6 @@ public class SlaService : ISlaService
 """;
     }
 
-    private static string FormatVietnamDateTime(
-        DateTime utcDateTime)
-    {
-        var utcValue =
-            utcDateTime.Kind == DateTimeKind.Utc
-                ? utcDateTime
-                : DateTime.SpecifyKind(
-                    utcDateTime,
-                    DateTimeKind.Utc);
-
-        TimeZoneInfo vietnamTimeZone;
-
-        try
-        {
-            /*
-             * Linux / Docker.
-             */
-            vietnamTimeZone =
-                TimeZoneInfo.FindSystemTimeZoneById(
-                    "Asia/Ho_Chi_Minh");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            /*
-             * Windows.
-             */
-            vietnamTimeZone =
-                TimeZoneInfo.FindSystemTimeZoneById(
-                    "SE Asia Standard Time");
-        }
-
-        var vietnamTime =
-            TimeZoneInfo.ConvertTimeFromUtc(
-                utcValue,
-                vietnamTimeZone);
-
-        return vietnamTime.ToString(
-            "dd/MM/yyyy HH:mm");
-    }
-
     private sealed class SlaMonitoringCheckResult
     {
         public bool ResponseWarningCreated { get; set; }
@@ -2230,7 +2369,7 @@ public class SlaService : ISlaService
             TriggeredByUserId =
                 triggeredByUserId,
             TriggerSource = triggerSource,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = SlaDateTimeHelper.UtcNow
         };
 
         await _unitOfWork
@@ -2258,7 +2397,7 @@ public class SlaService : ISlaService
     private static FeedbackSlaDto MapToDto(
         FeedbackSla entity)
     {
-        var now = DateTime.UtcNow;
+        var now = SlaDateTimeHelper.UtcNow;
 
         double? remainingResponseMinutes = null;
         double? remainingResolutionMinutes = null;
@@ -2268,7 +2407,8 @@ public class SlaService : ISlaService
         {
             remainingResponseMinutes =
                 Math.Round(
-                    (entity.ResponseDueAt - now)
+                    (SlaDateTimeHelper.AsUtc(
+                        entity.ResponseDueAt) - now)
                     .TotalMinutes,
                     2);
         }
@@ -2278,7 +2418,8 @@ public class SlaService : ISlaService
         {
             remainingResolutionMinutes =
                 Math.Round(
-                    (entity.ResolutionDueAt - now)
+                    (SlaDateTimeHelper.AsUtc(
+                        entity.ResolutionDueAt) - now)
                     .TotalMinutes,
                     2);
         }
@@ -2316,19 +2457,24 @@ public class SlaService : ISlaService
                 entity.Priority,
 
             StartedAt =
-                entity.StartedAt,
+                SlaDateTimeHelper.AsUtc(
+                    entity.StartedAt),
 
             ResponseDueAt =
-                entity.ResponseDueAt,
+                SlaDateTimeHelper.AsUtc(
+                    entity.ResponseDueAt),
 
             ResolutionDueAt =
-                entity.ResolutionDueAt,
+                SlaDateTimeHelper.AsUtc(
+                    entity.ResolutionDueAt),
 
             RespondedAt =
-                entity.RespondedAt,
+                SlaDateTimeHelper.AsUtc(
+                    entity.RespondedAt),
 
             ResolvedAt =
-                entity.ResolvedAt,
+                SlaDateTimeHelper.AsUtc(
+                    entity.ResolvedAt),
 
             TotalPausedMinutes =
                 entity.TotalPausedMinutes,
@@ -2364,10 +2510,12 @@ public class SlaService : ISlaService
                 entity.CompletedByUser?.FullName,
 
             CreatedAt =
-                entity.CreatedAt,
+                SlaDateTimeHelper.AsUtc(
+                    entity.CreatedAt),
 
             UpdatedAt =
-                entity.UpdatedAt,
+                SlaDateTimeHelper.AsUtc(
+                    entity.UpdatedAt),
 
             RemainingResponseMinutes =
                 remainingResponseMinutes,
@@ -2408,7 +2556,8 @@ public class SlaService : ISlaService
                         x.TriggerSource,
 
                     CreatedAt =
-                        x.CreatedAt
+            SlaDateTimeHelper.AsUtc(
+                x.CreatedAt)
                 })
                 .ToArray(),
 
@@ -2432,10 +2581,12 @@ public class SlaService : ISlaService
                                 x.ReasonNote,
 
                             PausedAt =
-                                x.PausedAt,
+                                SlaDateTimeHelper.AsUtc(
+                                    x.PausedAt),
 
                             ResumedAt =
-                                x.ResumedAt,
+                                SlaDateTimeHelper.AsUtc(
+                                    x.ResumedAt),
 
                             PausedMinutes =
                                 x.PausedMinutes,
@@ -2453,10 +2604,12 @@ public class SlaService : ISlaService
                                 x.ResumedByUser?.FullName,
 
                             CreatedAt =
-                                x.CreatedAt,
+                                SlaDateTimeHelper.AsUtc(
+                                    x.CreatedAt),
 
                             UpdatedAt =
-                                x.UpdatedAt
+                                SlaDateTimeHelper.AsUtc(
+                                    x.UpdatedAt)
                         })
                     .ToArray()
         };

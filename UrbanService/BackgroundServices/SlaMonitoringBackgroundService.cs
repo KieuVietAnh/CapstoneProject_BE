@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Options;
+using UrbanService.BLL.Common.Helpers;
 using UrbanService.BLL.Interfaces;
 using UrbanService.BLL.Options;
 
@@ -37,8 +38,7 @@ public sealed class SlaMonitoringBackgroundService
 
                 if (options.Enabled)
                 {
-                    await ExecuteMonitoringCycleAsync(
-                        stoppingToken);
+                    await ExecuteMonitoringCycleAsync(stoppingToken);
                 }
                 else
                 {
@@ -46,9 +46,8 @@ public sealed class SlaMonitoringBackgroundService
                         "SLA Monitoring Background Service is disabled.");
                 }
 
-                var intervalMinutes = Math.Max(
-                    1,
-                    options.IntervalMinutes);
+                var intervalMinutes =
+                    Math.Max(1, options.IntervalMinutes);
 
                 _logger.LogDebug(
                     "Next SLA monitoring cycle will run after {IntervalMinutes} minute(s).",
@@ -76,9 +75,10 @@ public sealed class SlaMonitoringBackgroundService
     private async Task DelayBeforeFirstRunAsync(
         CancellationToken stoppingToken)
     {
-        var initialDelaySeconds = Math.Max(
-            0,
-            _optionsMonitor.CurrentValue.InitialDelaySeconds);
+        var initialDelaySeconds =
+            Math.Max(
+                0,
+                _optionsMonitor.CurrentValue.InitialDelaySeconds);
 
         if (initialDelaySeconds == 0)
         {
@@ -97,32 +97,32 @@ public sealed class SlaMonitoringBackgroundService
     private async Task ExecuteMonitoringCycleAsync(
         CancellationToken stoppingToken)
     {
-        var startedAt = DateTime.UtcNow;
+        var startedAt =
+            SlaDateTimeHelper.UtcNow;
 
         _logger.LogInformation(
-            "SLA monitoring cycle started at {StartedAt}.",
+            "SLA monitoring cycle started at {StartedAtUtc}.",
             startedAt);
 
         try
         {
-            /*
-             * BackgroundService được đăng ký dạng Singleton.
-             *
-             * ISlaService, UnitOfWork và DbContext là Scoped,
-             * vì vậy phải tạo scope mới cho mỗi lần chạy.
-             */
             await using var scope =
                 _scopeFactory.CreateAsyncScope();
 
-            var slaService = scope.ServiceProvider
-                .GetRequiredService<ISlaService>();
+            var slaService =
+                scope.ServiceProvider
+                    .GetRequiredService<ISlaService>();
 
-            await slaService.CheckAllRunningSlasAsync();
+            var updatedCount =
+                await slaService.CheckAllRunningSlasAsync();
 
-            var elapsed = DateTime.UtcNow - startedAt;
+            var elapsed =
+                SlaDateTimeHelper.UtcNow - startedAt;
 
             _logger.LogInformation(
-                "SLA monitoring cycle completed successfully in {ElapsedMilliseconds} ms.",
+                "SLA monitoring cycle completed successfully. " +
+                "Updated {UpdatedCount} SLA(s) in {ElapsedMilliseconds} ms.",
+                updatedCount,
                 elapsed.TotalMilliseconds);
         }
         catch (OperationCanceledException)
@@ -132,12 +132,6 @@ public sealed class SlaMonitoringBackgroundService
         }
         catch (Exception exception)
         {
-            /*
-             * Không throw tiếp ở đây.
-             *
-             * Nếu một vòng kiểm tra bị lỗi, worker vẫn tiếp tục chạy
-             * ở vòng tiếp theo.
-             */
             _logger.LogError(
                 exception,
                 "An error occurred during SLA monitoring cycle.");

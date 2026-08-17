@@ -2,6 +2,7 @@
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.DTOs.SLA;
 using UrbanService.BLL.Interfaces;
+using UrbanService.BLL.Common.Helpers;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
 
@@ -29,6 +30,14 @@ public class SlaPolicyService : ISlaPolicyService
 
         var normalizedPriority = NormalizePriority(request.Priority);
 
+        var effectiveFrom =
+            SlaDateTimeHelper.NormalizeToUtc(
+                request.EffectiveFrom);
+
+        var effectiveTo =
+            SlaDateTimeHelper.NormalizeToUtc(
+                request.EffectiveTo);
+
         await EnsureUserExistsAsync(currentUserId);
         await EnsureAreaExistsAsync(request.AreaId);
         await EnsureCategoryExistsAsync(request.CategoryId);
@@ -40,8 +49,8 @@ public class SlaPolicyService : ISlaPolicyService
                 areaId: request.AreaId,
                 categoryId: request.CategoryId,
                 priority: normalizedPriority,
-                effectiveFrom: request.EffectiveFrom,
-                effectiveTo: request.EffectiveTo);
+                effectiveFrom: effectiveFrom,
+                effectiveTo: effectiveTo);
         }
 
         var entity = new SlaPolicy
@@ -52,12 +61,12 @@ public class SlaPolicyService : ISlaPolicyService
             Priority = normalizedPriority,
             ResponseTimeMinutes = request.ResponseTimeMinutes,
             ResolutionTimeMinutes = request.ResolutionTimeMinutes,
-            EffectiveFrom = ToDbTime(request.EffectiveFrom),
-            EffectiveTo = ToDbTime(request.EffectiveTo),
+            EffectiveFrom = effectiveFrom,
+            EffectiveTo = effectiveTo,
             IsActive = request.IsActive,
             CreatedByUserId = currentUserId,
             UpdatedByUserId = null,
-            CreatedAt = DbNow(),
+            CreatedAt = SlaDateTimeHelper.UtcNow,
             UpdatedAt = null
         };
 
@@ -80,6 +89,14 @@ public class SlaPolicyService : ISlaPolicyService
         ValidateUpdateRequest(request);
 
         var normalizedPriority = NormalizePriority(request.Priority);
+
+        var effectiveFrom =
+            SlaDateTimeHelper.NormalizeToUtc(
+                request.EffectiveFrom);
+
+        var effectiveTo =
+            SlaDateTimeHelper.NormalizeToUtc(
+                request.EffectiveTo);
 
         await EnsureUserExistsAsync(currentUserId);
         await EnsureAreaExistsAsync(request.AreaId);
@@ -105,8 +122,8 @@ public class SlaPolicyService : ISlaPolicyService
                 areaId: request.AreaId,
                 categoryId: request.CategoryId,
                 priority: normalizedPriority,
-                effectiveFrom: request.EffectiveFrom,
-                effectiveTo: request.EffectiveTo);
+                effectiveFrom: effectiveFrom,
+                effectiveTo: effectiveTo);
         }
 
         entity.PolicyName = request.PolicyName.Trim();
@@ -115,11 +132,11 @@ public class SlaPolicyService : ISlaPolicyService
         entity.Priority = normalizedPriority;
         entity.ResponseTimeMinutes = request.ResponseTimeMinutes;
         entity.ResolutionTimeMinutes = request.ResolutionTimeMinutes;
-        entity.EffectiveFrom = ToDbTime(request.EffectiveFrom);
-        entity.EffectiveTo = ToDbTime(request.EffectiveTo);
+        entity.EffectiveFrom = effectiveFrom;
+        entity.EffectiveTo = effectiveTo;
         entity.IsActive = request.IsActive;
         entity.UpdatedByUserId = currentUserId;
-        entity.UpdatedAt = DbNow();
+        entity.UpdatedAt = SlaDateTimeHelper.UtcNow;
 
         await _unitOfWork.SaveAsync();
 
@@ -131,7 +148,7 @@ public class SlaPolicyService : ISlaPolicyService
     {
         ValidateSlaPolicyId(slaPolicyId);
 
-        var now = DbNow();
+        var now = SlaDateTimeHelper.UtcNow;
 
         var result = await _unitOfWork
             .GetRepository<SlaPolicy>()
@@ -184,6 +201,8 @@ public class SlaPolicyService : ISlaPolicyService
                 $"Không tìm thấy SLA policy có ID {slaPolicyId}.");
         }
 
+        NormalizeDtoUtc(result);
+
         return result;
     }
 
@@ -200,7 +219,7 @@ public class SlaPolicyService : ISlaPolicyService
             ? DefaultPageSize
             : Math.Min(query.PageSize, MaxPageSize);
 
-        var now = DbNow();
+        var now = SlaDateTimeHelper.UtcNow;
 
         var policyQuery = _unitOfWork
             .GetRepository<SlaPolicy>()
@@ -317,6 +336,11 @@ public class SlaPolicyService : ISlaPolicyService
             })
             .ToListAsync();
 
+        foreach (var item in items)
+        {
+            NormalizeDtoUtc(item);
+        }
+
         return new PagedResultDto<SlaPolicyDto>
         {
             Items = items,
@@ -368,7 +392,7 @@ public class SlaPolicyService : ISlaPolicyService
 
         entity.IsActive = isActive;
         entity.UpdatedByUserId = currentUserId;
-        entity.UpdatedAt = DbNow();
+        entity.UpdatedAt = SlaDateTimeHelper.UtcNow;
 
         await _unitOfWork.SaveAsync();
     }
@@ -477,9 +501,6 @@ public class SlaPolicyService : ISlaPolicyService
         DateTime effectiveFrom,
         DateTime? effectiveTo)
     {
-        effectiveFrom = ToDbTime(effectiveFrom);
-        effectiveTo = ToDbTime(effectiveTo);
-
         var query = _unitOfWork
             .GetRepository<SlaPolicy>()
             .Entities
@@ -516,27 +537,24 @@ public class SlaPolicyService : ISlaPolicyService
     }
 
 
-    private static DateTime DbNow()
+    private static void NormalizeDtoUtc(
+        SlaPolicyDto dto)
     {
-        return DateTime.SpecifyKind(
-            DateTime.UtcNow,
-            DateTimeKind.Unspecified);
-    }
+        dto.EffectiveFrom =
+            SlaDateTimeHelper.AsUtc(
+                dto.EffectiveFrom);
 
-    private static DateTime ToDbTime(DateTime value)
-    {
-        return DateTime.SpecifyKind(
-            value,
-            DateTimeKind.Unspecified);
-    }
+        dto.EffectiveTo =
+            SlaDateTimeHelper.AsUtc(
+                dto.EffectiveTo);
 
-    private static DateTime? ToDbTime(DateTime? value)
-    {
-        return value.HasValue
-            ? DateTime.SpecifyKind(
-                value.Value,
-                DateTimeKind.Unspecified)
-            : null;
+        dto.CreatedAt =
+            SlaDateTimeHelper.AsUtc(
+                dto.CreatedAt);
+
+        dto.UpdatedAt =
+            SlaDateTimeHelper.AsUtc(
+                dto.UpdatedAt);
     }
 
     private static void ValidateCreateRequest(

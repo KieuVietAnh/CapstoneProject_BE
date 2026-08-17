@@ -71,6 +71,7 @@ builder.Services.AddScoped<
     ISlaService,
     SlaService>();
 
+// SLA Monitoring
 builder.Services
     .AddOptions<SlaMonitoringOptions>()
     .Bind(
@@ -82,11 +83,15 @@ builder.Services
     .Validate(
         options => options.InitialDelaySeconds >= 0,
         "SlaMonitoring:InitialDelaySeconds không được nhỏ hơn 0.")
+    .Validate(
+        options =>
+            options.WarningThresholdPercent >= 1 &&
+            options.WarningThresholdPercent <= 99,
+        "SlaMonitoring:WarningThresholdPercent phải nằm trong khoảng 1-99.")
     .ValidateOnStart();
 
 builder.Services.AddHostedService<
     SlaMonitoringBackgroundService>();
-
 builder.Services.AddSingleton<IAiFeedbackReviewQueue, AiFeedbackReviewQueue>();
 
 // Default IAiClient is Qwen/Ollama. It is used for feedback draft, classification/review,

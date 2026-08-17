@@ -1,7 +1,10 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using UrbanService.BLL.Common.Constraint;
+using UrbanService.BLL.Common.Helpers;
 using UrbanService.BLL.DTOs.SLA.Dashboard;
 using UrbanService.BLL.Interfaces;
+using UrbanService.BLL.Options;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
 
@@ -13,11 +16,14 @@ public class SlaDashboardService : ISlaDashboardService
     private const int MaxLimit = 100;
 
     private readonly IUnitOfWork _unitOfWork;
+    private readonly SlaMonitoringOptions _slaOptions;
 
     public SlaDashboardService(
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IOptions<SlaMonitoringOptions> slaOptions)
     {
         _unitOfWork = unitOfWork;
+        _slaOptions = slaOptions.Value;
     }
 
     /// <summary>
@@ -130,51 +136,57 @@ public class SlaDashboardService : ISlaDashboardService
     public async Task<SlaComplianceDto>
         GetComplianceAsync()
     {
-        var now = DateTime.UtcNow;
+        var nowUtc =
+            SlaDateTimeHelper.UtcNow;
 
-        var startOfToday =
-            now.Date;
+        var vietnamNow =
+            SlaDateTimeHelper.ToVietnamTime(
+                nowUtc);
 
-        /*
-         * Tuần được tính từ thứ Hai.
-         *
-         * DayOfWeek:
-         * Sunday = 0
-         * Monday = 1
-         */
+        var startOfTodayVietnam =
+            vietnamNow.Date;
+
         var daysSinceMonday =
-            ((int)now.DayOfWeek + 6) % 7;
+            ((int)vietnamNow.DayOfWeek + 6) % 7;
 
-        var startOfWeek =
-            now.Date.AddDays(
+        var startOfWeekVietnam =
+            startOfTodayVietnam.AddDays(
                 -daysSinceMonday);
 
-        var startOfMonth =
+        var startOfMonthVietnam =
             new DateTime(
-                now.Year,
-                now.Month,
-                1,
-                0,
-                0,
-                0,
-                DateTimeKind.Utc);
+                vietnamNow.Year,
+                vietnamNow.Month,
+                1);
+
+        var startOfTodayUtc =
+            SlaDateTimeHelper.VietnamToUtc(
+                startOfTodayVietnam);
+
+        var startOfWeekUtc =
+            SlaDateTimeHelper.VietnamToUtc(
+                startOfWeekVietnam);
+
+        var startOfMonthUtc =
+            SlaDateTimeHelper.VietnamToUtc(
+                startOfMonthVietnam);
 
         return new SlaComplianceDto
         {
             TodayRate =
                 await CalculateRateAsync(
-                    startOfToday,
-                    now),
+                    startOfTodayUtc,
+                    nowUtc),
 
             ThisWeekRate =
                 await CalculateRateAsync(
-                    startOfWeek,
-                    now),
+                    startOfWeekUtc,
+                    nowUtc),
 
             ThisMonthRate =
                 await CalculateRateAsync(
-                    startOfMonth,
-                    now)
+                    startOfMonthUtc,
+                    nowUtc)
         };
     }
 
@@ -344,7 +356,7 @@ public class SlaDashboardService : ISlaDashboardService
         GetViolationChartAsync()
     {
         var from =
-            DateTime.UtcNow.Date.AddDays(-30);
+            SlaDateTimeHelper.UtcNow.Date.AddDays(-30);
 
         return await _unitOfWork
             .GetRepository<SlaEvent>()
@@ -386,7 +398,13 @@ public class SlaDashboardService : ISlaDashboardService
             MaxLimit);
 
         var now =
-            DateTime.UtcNow;
+            SlaDateTimeHelper.UtcNow;
+
+        var warningThreshold =
+            Math.Clamp(
+                _slaOptions.WarningThresholdPercent,
+                1,
+                99);
 
         var slas = await _unitOfWork
             .GetRepository<FeedbackSla>()
@@ -431,12 +449,13 @@ public class SlaDashboardService : ISlaDashboardService
             }
 
             /*
-             * Deadline đã được extend khi resume,
-             * nên không trừ TotalPausedMinutes tại đây.
+             * Deadline được extend khi resume, nhưng thời gian pause
+             * không thuộc active SLA duration nên phải loại khỏi mẫu số.
              */
             var totalMinutes =
                 (deadline - sla.StartedAt)
-                .TotalMinutes;
+                .TotalMinutes
+                - sla.TotalPausedMinutes;
 
             if (totalMinutes <= 0)
             {
@@ -448,7 +467,7 @@ public class SlaDashboardService : ISlaDashboardService
                 totalMinutes *
                 100;
 
-            if (remainingPercent > 30)
+            if (remainingPercent > warningThreshold)
             {
                 continue;
             }
@@ -469,7 +488,8 @@ public class SlaDashboardService : ISlaDashboardService
                         sla.Priority,
 
                     Deadline =
-                        deadline,
+                        SlaDateTimeHelper.AsUtc(
+                            deadline),
 
                     RemainingMinutes =
                         Math.Round(
@@ -498,7 +518,7 @@ public class SlaDashboardService : ISlaDashboardService
             MaxLimit);
 
         var from =
-            DateTime.UtcNow.AddDays(-7);
+            SlaDateTimeHelper.UtcNow.AddDays(-7);
 
         var events = await _unitOfWork
             .GetRepository<SlaEvent>()
@@ -570,7 +590,8 @@ public class SlaDashboardService : ISlaDashboardService
                         x.EventType,
 
                     BreachedAt =
-                        x.CreatedAt,
+                        SlaDateTimeHelper.AsUtc(
+                            x.CreatedAt),
 
                     OverdueMinutes =
                         Math.Round(
