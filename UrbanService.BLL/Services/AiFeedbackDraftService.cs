@@ -6,8 +6,8 @@ namespace UrbanService.BLL.Services;
 
 public class AiFeedbackDraftService : IAiFeedbackDraftService
 {
-    private const int MaxReflectionChars = 1200;
-    private const int MaxLocationChars = 300;
+    private const int MaxReflectionChars = 700;
+    private const int MaxLocationChars = 180;
 
     private readonly IAiClient _aiClient;
 
@@ -34,15 +34,16 @@ public class AiFeedbackDraftService : IAiFeedbackDraftService
         }
 
         var prompt = BuildPrompt(request);
-        var images = request.Base64Images
-            .Where(image => !string.IsNullOrWhiteSpace(image))
-            .ToArray();
 
+        // Do not send base64 image payloads for draft generation.
+        // Small local VLM models commonly have a 4096-token context window, and even one image
+        // can push an otherwise short draft prompt over that limit. The draft only needs the
+        // citizen-provided text/location plus whether evidence exists; the uploaded image URLs
+        // are preserved on the returned draft for submission.
         var rawResponse = await _aiClient.ChatAsync(
             prompt,
-            images.Length > 0 ? images : null,
             jsonFormat: true,
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
         var draft = ParseDraft(rawResponse, request);
 
@@ -72,37 +73,31 @@ public class AiFeedbackDraftService : IAiFeedbackDraftService
         var reflectionText = Truncate(request.Reflection.Trim(), MaxReflectionChars);
 
         return $$"""
-Bạn là trợ lý AI của hệ thống UrbanService.
-Nhiệm vụ: tạo một bản nháp phản ánh đô thị từ thông tin người dân cung cấp.
+Tạo bản nháp phản ánh đô thị bằng tiếng Việt. Chỉ trả JSON hợp lệ, không markdown.
 
-Thông tin đầu vào:
-- Nội dung người dân mô tả: {{reflectionText}}
-- Vị trí dạng chữ: {{locationText}}
+Đầu vào:
+- Mô tả: {{reflectionText}}
+- Vị trí: {{locationText}}
 - Tọa độ: {{coordinateText}}
 - Có ảnh minh chứng: {{(hasImages ? "Có" : "Không")}}
 
-Yêu cầu:
-1. Chỉ trả về JSON hợp lệ, không markdown, không giải thích ngoài JSON.
-2. Không bịa đặt vị trí, tọa độ hoặc thông tin không có trong đầu vào.
-3. Nếu thiếu thông tin quan trọng, liệt kê trong missingFields.
-4. title ngắn gọn, rõ vấn đề.
-5. description viết lại phản ánh lịch sự, đầy đủ, dùng tiếng Việt.
-6. suggestedCategory là nhóm vấn đề đô thị phù hợp nếu suy luận được.
-7. urgencyLevel chỉ dùng một trong các giá trị: Low, Medium, High, Urgent.
-8. Nếu ảnh giúp nhận diện vấn đề, dùng ảnh để bổ sung mô tả nhưng không khẳng định quá mức.
+Quy tắc:
+- Không bịa thông tin thiếu.
+- missingFields liệt kê thông tin còn thiếu nếu cần.
+- urgencyLevel chỉ là Low, Medium, High hoặc Urgent.
 
-Schema JSON:
+JSON:
 {
-  "title": "string",
-  "description": "string",
-  "location": "string|null",
-  "latitude": number|null,
-  "longitude": number|null,
-  "suggestedCategory": "string|null",
-  "urgencyLevel": "Low|Medium|High|Urgent|null",
-  "summary": "string|null",
-  "missingFields": ["string"],
-  "confirmationMessage": "string"
+  "title": "",
+  "description": "",
+  "location": null,
+  "latitude": null,
+  "longitude": null,
+  "suggestedCategory": null,
+  "urgencyLevel": null,
+  "summary": null,
+  "missingFields": [],
+  "confirmationMessage": ""
 }
 """;
     }
