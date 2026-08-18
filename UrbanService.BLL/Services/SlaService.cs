@@ -20,19 +20,22 @@ public class SlaService : ISlaService
     private readonly ILogger<SlaService> _logger;
     private readonly SlaMonitoringOptions _slaOptions;
     private readonly IEmailSender _emailSender;
+    private readonly ISlaRealtimeSender _slaRealtimeSender;
 
     public SlaService(
     IUnitOfWork unitOfWork,
     INotificationService notificationService,
     IEmailSender emailSender,
     ILogger<SlaService> logger,
-    IOptions<SlaMonitoringOptions> slaOptions)
+    IOptions<SlaMonitoringOptions> slaOptions,
+    ISlaRealtimeSender slaRealtimeSender)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService;
         _emailSender = emailSender;
         _logger = logger;
         _slaOptions = slaOptions.Value;
+        _slaRealtimeSender = slaRealtimeSender;
     }
 
 
@@ -239,6 +242,21 @@ public class SlaService : ISlaService
                 .TotalMinutes);
 
 
+
+        var responseRemainingSeconds =
+            Math.Max(
+                0,
+                (int)Math.Floor(
+                    (responseDueAt - calculationTime)
+                    .TotalSeconds));
+
+        var resolutionRemainingSeconds =
+            Math.Max(
+                0,
+                (int)Math.Floor(
+                    (resolutionDueAt - calculationTime)
+                    .TotalSeconds));
+
         // =====================================================
         // WARNING
         //
@@ -293,6 +311,10 @@ public class SlaService : ISlaService
             ResolutionStatus =
                 sla.ResolutionStatus,
 
+
+            ServerTime =
+                now,
+
             StartedAt =
                 startedAt,
 
@@ -311,6 +333,13 @@ public class SlaService : ISlaService
                 (int)Math.Floor(
                     resolutionRemainingMinutes),
 
+
+
+            ResponseRemainingSeconds =
+                responseRemainingSeconds,
+
+            ResolutionRemainingSeconds =
+                resolutionRemainingSeconds,
 
             ResponseProgressPercent =
                 CalculatePercent(
@@ -490,6 +519,12 @@ public class SlaService : ISlaService
             throw;
         }
 
+
+        await SendSlaRealtimeSafeAsync(
+            feedbackId,
+            createdFeedbackSlaId,
+            SlaEventType.Started);
+
         return await GetByIdAsync(
             createdFeedbackSlaId);
     }
@@ -616,6 +651,12 @@ public class SlaService : ISlaService
 
         await _unitOfWork.SaveAsync();
 
+        await SendSlaRealtimeSafeAsync(
+            entity.FeedbackId,
+            entity.FeedbackSlaId,
+            SlaEventType.Responded);
+
+
         return await GetByIdAsync(
             entity.FeedbackSlaId);
     }
@@ -702,6 +743,12 @@ public class SlaService : ISlaService
             SlaTriggerSource.Manager);
 
         await _unitOfWork.SaveAsync();
+
+        await SendSlaRealtimeSafeAsync(
+            entity.FeedbackId,
+            entity.FeedbackSlaId,
+            SlaEventType.Paused);
+
 
         return await GetByIdAsync(
             entity.FeedbackSlaId);
@@ -796,6 +843,12 @@ public class SlaService : ISlaService
 
         await _unitOfWork.SaveAsync();
 
+        await SendSlaRealtimeSafeAsync(
+            entity.FeedbackId,
+            entity.FeedbackSlaId,
+            SlaEventType.Resumed);
+
+
         return await GetByIdAsync(
             entity.FeedbackSlaId);
     }
@@ -879,6 +932,12 @@ public class SlaService : ISlaService
 
         await _unitOfWork.SaveAsync();
 
+        await SendSlaRealtimeSafeAsync(
+            entity.FeedbackId,
+            entity.FeedbackSlaId,
+            SlaEventType.Completed);
+
+
         return await GetByIdAsync(
             entity.FeedbackSlaId);
     }
@@ -924,6 +983,12 @@ public class SlaService : ISlaService
             SlaTriggerSource.Manager);
 
         await _unitOfWork.SaveAsync();
+
+        await SendSlaRealtimeSafeAsync(
+            entity.FeedbackId,
+            entity.FeedbackSlaId,
+            SlaEventType.Cancelled);
+
 
         return await GetByIdAsync(
             entity.FeedbackSlaId);
@@ -1134,6 +1199,12 @@ public class SlaService : ISlaService
 
         await _unitOfWork.SaveAsync();
 
+        await SendSlaRealtimeSafeAsync(
+            entity.FeedbackId,
+            entity.FeedbackSlaId,
+            SlaEventType.Recalculated);
+
+
 
 
         return await GetByIdAsync(
@@ -1176,6 +1247,11 @@ public class SlaService : ISlaService
         }
 
         await _unitOfWork.SaveAsync();
+
+        await SendRealtimeMonitoringEventsAsync(
+            entity,
+            result);
+
 
         await SendMonitoringNotificationsAsync(
             entity,
@@ -1225,6 +1301,11 @@ public class SlaService : ISlaService
                 await _unitOfWork.SaveAsync();
 
                 updatedCount++;
+
+                await SendRealtimeMonitoringEventsAsync(
+                    entity,
+                    result);
+
 
                 await SendMonitoringNotificationsAsync(
                     entity,
@@ -1587,6 +1668,71 @@ public class SlaService : ISlaService
                     userId,
                     entity.FeedbackId);
             }
+        }
+    }
+
+    private async Task SendSlaRealtimeSafeAsync(
+        Guid feedbackId,
+        long feedbackSlaId,
+        string eventType)
+    {
+        try
+        {
+            await _slaRealtimeSender.SendSlaUpdatedAsync(
+                feedbackId,
+                feedbackSlaId,
+                eventType);
+        }
+        catch (Exception ex)
+        {
+            /*
+             * SignalR lỗi không được làm thất bại nghiệp vụ SLA
+             * sau khi dữ liệu đã được lưu thành công.
+             */
+            _logger.LogError(
+                ex,
+                "Không thể gửi SignalR SLA event {EventType}. " +
+                "FeedbackId: {FeedbackId}, FeedbackSlaId: {FeedbackSlaId}.",
+                eventType,
+                feedbackId,
+                feedbackSlaId);
+        }
+    }
+
+    private async Task SendRealtimeMonitoringEventsAsync(
+        FeedbackSla entity,
+        SlaMonitoringCheckResult result)
+    {
+        if (result.ResponseWarningCreated)
+        {
+            await SendSlaRealtimeSafeAsync(
+                entity.FeedbackId,
+                entity.FeedbackSlaId,
+                SlaEventType.ResponseWarning);
+        }
+
+        if (result.ResolutionWarningCreated)
+        {
+            await SendSlaRealtimeSafeAsync(
+                entity.FeedbackId,
+                entity.FeedbackSlaId,
+                SlaEventType.ResolutionWarning);
+        }
+
+        if (result.ResponseJustBreached)
+        {
+            await SendSlaRealtimeSafeAsync(
+                entity.FeedbackId,
+                entity.FeedbackSlaId,
+                SlaEventType.ResponseBreached);
+        }
+
+        if (result.ResolutionJustBreached)
+        {
+            await SendSlaRealtimeSafeAsync(
+                entity.FeedbackId,
+                entity.FeedbackSlaId,
+                SlaEventType.ResolutionBreached);
         }
     }
 
