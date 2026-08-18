@@ -174,13 +174,23 @@ public class SlaService : ISlaService
 
 
         // =====================================================
+        // TỔNG THỜI GIAN PAUSE ĐÃ HOÀN TẤT - CHÍNH XÁC
+        //
+        // Không dùng TotalPausedMinutes để tính nghiệp vụ vì
+        // field đó chỉ dùng cho hiển thị theo phút và có thể bị
+        // làm tròn. Deadline luôn được cộng đúng TimeSpan pause.
+        // =====================================================
+
+        var completedPausedDuration =
+            await GetCompletedPausedDurationAsync(
+                sla.FeedbackSlaId);
+
+        var completedPausedMinutes =
+            completedPausedDuration.TotalMinutes;
+
+
+        // =====================================================
         // TỔNG THỜI GIAN SLA ACTIVE
-        //
-        // Deadline đã được cộng thêm TotalPausedMinutes
-        // khi ResumeAsync().
-        //
-        // Vì vậy cần trừ TotalPausedMinutes để lấy
-        // thời lượng SLA thực tế theo policy.
         // =====================================================
 
         var responseTotal =
@@ -188,14 +198,14 @@ public class SlaService : ISlaService
                 0,
                 (responseDueAt - startedAt)
                 .TotalMinutes
-                - sla.TotalPausedMinutes);
+                - completedPausedMinutes);
 
         var resolutionTotal =
             Math.Max(
                 0,
                 (resolutionDueAt - startedAt)
                 .TotalMinutes
-                - sla.TotalPausedMinutes);
+                - completedPausedMinutes);
 
 
         // =====================================================
@@ -207,14 +217,14 @@ public class SlaService : ISlaService
                 0,
                 (calculationTime - startedAt)
                 .TotalMinutes
-                - sla.TotalPausedMinutes);
+                - completedPausedMinutes);
 
         var resolutionUsed =
             Math.Max(
                 0,
                 (calculationTime - startedAt)
                 .TotalMinutes
-                - sla.TotalPausedMinutes);
+                - completedPausedMinutes);
 
 
         // =====================================================
@@ -630,7 +640,8 @@ public class SlaService : ISlaService
         entity.RespondedAt = now;
 
         entity.ResponseStatus =
-            now <= entity.ResponseDueAt
+            now <= SlaDateTimeHelper.AsUtc(
+                entity.ResponseDueAt)
                 ? SlaTargetStatus.Met
                 : SlaTargetStatus.Breached;
 
@@ -793,15 +804,29 @@ public class SlaService : ISlaService
 
         var now = SlaDateTimeHelper.UtcNow;
 
-        var pausedMinutes = Math.Max(
-            1,
-            (int)Math.Ceiling(
-                (now - pauseHistory.PausedAt)
-                .TotalMinutes));
+        var pausedAt =
+            SlaDateTimeHelper.AsUtc(
+                pauseHistory.PausedAt);
+
+        var pauseDuration =
+            now - pausedAt;
+
+        if (pauseDuration < TimeSpan.Zero)
+        {
+            pauseDuration = TimeSpan.Zero;
+        }
+
+        /*
+         * PausedMinutes chỉ phục vụ hiển thị/lịch sử.
+         * Không dùng giá trị đã làm tròn này để dời deadline.
+         */
+        var pausedMinutesForDisplay =
+            (int)Math.Floor(
+                pauseDuration.TotalMinutes);
 
         pauseHistory.ResumedAt = now;
         pauseHistory.PausedMinutes =
-            pausedMinutes;
+            pausedMinutesForDisplay;
 
         pauseHistory.ResumedByUserId =
             resumedByUserId;
@@ -812,22 +837,42 @@ public class SlaService : ISlaService
 
         entity.Status = SlaStatus.Running;
 
-        entity.TotalPausedMinutes +=
-            pausedMinutes;
-
+        /*
+         * Deadline phải cộng chính xác toàn bộ TimeSpan pause
+         * (đến giây/millisecond), không cộng số phút đã làm tròn.
+         */
         if (!entity.RespondedAt.HasValue)
         {
             entity.ResponseDueAt =
-                entity.ResponseDueAt
-                    .AddMinutes(pausedMinutes);
+                SlaDateTimeHelper.AsUtc(
+                    entity.ResponseDueAt)
+                .Add(pauseDuration);
         }
 
         if (!entity.ResolvedAt.HasValue)
         {
             entity.ResolutionDueAt =
-                entity.ResolutionDueAt
-                    .AddMinutes(pausedMinutes);
+                SlaDateTimeHelper.AsUtc(
+                    entity.ResolutionDueAt)
+                .Add(pauseDuration);
         }
+
+        /*
+         * TotalPausedMinutes chỉ là số phút hiển thị.
+         * Tính lại từ tổng thời lượng pause thực tế để tránh
+         * cộng dồn sai số qua nhiều lần pause/resume.
+         */
+        var previousPausedDuration =
+            await GetCompletedPausedDurationAsync(
+                entity.FeedbackSlaId);
+
+        var totalPausedDuration =
+            previousPausedDuration +
+            pauseDuration;
+
+        entity.TotalPausedMinutes =
+            (int)Math.Floor(
+                totalPausedDuration.TotalMinutes);
 
         entity.UpdatedAt = now;
 
@@ -837,7 +882,7 @@ public class SlaService : ISlaService
             oldStatus,
             SlaStatus.Running,
             request.Note ??
-            $"Tiếp tục SLA sau {pausedMinutes} phút tạm dừng.",
+            $"Tiếp tục SLA sau {FormatPauseDuration(pauseDuration)} tạm dừng.",
             resumedByUserId,
             SlaTriggerSource.Manager);
 
@@ -897,7 +942,8 @@ public class SlaService : ISlaService
         entity.Status = SlaStatus.Completed;
 
         entity.ResolutionStatus =
-            now <= entity.ResolutionDueAt
+            now <= SlaDateTimeHelper.AsUtc(
+                entity.ResolutionDueAt)
                 ? SlaTargetStatus.Met
                 : SlaTargetStatus.Breached;
 
@@ -910,7 +956,8 @@ public class SlaService : ISlaService
             entity.RespondedAt = now;
 
             entity.ResponseStatus =
-                now <= entity.ResponseDueAt
+                now <= SlaDateTimeHelper.AsUtc(
+                    entity.ResponseDueAt)
                     ? SlaTargetStatus.Met
                     : SlaTargetStatus.Breached;
 
@@ -1092,23 +1139,34 @@ public class SlaService : ISlaService
 
 
         /*
-         * Tính lại deadline
+         * Tính lại deadline.
+         *
+         * Dùng tổng pause chính xác từ lịch sử thay vì
+         * TotalPausedMinutes vì field này chỉ là số phút hiển thị.
          */
+        var completedPausedDuration =
+            await GetCompletedPausedDurationAsync(
+                entity.FeedbackSlaId);
+
+        var startedAtUtc =
+            SlaDateTimeHelper.AsUtc(
+                entity.StartedAt);
+
         entity.ResponseDueAt =
-            entity.StartedAt
+            startedAtUtc
                 .AddMinutes(
                     policy.ResponseTimeMinutes)
-                .AddMinutes(
-                    entity.TotalPausedMinutes);
+                .Add(
+                    completedPausedDuration);
 
 
 
         entity.ResolutionDueAt =
-            entity.StartedAt
+            startedAtUtc
                 .AddMinutes(
                     policy.ResolutionTimeMinutes)
-                .AddMinutes(
-                    entity.TotalPausedMinutes);
+                .Add(
+                    completedPausedDuration);
 
 
 
@@ -1123,14 +1181,18 @@ public class SlaService : ISlaService
         if (!entity.RespondedAt.HasValue)
         {
             entity.ResponseStatus =
-                now > entity.ResponseDueAt
+                now > SlaDateTimeHelper.AsUtc(
+                    entity.ResponseDueAt)
                     ? SlaTargetStatus.Breached
                     : SlaTargetStatus.Pending;
         }
         else
         {
             entity.ResponseStatus =
-                entity.RespondedAt.Value <= entity.ResponseDueAt
+                SlaDateTimeHelper.AsUtc(
+                    entity.RespondedAt.Value) <=
+                SlaDateTimeHelper.AsUtc(
+                    entity.ResponseDueAt)
                     ? SlaTargetStatus.Met
                     : SlaTargetStatus.Breached;
         }
@@ -1149,14 +1211,18 @@ public class SlaService : ISlaService
         if (!entity.ResolvedAt.HasValue)
         {
             entity.ResolutionStatus =
-                now > entity.ResolutionDueAt
+                now > SlaDateTimeHelper.AsUtc(
+                    entity.ResolutionDueAt)
                     ? SlaTargetStatus.Breached
                     : SlaTargetStatus.Pending;
         }
         else
         {
             entity.ResolutionStatus =
-                entity.ResolvedAt.Value <= entity.ResolutionDueAt
+                SlaDateTimeHelper.AsUtc(
+                    entity.ResolvedAt.Value) <=
+                SlaDateTimeHelper.AsUtc(
+                    entity.ResolutionDueAt)
                     ? SlaTargetStatus.Met
                     : SlaTargetStatus.Breached;
         }
@@ -1342,26 +1408,46 @@ public class SlaService : ISlaService
             99);
 
         /*
+         * Tổng thời lượng pause đã hoàn tất dùng cho tính tỷ lệ SLA.
+         * Không dùng TotalPausedMinutes để tránh sai số làm tròn.
+         */
+        var completedPausedDuration =
+            await GetCompletedPausedDurationAsync(
+                entity.FeedbackSlaId);
+
+        var completedPausedMinutes =
+            completedPausedDuration.TotalMinutes;
+
+        /*
          * RESPONSE WARNING
          *
          * Cảnh báo khi phần thời gian SLA còn lại <= threshold.
-         * TotalPausedMinutes không được tính vào active SLA duration.
          */
         if (!entity.RespondedAt.HasValue &&
             !entity.IsResponseBreached &&
-            now <= entity.ResponseDueAt)
+            now <= SlaDateTimeHelper.AsUtc(
+                entity.ResponseDueAt))
         {
             var totalResponseMinutes =
                 Math.Max(
                     0,
-                    (entity.ResponseDueAt - entity.StartedAt)
+                    (
+                        SlaDateTimeHelper.AsUtc(
+                            entity.ResponseDueAt) -
+                        SlaDateTimeHelper.AsUtc(
+                            entity.StartedAt)
+                    )
                     .TotalMinutes
-                    - entity.TotalPausedMinutes);
+                    - completedPausedMinutes);
 
             var remainingResponseMinutes =
                 Math.Max(
                     0,
-                    (entity.ResponseDueAt - now)
+                    (
+                        SlaDateTimeHelper.AsUtc(
+                            entity.ResponseDueAt) -
+                        now
+                    )
                     .TotalMinutes);
 
             var remainingResponsePercent =
@@ -1400,19 +1486,29 @@ public class SlaService : ISlaService
          */
         if (!entity.ResolvedAt.HasValue &&
             !entity.IsResolutionBreached &&
-            now <= entity.ResolutionDueAt)
+            now <= SlaDateTimeHelper.AsUtc(
+                entity.ResolutionDueAt))
         {
             var totalResolutionMinutes =
                 Math.Max(
                     0,
-                    (entity.ResolutionDueAt - entity.StartedAt)
+                    (
+                        SlaDateTimeHelper.AsUtc(
+                            entity.ResolutionDueAt) -
+                        SlaDateTimeHelper.AsUtc(
+                            entity.StartedAt)
+                    )
                     .TotalMinutes
-                    - entity.TotalPausedMinutes);
+                    - completedPausedMinutes);
 
             var remainingResolutionMinutes =
                 Math.Max(
                     0,
-                    (entity.ResolutionDueAt - now)
+                    (
+                        SlaDateTimeHelper.AsUtc(
+                            entity.ResolutionDueAt) -
+                        now
+                    )
                     .TotalMinutes);
 
             var remainingResolutionPercent =
@@ -1451,7 +1547,8 @@ public class SlaService : ISlaService
          */
         if (!entity.RespondedAt.HasValue &&
             !entity.IsResponseBreached &&
-            now > entity.ResponseDueAt)
+            now > SlaDateTimeHelper.AsUtc(
+                entity.ResponseDueAt))
         {
             entity.ResponseStatus =
                 SlaTargetStatus.Breached;
@@ -1481,7 +1578,8 @@ public class SlaService : ISlaService
          */
         if (!entity.ResolvedAt.HasValue &&
             !entity.IsResolutionBreached &&
-            now > entity.ResolutionDueAt)
+            now > SlaDateTimeHelper.AsUtc(
+                entity.ResolutionDueAt))
         {
             entity.ResolutionStatus =
                 SlaTargetStatus.Breached;
@@ -1734,6 +1832,79 @@ public class SlaService : ISlaService
                 entity.FeedbackSlaId,
                 SlaEventType.ResolutionBreached);
         }
+    }
+
+    private async Task<TimeSpan>
+        GetCompletedPausedDurationAsync(
+            long feedbackSlaId)
+    {
+        var pauseItems = await _unitOfWork
+            .GetRepository<SlaPauseHistory>()
+            .Entities
+            .AsNoTracking()
+            .Where(x =>
+                x.FeedbackSlaId == feedbackSlaId &&
+                x.ResumedAt.HasValue)
+            .Select(x => new
+            {
+                x.PausedAt,
+                x.ResumedAt
+            })
+            .ToListAsync();
+
+        var totalTicks = pauseItems
+            .Select(x =>
+            {
+                var pausedAt =
+                    SlaDateTimeHelper.AsUtc(
+                        x.PausedAt);
+
+                var resumedAt =
+                    SlaDateTimeHelper.AsUtc(
+                        x.ResumedAt!.Value);
+
+                var duration =
+                    resumedAt - pausedAt;
+
+                return duration > TimeSpan.Zero
+                    ? duration.Ticks
+                    : 0L;
+            })
+            .Sum();
+
+        return TimeSpan.FromTicks(
+            totalTicks);
+    }
+
+    private static string FormatPauseDuration(
+        TimeSpan duration)
+    {
+        if (duration < TimeSpan.Zero)
+        {
+            duration = TimeSpan.Zero;
+        }
+
+        var totalSeconds =
+            (int)Math.Floor(
+                duration.TotalSeconds);
+
+        if (totalSeconds < 60)
+        {
+            return $"{totalSeconds} giây";
+        }
+
+        var minutes =
+            totalSeconds / 60;
+
+        var seconds =
+            totalSeconds % 60;
+
+        if (seconds == 0)
+        {
+            return $"{minutes} phút";
+        }
+
+        return $"{minutes} phút {seconds} giây";
     }
 
     private async Task<bool> HasSlaEventAsync(
