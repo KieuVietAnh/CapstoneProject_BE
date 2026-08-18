@@ -113,13 +113,11 @@ public class SlaService : ISlaService
                 x.FeedbackId == feedbackId &&
                 x.IsCurrent);
 
-
         if (sla == null)
         {
             throw new KeyNotFoundException(
                 "Feedback chưa có SLA.");
         }
-
 
         var now =
             SlaDateTimeHelper.UtcNow;
@@ -136,6 +134,52 @@ public class SlaService : ISlaService
             SlaDateTimeHelper.AsUtc(
                 sla.ResolutionDueAt);
 
+
+        // =====================================================
+        // XÁC ĐỊNH THỜI ĐIỂM DÙNG ĐỂ TÍNH SLA
+        //
+        // Running:
+        //     dùng thời gian hiện tại.
+        //
+        // Paused:
+        //     đóng băng tại PausedAt.
+        // =====================================================
+
+        var calculationTime = now;
+
+        if (sla.Status == SlaStatus.Paused)
+        {
+            var openPause = await _unitOfWork
+                .GetRepository<SlaPauseHistory>()
+                .Entities
+                .AsNoTracking()
+                .Where(x =>
+                    x.FeedbackSlaId ==
+                    sla.FeedbackSlaId &&
+                    !x.ResumedAt.HasValue)
+                .OrderByDescending(x =>
+                    x.PausedAt)
+                .FirstOrDefaultAsync();
+
+            if (openPause != null)
+            {
+                calculationTime =
+                    SlaDateTimeHelper.AsUtc(
+                        openPause.PausedAt);
+            }
+        }
+
+
+        // =====================================================
+        // TỔNG THỜI GIAN SLA ACTIVE
+        //
+        // Deadline đã được cộng thêm TotalPausedMinutes
+        // khi ResumeAsync().
+        //
+        // Vì vậy cần trừ TotalPausedMinutes để lấy
+        // thời lượng SLA thực tế theo policy.
+        // =====================================================
+
         var responseTotal =
             Math.Max(
                 0,
@@ -150,67 +194,122 @@ public class SlaService : ISlaService
                 .TotalMinutes
                 - sla.TotalPausedMinutes);
 
+
+        // =====================================================
+        // THỜI GIAN ĐÃ SỬ DỤNG
+        // =====================================================
+
         var responseUsed =
-            (now - startedAt)
-            .TotalMinutes
-            - sla.TotalPausedMinutes;
+            Math.Max(
+                0,
+                (calculationTime - startedAt)
+                .TotalMinutes
+                - sla.TotalPausedMinutes);
 
         var resolutionUsed =
-            (now - startedAt)
-            .TotalMinutes
-            - sla.TotalPausedMinutes;
+            Math.Max(
+                0,
+                (calculationTime - startedAt)
+                .TotalMinutes
+                - sla.TotalPausedMinutes);
 
+
+        // =====================================================
+        // REMAINING
+        //
+        // Khi Paused:
+        // calculationTime = PausedAt
+        // => remaining đứng im.
+        //
+        // Khi Running:
+        // calculationTime = now
+        // => remaining tiếp tục giảm.
+        // =====================================================
+
+        var responseRemainingMinutes =
+            Math.Max(
+                0,
+                (responseDueAt - calculationTime)
+                .TotalMinutes);
+
+        var resolutionRemainingMinutes =
+            Math.Max(
+                0,
+                (resolutionDueAt - calculationTime)
+                .TotalMinutes);
+
+
+        // =====================================================
+        // WARNING
+        //
+        // Warning KHÔNG phải SlaTargetStatus.
+        //
+        // Target status chỉ gồm:
+        // Pending / Met / Breached.
+        //
+        // Warning được lưu dưới dạng SlaEvent.
+        // =====================================================
+
+        var warningEvents = await _unitOfWork
+            .GetRepository<SlaEvent>()
+            .Entities
+            .AsNoTracking()
+            .Where(x =>
+                x.FeedbackSlaId ==
+                    sla.FeedbackSlaId &&
+                (
+                    x.EventType ==
+                        SlaEventType.ResponseWarning ||
+                    x.EventType ==
+                        SlaEventType.ResolutionWarning
+                ))
+            .Select(x =>
+                x.EventType)
+            .ToListAsync();
+
+        var isResponseWarning =
+            warningEvents.Contains(
+                SlaEventType.ResponseWarning);
+
+        var isResolutionWarning =
+            warningEvents.Contains(
+                SlaEventType.ResolutionWarning);
 
 
         return new SlaStatusDto
         {
-            FeedbackId = sla.FeedbackId,
+            FeedbackId =
+                sla.FeedbackId,
 
             FeedbackSlaId =
                 sla.FeedbackSlaId,
 
-
             Status =
                 sla.Status,
-
 
             ResponseStatus =
                 sla.ResponseStatus,
 
-
             ResolutionStatus =
                 sla.ResolutionStatus,
-
 
             StartedAt =
                 startedAt,
 
-
             ResponseDueAt =
                 responseDueAt,
-
 
             ResolutionDueAt =
                 resolutionDueAt,
 
 
-
             ResponseRemainingMinutes =
-                Math.Max(
-                    0,
-                    (int)
-                    (responseDueAt - now)
-                    .TotalMinutes),
-
-
+                (int)Math.Floor(
+                    responseRemainingMinutes),
 
             ResolutionRemainingMinutes =
-                Math.Max(
-                    0,
-                    (int)
-                    (resolutionDueAt - now)
-                    .TotalMinutes),
-
+                (int)Math.Floor(
+                    resolutionRemainingMinutes),
 
 
             ResponseProgressPercent =
@@ -218,26 +317,21 @@ public class SlaService : ISlaService
                     responseUsed,
                     responseTotal),
 
-
-
             ResolutionProgressPercent =
                 CalculatePercent(
                     resolutionUsed,
                     resolutionTotal),
 
 
-
             IsResponseWarning =
-                sla.ResponseStatus == "Warning",
-
+                isResponseWarning,
 
             IsResolutionWarning =
-                sla.ResolutionStatus == "Warning",
+                isResolutionWarning,
 
 
             IsResponseBreached =
                 sla.IsResponseBreached,
-
 
             IsResolutionBreached =
                 sla.IsResolutionBreached
