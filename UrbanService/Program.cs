@@ -133,6 +133,9 @@ builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 builder.Services.AddScoped<IRealtimeNotificationSender, SignalRNotificationSender>();
+builder.Services.AddScoped<
+    ISlaRealtimeSender,
+    SignalRSlaRealtimeSender>();
 builder.Services.AddMemoryCache();
 builder.Services.AddSignalR();
 builder.Services.AddHealthChecks();
@@ -177,7 +180,11 @@ builder.Services
                 var accessToken = context.Request.Query["access_token"];
                 var path = context.HttpContext.Request.Path;
 
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/notifications"))
+                if (!string.IsNullOrEmpty(accessToken) &&
+    (
+        path.StartsWithSegments("/hubs/notifications") ||
+        path.StartsWithSegments("/hubs/sla")
+    ))
                 {
                     context.Token = accessToken;
                 }
@@ -255,6 +262,8 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<SlaHub>(
+    "/hubs/sla");
 app.MapHealthChecks("/health");
 
 app.Run();

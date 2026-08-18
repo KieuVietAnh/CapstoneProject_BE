@@ -16,6 +16,11 @@ public class SlaStatusDto
     public string ResolutionStatus { get; set; } = null!;
 
 
+    // Thời gian hiện tại của server.
+    // FE dùng để đồng bộ countdown với backend.
+    public DateTime ServerTime { get; set; }
+
+
     public DateTime StartedAt { get; set; }
 
 
@@ -25,10 +30,18 @@ public class SlaStatusDto
     public DateTime ResolutionDueAt { get; set; }
 
 
+    // Giữ lại để tương thích code hiện tại.
     public int ResponseRemainingMinutes { get; set; }
 
 
     public int ResolutionRemainingMinutes { get; set; }
+
+
+    // Dùng cho countdown realtime.
+    public int ResponseRemainingSeconds { get; set; }
+
+
+    public int ResolutionRemainingSeconds { get; set; }
 
 
     public double ResponseProgressPercent { get; set; }
