@@ -688,9 +688,7 @@ public class FeedbackService : IFeedbackService
          * Kiểm tra thay đổi ảnh hưởng SLA
          */
         var categoryChanged =
-            oldCategoryId != feedback.CategoryId;
-
-
+    oldCategoryId != feedback.CategoryId;
 
         var priorityChanged =
             !string.Equals(
@@ -698,26 +696,31 @@ public class FeedbackService : IFeedbackService
                 feedback.Priority,
                 StringComparison.OrdinalIgnoreCase);
 
+        if (categoryChanged || priorityChanged)
+        {
+            var hasCurrentSla = await _uow
+                .GetRepository<FeedbackSla>()
+                .Entities
+                .AsNoTracking()
+                .AnyAsync(x =>
+                    x.FeedbackId == feedback.FeedbackId &&
+                    x.IsCurrent);
 
-
-        if(categoryChanged || priorityChanged)
-{
-            await _slaService.RecalculateAsync(
-                feedback.FeedbackId,
-                currentUserId,
-                new RecalculateSlaRequest
-                {
-                    CategoryId =
-                        feedback.CategoryId,
-
-                    Priority =
-                        feedback.Priority,
-
-                    Note =
-                        $"Staff cập nhật SLA. " +
-                        $"Category: {oldCategoryId} -> {feedback.CategoryId}. " +
-                        $"Priority: {oldPriority} -> {feedback.Priority}."
-                });
+            if (hasCurrentSla)
+            {
+                await _slaService.RecalculateAsync(
+                    feedback.FeedbackId,
+                    currentUserId,
+                    new RecalculateSlaRequest
+                    {
+                        CategoryId = feedback.CategoryId,
+                        Priority = feedback.Priority,
+                        Note =
+                            $"Staff cập nhật SLA. " +
+                            $"Category: {oldCategoryId} -> {feedback.CategoryId}. " +
+                            $"Priority: {oldPriority} -> {feedback.Priority}."
+                    });
+            }
         }
 
 
