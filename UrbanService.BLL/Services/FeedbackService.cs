@@ -1779,7 +1779,8 @@ public class FeedbackService : IFeedbackService
         };
     }
 
-    private static FeedbackResolutionDto MapResolution(FeedbackResolution resolution)
+    private static FeedbackResolutionDto MapResolution(
+    FeedbackResolution resolution)
     {
         return new FeedbackResolutionDto
         {
@@ -1792,7 +1793,14 @@ public class FeedbackService : IFeedbackService
             ActionTaken = resolution.ActionTaken,
             ResultNote = resolution.ResultNote,
             ResolvedAt = resolution.ResolvedAt,
-            Status = resolution.Status
+            Status = resolution.Status,
+
+            CompletionDocuments =
+                resolution.ProviderReport?.CompletionDocuments?
+                    .OrderByDescending(x => x.ReceivedAt)
+                    .Select(MapCompletionDocument)
+                    .ToList()
+                ?? []
         };
     }
 
