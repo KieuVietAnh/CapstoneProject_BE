@@ -16,3 +16,6 @@
 - source_spec: `C:\Users\CytekPC\OneDrive\Desktop\SEP491\BE\UrbanService\_bmad-output\implementation-artifacts\spec-admin-delete-feedback.md`
   summary: Sửa bốn assertion cũ không còn khớp hành vi hiện tại trong `managementFeedbackApi.test.js`.
   evidence: Chạy toàn bộ file có 7/11 test pass; bốn lỗi thuộc normalize AI fallback, pagination mặc định, provider status mapping và contact note, trong khi test DELETE mới chạy riêng đã pass.
+- source_spec: `C:\Users\CytekPC\OneDrive\Desktop\SEP491\BE\UrbanService\_bmad-output\implementation-artifacts\spec-ai-invalid-feedback-prompt.md`
+  summary: Xử lý rõ trường hợp hệ thống không có category active trước khi chạy AI review.
+  evidence: Prompt và service hiện luôn yêu cầu một category active hợp lệ; khi danh sách rỗng, mọi analysis đều thất bại ở bước resolve category và bị worker retry, đây là hành vi có sẵn ngoài phạm vi prompt-only.
