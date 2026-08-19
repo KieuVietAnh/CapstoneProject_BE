@@ -128,8 +128,13 @@ database thay cho `host.docker.internal`.
 Xem tên biến môi trường Docker trong [docker-compose.yml](docker-compose.yml).
 
 Messenger cần `PageAccessToken`, `VerifyToken`, `AppSecret`, `SubmissionUserId`
-và `GraphApiVersion`. `SubmissionUserId` phải thuộc một `SERVICEUSER` đang hoạt
-động. Webhook cần cấu hình trên Meta:
+và `GraphApiVersion`. Ảnh minh chứng tùy chọn được giới hạn bởi
+`MaxImagesPerFeedback` (mặc định 5), `MaxImageBytes` (mặc định 5 MiB) và chỉ tải
+từ các hậu tố HTTPS trong `AllowedMediaHostSuffixes` (mặc định
+`fbcdn.net,fbsbx.com`). Cần cấu hình thêm `Cloudinary:CloudName`,
+`Cloudinary:ApiKey` và `Cloudinary:ApiSecret` để upload ảnh khi xác nhận.
+`SubmissionUserId` phải thuộc một `SERVICEUSER` đang hoạt động. Webhook cần cấu
+hình trên Meta:
 
 ```text
 https://YOUR_DOMAIN/api/integrations/messenger/webhook

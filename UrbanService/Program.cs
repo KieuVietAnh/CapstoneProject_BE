@@ -41,7 +41,12 @@ builder.Services.AddScoped<IInteractionMessageService, InteractionMessageService
 builder.Services.AddHttpClient<IMessengerService, MessengerService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
-});
+})
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false
+    })
+    .RemoveAllLoggers();
 builder.Services.AddSingleton<IMessengerWebhookQueue, MessengerWebhookQueue>();
 builder.Services.AddHostedService<MessengerWebhookWorker>();
 builder.Services.AddSingleton<ZaloTokenRefreshLock>();

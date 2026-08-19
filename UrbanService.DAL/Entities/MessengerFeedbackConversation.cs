@@ -30,6 +30,9 @@ public class MessengerFeedbackConversation
 
     public virtual Feedback? Feedback { get; set; }
 
+    public virtual ICollection<MessengerFeedbackDraftAttachment> DraftAttachments { get; set; }
+        = new List<MessengerFeedbackDraftAttachment>();
+
     public virtual ICollection<MessengerFeedbackSubmission> Submissions { get; set; }
         = new List<MessengerFeedbackSubmission>();
 }

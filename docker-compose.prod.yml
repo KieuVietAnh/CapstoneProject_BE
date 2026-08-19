@@ -53,6 +53,9 @@ services:
       Messenger__AppSecret: ${MESSENGER_APP_SECRET}
       Messenger__SubmissionUserId: ${MESSENGER_SUBMISSION_USER_ID}
       Messenger__GraphApiVersion: ${MESSENGER_GRAPH_API_VERSION:-v25.0}
+      Messenger__AllowedMediaHostSuffixes: ${MESSENGER_ALLOWED_MEDIA_HOST_SUFFIXES:-fbcdn.net,fbsbx.com}
+      Messenger__MaxImagesPerFeedback: ${MESSENGER_MAX_IMAGES_PER_FEEDBACK:-5}
+      Messenger__MaxImageBytes: ${MESSENGER_MAX_IMAGE_BYTES:-5242880}
 
       Zalo__AppId: ${ZALO_APP_ID}
       Zalo__AppSecretKey: ${ZALO_APP_SECRET_KEY}

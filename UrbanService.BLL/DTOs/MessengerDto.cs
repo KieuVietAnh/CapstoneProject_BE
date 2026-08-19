@@ -85,6 +85,15 @@ public class MessengerAttachment
 {
     [JsonPropertyName("type")]
     public string? Type { get; set; }
+
+    [JsonPropertyName("payload")]
+    public MessengerAttachmentPayload? Payload { get; set; }
+}
+
+public class MessengerAttachmentPayload
+{
+    [JsonPropertyName("url")]
+    public string? Url { get; set; }
 }
 
 public class MessengerPostback
