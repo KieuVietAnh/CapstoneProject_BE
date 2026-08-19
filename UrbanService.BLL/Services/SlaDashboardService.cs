@@ -28,6 +28,15 @@ public class SlaDashboardService : ISlaDashboardService
 
     /// <summary>
     /// Lấy các KPI tổng quan của SLA.
+    ///
+    /// Ý nghĩa:
+    /// - TotalSla: tổng số bản ghi SLA.
+    /// - RunningSla / CompletedSla: số SLA theo trạng thái.
+    /// - WarningSla: số SLA hiện đang Running đã phát sinh ít nhất một warning event.
+    /// - BreachedSla: số SLA có Response hoặc Resolution bị breach.
+    /// - SuccessRate: tỷ lệ SLA đạt trong tập SLA đã Completed.
+    /// - AverageResolutionMinutes: thời gian hoàn thành trung bình của SLA Completed,
+    ///   đã loại thời gian pause.
     /// </summary>
     public async Task<SlaDashboardOverviewDto>
         GetOverviewAsync()
@@ -131,7 +140,11 @@ public class SlaDashboardService : ISlaDashboardService
     }
 
     /// <summary>
-    /// Lấy tỷ lệ tuân thủ SLA trong ngày, tuần và tháng hiện tại.
+    /// Lấy tỷ lệ SLA chưa vi phạm theo ngày, tuần và tháng hiện tại.
+    ///
+    /// Mẫu số là các SLA được tạo trong từng khoảng thời gian.
+    /// Không yêu cầu SLA phải Completed, vì vậy chỉ số này KHÔNG đồng nhất
+    /// với SuccessRate trong Overview.
     /// </summary>
     public async Task<SlaComplianceDto>
         GetComplianceAsync()
@@ -191,7 +204,8 @@ public class SlaDashboardService : ISlaDashboardService
     }
 
     /// <summary>
-    /// Tính tỷ lệ SLA chưa vi phạm trong một khoảng thời gian.
+    /// Tính tỷ lệ SLA được tạo trong khoảng thời gian nhưng chưa phát sinh
+    /// Response breach hoặc Resolution breach.
     /// </summary>
     private async Task<decimal>
         CalculateRateAsync(
@@ -229,7 +243,9 @@ public class SlaDashboardService : ISlaDashboardService
     }
 
     /// <summary>
-    /// Lấy hiệu suất phản hồi và hoàn thành SLA.
+    /// Lấy hiệu suất phản hồi và hoàn thành trên tập SLA đã Completed.
+    /// Response/Resolution success rate chỉ tính target đã có kết quả cuối
+    /// (Met hoặc Breached); Pending không nằm trong mẫu số.
     /// </summary>
     public async Task<SlaPerformanceDto>
         GetPerformanceAsync()
@@ -350,7 +366,9 @@ public class SlaDashboardService : ISlaDashboardService
     }
 
     /// <summary>
-    /// Lấy số lượng sự kiện vi phạm SLA theo ngày trong 30 ngày gần nhất.
+    /// Lấy số lượng SlaEvent dạng ResponseBreached/ResolutionBreached
+    /// theo ngày trong 30 ngày gần nhất.
+    /// Đây là số SỰ KIỆN, không phải số SLA duy nhất.
     /// </summary>
     public async Task<List<SlaViolationChartDto>>
         GetViolationChartAsync()
@@ -386,7 +404,9 @@ public class SlaDashboardService : ISlaDashboardService
     }
 
     /// <summary>
-    /// Lấy các SLA đang chạy và gần đến hạn.
+    /// Lấy SLA hiện tại đang Running và đã đi vào vùng cảnh báo gần đến hạn.
+    /// Nếu chưa phản hồi thì theo ResponseDueAt; nếu đã phản hồi thì theo
+    /// ResolutionDueAt.
     /// </summary>
     public async Task<List<SlaNearBreachDto>>
         GetNearBreachAsync(
@@ -506,7 +526,8 @@ public class SlaDashboardService : ISlaDashboardService
     }
 
     /// <summary>
-    /// Lấy các sự kiện SLA vừa bị vi phạm trong 7 ngày gần nhất.
+    /// Lấy các SỰ KIỆN ResponseBreached/ResolutionBreached trong 7 ngày gần nhất.
+    /// Một SLA có thể xuất hiện nhiều lần nếu vi phạm nhiều target.
     /// </summary>
     public async Task<List<RecentSlaBreachDto>>
         GetRecentBreachesAsync(
