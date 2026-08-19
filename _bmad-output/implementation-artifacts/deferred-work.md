@@ -10,3 +10,9 @@
 - source_spec: `C:\Users\CytekPC\OneDrive\Desktop\SEP491\BE\UrbanService\_bmad-output\implementation-artifacts\spec-messenger-evidence-images.md`
   summary: Cô lập lỗi theo từng sự kiện trong một payload webhook Messenger.
   evidence: `ProcessWebhookAsync` xử lý tuần tự nhiều sự kiện nhưng chưa có ranh giới lỗi cho từng sự kiện, nên một lỗi có thể ngăn các sự kiện hợp lệ phía sau trong cùng payload được xử lý.
+- source_spec: `C:\Users\CytekPC\OneDrive\Desktop\SEP491\BE\UrbanService\_bmad-output\implementation-artifacts\spec-admin-delete-feedback.md`
+  summary: Quyết định chính sách dọn hoặc chuyển hướng notification cũ khi feedback bị hard-delete.
+  evidence: Notification chỉ lưu URL dạng chuỗi, không có FK tới feedback; luồng xóa hiện có thể để lại nội dung và liên kết trỏ tới feedback không còn tồn tại.
+- source_spec: `C:\Users\CytekPC\OneDrive\Desktop\SEP491\BE\UrbanService\_bmad-output\implementation-artifacts\spec-admin-delete-feedback.md`
+  summary: Sửa bốn assertion cũ không còn khớp hành vi hiện tại trong `managementFeedbackApi.test.js`.
+  evidence: Chạy toàn bộ file có 7/11 test pass; bốn lỗi thuộc normalize AI fallback, pagination mặc định, provider status mapping và contact note, trong khi test DELETE mới chạy riêng đã pass.
