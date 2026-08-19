@@ -870,8 +870,22 @@ public class FeedbackService : IFeedbackService
 
     public async Task DeleteByManagementAsync(Guid feedbackId)
     {
-        var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: false);
-        _uow.GetRepository<Feedback>().Delete(feedback);
+        var feedbackRepository = _uow.GetRepository<Feedback>();
+        var feedback = await feedbackRepository.Entities
+            .FirstOrDefaultAsync(item => item.FeedbackId == feedbackId)
+            ?? throw new Exception("Không tìm thấy feedback.");
+
+        var duplicateCandidateRepository = _uow.GetRepository<FeedbackDuplicateCandidate>();
+        var referencingCandidates = await duplicateCandidateRepository.Entities
+            .Where(candidate => candidate.PotentialParentFeedbackId == feedbackId)
+            .ToListAsync();
+
+        if (referencingCandidates.Count > 0)
+        {
+            duplicateCandidateRepository.DeleteRange(referencingCandidates);
+        }
+
+        feedbackRepository.Delete(feedback);
         await _uow.SaveAsync();
     }
 

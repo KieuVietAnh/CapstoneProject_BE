@@ -2,11 +2,12 @@
 title: 'Admin xóa phản ánh'
 type: 'feature'
 created: '2026-08-19'
-status: 'draft'
+status: 'done'
 review_loop_iteration: 0
+baseline_commit: 'e35a23e3d907ee4c2192cf74d039525062cba248'
 baseline_commits:
-  backend: 'c921a1ed62f04d91a98eeb4d643fcaa386e54b5f'
-  frontend: '6b91918f615782498360bec669468dd57bad22b8'
+  backend: 'e35a23e3d907ee4c2192cf74d039525062cba248'
+  frontend: '1325ebad9f7a8ceb2d5312de70961f12e0c7e5e6'
 context: ['BE/UrbanService/AGENTS.md']
 ---
 
@@ -39,40 +40,89 @@ context: ['BE/UrbanService/AGENTS.md']
 
 ## Code Map
 
-- `BE/UrbanService/UrbanService/Controllers/ManagementFeedbacksController.cs` -- thêm action DELETE, override class authorization bằng `SYSTEMADMIN`, trả `NoContent()`.
-- `BE/UrbanService/UrbanService.BLL/Interfaces/IFeedbackService.cs` -- thêm `DeleteByAdminAsync(Guid feedbackId)` tách khỏi owner delete.
-- `BE/UrbanService/UrbanService.BLL/Services/FeedbackService.cs` -- query không theo owner, dọn candidate-parent, delete và lưu một lần.
-- `BE/UrbanService/UrbanService.DAL/Data/UrbanServiceDbContext.cs` -- read-only evidence: candidate-parent `Restrict`; dependent khác Cascade/SetNull; không migration.
-- `BE/UrbanService/UrbanService.BLL.Tests/FeedbackAdminDeleteTests.cs` -- service success/candidate/not-found và controller route/role/action tests.
-- `FE/UrbanService-FE/packages/shared-api/src/managementFeedbackApi.js` -- thêm management DELETE; 204 được unwrap thành `undefined`.
-- `FE/UrbanService-FE/packages/shared-api/src/managementFeedbackApi.test.js` -- stub axios và assert endpoint/result.
-- `FE/UrbanService-FE/apps/web/src/services/cache/adminFeedbackDetailCache.js` -- invalidator ngăn in-flight prefetch ghi lại cache.
-- `FE/UrbanService-FE/apps/web/src/pages/management/FeedbackManagement.jsx` -- row action, modal, loading/error/toast, cập nhật row/metric và refresh nền.
-- `FE/UrbanService-FE/apps/web/src/routes/AppRoutes.jsx` -- read-only evidence: management routes đã administrator-only.
+- `BE/UrbanService/UrbanService/Controllers/ManagementFeedbacksController.cs:71`, `UrbanService.BLL/Interfaces/IFeedbackService.cs:33` -- DELETE admin-only/204 và contract management đã có; giữ nguyên.
+- `BE/UrbanService/UrbanService.BLL/Services/FeedbackService.cs:871`, `UrbanService.DAL/Data/UrbanServiceDbContext.cs:407` -- thêm cleanup candidate-parent `Restrict`; giữ Cascade/SetNull, không migration.
+- `BE/UrbanService/UrbanService.BLL.Tests/FeedbackAdminDeleteTests.cs` -- test service và metadata controller.
+- `FE/UrbanService-FE/packages/shared-api/src/managementFeedbackApi.js:433`, `managementFeedbackApi.test.js` -- client đúng route đã có; bổ sung test 204/ID rỗng.
+- `FE/UrbanService-FE/apps/web/src/pages/staff/ManagementFeedbackListPage.jsx:167` -- gỡ state/handler/nút xóa tại dòng 687/1099.
+- `FE/UrbanService-FE/apps/web/src/services/cache/adminFeedbackDetailCache.js:21`, `pages/management/FeedbackManagement.jsx:303`, `pages/management/FeedbackDetailPage.jsx:175` -- invalidation chống stale prefetch/router history và UX delete admin.
+- `FE/UrbanService-FE/package.json`, `.github/workflows/playwright.yml` -- đưa các test delete/cache/reconcile vào test gate chuẩn.
+- `FE/UrbanService-FE/apps/web/src/routes/AppRoutes.jsx:323` -- chỉ đọc: staff chỉ `SYSTEM_STAFF`; admin tại dòng 545 chỉ `ADMINISTRATOR`.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `UrbanService/Controllers/ManagementFeedbacksController.cs`, `UrbanService.BLL/Interfaces/IFeedbackService.cs`, `UrbanService.BLL/Services/FeedbackService.cs` -- thêm endpoint/service admin và xử lý FK candidate; không đổi schema.
-- [ ] `UrbanService.BLL.Tests/FeedbackAdminDeleteTests.cs` -- test delete, not-found và admin-only metadata.
-- [ ] `packages/shared-api/src/managementFeedbackApi.js`, `packages/shared-api/src/managementFeedbackApi.test.js` -- nối và test management DELETE.
-- [ ] `apps/web/src/services/cache/adminFeedbackDetailCache.js`, `apps/web/src/pages/management/FeedbackManagement.jsx` -- hoàn thiện invalidation và UX xác nhận/retry/reconcile.
+- [x] `BE/UrbanService/UrbanService.BLL/Services/FeedbackService.cs`, `BE/UrbanService/UrbanService.BLL.Tests/FeedbackAdminDeleteTests.cs` -- cleanup FK; test success/candidate/not-found và admin-only/204.
+- [x] `FE/UrbanService-FE/packages/shared-api/src/managementFeedbackApi.test.js` -- khóa contract DELETE và 204/ID rỗng.
+- [x] `FE/UrbanService-FE/apps/web/src/pages/staff/ManagementFeedbackListPage.jsx` -- gỡ toàn bộ delete khỏi staff.
+- [x] `FE/UrbanService-FE/apps/web/src/services/cache/adminFeedbackDetailCache.js`, `FE/UrbanService-FE/apps/web/src/pages/management/FeedbackManagement.jsx`, `FE/UrbanService-FE/apps/web/src/pages/management/FeedbackDetailPage.jsx` -- modal admin, retry/double-submit/focus guard và reconcile cache/list/metric/history.
+- [x] `FE/UrbanService-FE/package.json`, `FE/UrbanService-FE/.github/workflows/playwright.yml` -- chạy helper tests và DELETE contract trong CI.
 
 **Acceptance Criteria:**
+- Given staff mở `/staff/feedbacks`, when xem từng hàng, then không có nút hoặc handler xóa.
 - Given admin xác nhận xóa feedback tồn tại, when DELETE hoàn tất, then nhận 204, row/metric/cache được cập nhật và có thông báo thành công.
-- Given caller không phải `SYSTEMADMIN`, when gọi endpoint, then nhận 401/403 và không có dữ liệu bị xóa.
-- Given backend từ chối delete, when request lỗi, then record còn nguyên, modal hiện message và cho retry.
-- Given prefetch cũ hoàn tất sau delete, when admin mở lại detail, then FE không hiển thị record stale.
+- Given caller không phải `SYSTEMADMIN`, when gọi endpoint, then nhận 401/403 và service không chạy.
+- Given delete lỗi hoặc prefetch cũ hoàn tất muộn, when admin retry/mở detail, then record lỗi còn nguyên và record đã xóa không hồi sinh từ cache.
 
 ## Spec Change Log
 
 ## Design Notes
 
-Hard-delete giữ parity với citizen delete. FK candidate-parent là ngoại lệ `Restrict` cần dọn tường minh; DB xử lý phần còn lại. Notification cũ và Cloudinary asset có thể còn link/URL chết vì không có FK/PublicId phù hợp, nên nằm ngoài scope.
+Candidate-parent là FK `Restrict` duy nhất cần dọn tường minh. Delete chỉ load bản ghi gốc, để database xử lý Cascade/SetNull, tránh Cartesian include không cần thiết. Modal dùng error state riêng vì error chung thay toàn bộ bảng; focus được giữ trong dialog và trả về trigger khi hủy. Cache chuẩn hóa GUID không phân biệt hoa/thường; detail 400/404 loại bỏ router-state cũ. BE hiện ở `feature/messenger-evidence-images`; phải merge/deploy cùng FE để production có endpoint.
 
 ## Verification
 
-- `dotnet test UrbanService.BLL.Tests/UrbanService.BLL.Tests.csproj` và `dotnet build UrbanService.sln` tại BE -- pass.
-- `node --test packages/shared-api/src/managementFeedbackApi.test.js`, `pnpm --dir apps/web lint`, `pnpm --dir apps/web build` tại FE -- pass.
-- `git diff --check` trong cả hai repo -- không lỗi whitespace.
-- Manual: admin nhận 204 body rỗng; non-admin nhận 401/403; modal không double-submit và giữ record khi lỗi.
+**Commands:**
+- BE: `dotnet test UrbanService.BLL.Tests/UrbanService.BLL.Tests.csproj`; `dotnet build UrbanService.sln` -- pass.
+- FE: `pnpm test:admin-feedback-delete`; `pnpm test:admin-feedback-delete-api`; `pnpm --dir apps/web lint`; `pnpm --dir apps/web build` -- pass (lint/build chỉ còn warning có sẵn ngoài story).
+- Known pre-existing: chạy toàn bộ `node --test packages/shared-api/src/managementFeedbackApi.test.js` có 7/11 pass; bốn assertion normalize/provider cũ đã ghi vào `deferred-work.md`, còn test DELETE mới pass qua command riêng ở trên.
+- Cả hai repo: `git diff --check` -- không lỗi.
+
+**Manual checks:**
+- Staff không thấy delete; admin modal không double-submit, lỗi retry được, success loại record khỏi list/cache.
+
+## Suggested Review Order
+
+**Luồng xóa admin**
+
+- Điểm vào điều phối DELETE, chống gửi lặp và reconcile giao diện.
+  [`FeedbackManagement.jsx:685`](../../../../FE/UrbanService-FE/apps/web/src/pages/management/FeedbackManagement.jsx#L685)
+
+- Nút nguy hiểm chỉ xuất hiện trên bảng quản trị admin.
+  [`FeedbackManagement.jsx:1019`](../../../../FE/UrbanService-FE/apps/web/src/pages/management/FeedbackManagement.jsx#L1019)
+
+- Trang staff chỉ còn hành động xem chi tiết.
+  [`ManagementFeedbackListPage.jsx:1052`](../../../../FE/UrbanService-FE/apps/web/src/pages/staff/ManagementFeedbackListPage.jsx#L1052)
+
+**An toàn dữ liệu backend**
+
+- Xóa mọi candidate-parent trước feedback trong một lần lưu.
+  [`FeedbackService.cs:871`](../../UrbanService.BLL/Services/FeedbackService.cs#L871)
+
+- Khóa success, missing ID, thứ tự lưu, role và quan hệ FK.
+  [`FeedbackAdminDeleteTests.cs:41`](../../UrbanService.BLL.Tests/FeedbackAdminDeleteTests.cs#L41)
+
+**Nhất quán cache và màn hình**
+
+- Helper chỉ mutate list/cache sau khi DELETE thành công.
+  [`adminFeedbackDeletion.js:24`](../../../../FE/UrbanService-FE/apps/web/src/services/adminFeedbackDeletion.js#L24)
+
+- Cache chuẩn hóa GUID và chặn prefetch cũ ghi ngược.
+  [`adminFeedbackDetailCache.js:16`](../../../../FE/UrbanService-FE/apps/web/src/services/cache/adminFeedbackDetailCache.js#L16)
+
+- Detail loại router-state cũ khi backend báo không tồn tại.
+  [`FeedbackDetailPage.jsx:176`](../../../../FE/UrbanService-FE/apps/web/src/pages/management/FeedbackDetailPage.jsx#L176)
+
+- Reconcile giảm đúng tổng và nhóm trạng thái.
+  [`adminFeedbackMetrics.js:81`](../../../../FE/UrbanService-FE/apps/web/src/utils/adminFeedbackMetrics.js#L81)
+
+**Contract và quality gate**
+
+- Test khóa method, route, trim ID và response 204 rỗng.
+  [`managementFeedbackApi.test.js:196`](../../../../FE/UrbanService-FE/packages/shared-api/src/managementFeedbackApi.test.js#L196)
+
+- Script riêng chạy toàn bộ test của feature không phụ thuộc mạng.
+  [`package.json:21`](../../../../FE/UrbanService-FE/package.json#L21)
+
+- CI chạy helper behavior và API contract trước lint/build.
+  [`playwright.yml:57`](../../../../FE/UrbanService-FE/.github/workflows/playwright.yml#L57)
