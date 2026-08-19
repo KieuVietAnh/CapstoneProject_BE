@@ -30,6 +30,8 @@ public interface IFeedbackService
 
     Task DeleteAsync(Guid userId, Guid feedbackId);
 
+    Task DeleteByManagementAsync(Guid feedbackId);
+
     Task<FeedbackDetailDto> AddAttachmentsAsync(
         Guid userId,
         Guid feedbackId,

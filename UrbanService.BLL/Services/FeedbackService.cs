@@ -137,6 +137,13 @@ public class FeedbackService : IFeedbackService
             feedbacks = feedbacks.Where(f => f.CategoryId == query.CategoryId.Value);
         }
 
+        if (query.HasPreciseLocation.HasValue)
+        {
+            feedbacks = query.HasPreciseLocation.Value
+                ? feedbacks.Where(f => f.Latitude.HasValue && f.Longitude.HasValue)
+                : feedbacks.Where(f => !f.Latitude.HasValue || !f.Longitude.HasValue);
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             feedbacks = feedbacks.Where(f =>
@@ -236,6 +243,13 @@ public class FeedbackService : IFeedbackService
             feedbacks = feedbacks.Where(f => f.CategoryId == query.CategoryId.Value);
         }
 
+        if (query.HasPreciseLocation.HasValue)
+        {
+            feedbacks = query.HasPreciseLocation.Value
+                ? feedbacks.Where(f => f.Latitude.HasValue && f.Longitude.HasValue)
+                : feedbacks.Where(f => !f.Latitude.HasValue || !f.Longitude.HasValue);
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             feedbacks = feedbacks.Where(f =>
@@ -312,6 +326,13 @@ public class FeedbackService : IFeedbackService
             feedbacks = feedbacks.Where(f => f.CategoryId == query.CategoryId.Value);
         }
 
+        if (query.HasPreciseLocation.HasValue)
+        {
+            feedbacks = query.HasPreciseLocation.Value
+                ? feedbacks.Where(f => f.Latitude.HasValue && f.Longitude.HasValue)
+                : feedbacks.Where(f => !f.Latitude.HasValue || !f.Longitude.HasValue);
+        }
+
         if (!string.IsNullOrWhiteSpace(search))
         {
             feedbacks = feedbacks.Where(f =>
@@ -381,6 +402,13 @@ public class FeedbackService : IFeedbackService
         if (query.CategoryId.HasValue)
         {
             feedbacks = feedbacks.Where(f => f.CategoryId == query.CategoryId.Value);
+        }
+
+        if (query.HasPreciseLocation.HasValue)
+        {
+            feedbacks = query.HasPreciseLocation.Value
+                ? feedbacks.Where(f => f.Latitude.HasValue && f.Longitude.HasValue)
+                : feedbacks.Where(f => !f.Latitude.HasValue || !f.Longitude.HasValue);
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -836,6 +864,13 @@ public class FeedbackService : IFeedbackService
     public async Task DeleteAsync(Guid userId, Guid feedbackId)
     {
         var feedback = await GetOwnedFeedbackWithDetailsAsync(userId, feedbackId, asNoTracking: false);
+        _uow.GetRepository<Feedback>().Delete(feedback);
+        await _uow.SaveAsync();
+    }
+
+    public async Task DeleteByManagementAsync(Guid feedbackId)
+    {
+        var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: false);
         _uow.GetRepository<Feedback>().Delete(feedback);
         await _uow.SaveAsync();
     }
