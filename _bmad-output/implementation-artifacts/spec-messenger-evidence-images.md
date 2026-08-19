@@ -93,13 +93,13 @@ Giữ source URL đến lúc xác nhận để tránh asset Cloudinary mồ côi
   [`MessengerService.cs:495`](../../UrbanService.BLL/Services/MessengerService.cs#L495)
 
 - Xác nhận upload ảnh, tạo feedback, cleanup và phục hồi lỗi.
-  [`MessengerService.cs:661`](../../UrbanService.BLL/Services/MessengerService.cs#L661)
+  [`MessengerService.cs:684`](../../UrbanService.BLL/Services/MessengerService.cs#L684)
 
-- Download kiểm tra redirect, HTTP, MIME, header và stream size.
-  [`MessengerService.cs:1110`](../../UrbanService.BLL/Services/MessengerService.cs#L1110)
+- Download kiểm tra redirect, timeout, HTTP, MIME, header và stream size.
+  [`MessengerService.cs:1133`](../../UrbanService.BLL/Services/MessengerService.cs#L1133)
 
 - Reset tập trung xóa ảnh nháp cho mọi đường hủy.
-  [`MessengerService.cs:1262`](../../UrbanService.BLL/Services/MessengerService.cs#L1262)
+  [`MessengerService.cs:1293`](../../UrbanService.BLL/Services/MessengerService.cs#L1293)
 
 **Dữ liệu và migration**
 
@@ -123,6 +123,9 @@ Giữ source URL đến lúc xác nhận để tránh asset Cloudinary mồ côi
 - Biến môi trường cung cấp giới hạn an toàn và Cloudinary bắt buộc.
   [`.env.example:7`](../../.env.example#L7)
 
+- Workflow deploy truyền chính sách ảnh Messenger vào môi trường production.
+  [`dotnet.yml:123`](../../.github/workflows/dotnet.yml#L123)
+
 - README giải thích giới hạn, allowlist và dependency upload.
   [`README.md:130`](../../README.md#L130)
 
@@ -132,7 +135,7 @@ Giữ source URL đến lúc xác nhận để tránh asset Cloudinary mồ côi
   [`MessengerServiceTests.cs:70`](../../UrbanService.BLL.Tests/MessengerServiceTests.cs#L70)
 
 - Test submission xác nhận attachment truyền đúng vào feedback.
-  [`MessengerServiceTests.cs:242`](../../UrbanService.BLL.Tests/MessengerServiceTests.cs#L242)
+  [`MessengerServiceTests.cs:338`](../../UrbanService.BLL.Tests/MessengerServiceTests.cs#L338)
 
-- Test bảo mật phủ HTTP, MIME, size và redirect ngoài allowlist.
-  [`MessengerServiceTests.cs:345`](../../UrbanService.BLL.Tests/MessengerServiceTests.cs#L345)
+- Test bảo mật phủ HTTP, MIME, timeout, size và redirect ngoài allowlist.
+  [`MessengerServiceTests.cs:441`](../../UrbanService.BLL.Tests/MessengerServiceTests.cs#L441)

@@ -650,7 +650,30 @@ public class MessengerService : IMessengerService
 
         conversation.State = AwaitingConfirmation;
         conversation.UpdatedAt = DateTime.UtcNow;
-        await _uow.SaveAsync();
+        try
+        {
+            await _uow.SaveAsync();
+        }
+        catch
+        {
+            // The event MID was persisted before dispatch. Clear it when this
+            // transition fails so Messenger can safely deliver the command again.
+            conversation.State = AwaitingEvidence;
+            conversation.LastMessageId = null;
+            conversation.UpdatedAt = DateTime.UtcNow;
+            try
+            {
+                await _uow.SaveAsync();
+            }
+            catch
+            {
+                _logger.LogError(
+                    "Failed to persist Messenger evidence transition recovery state.");
+            }
+
+            throw;
+        }
+
         await SendConfirmationAsync(
             conversation,
             selectedAreaName,
@@ -687,13 +710,13 @@ public class MessengerService : IMessengerService
             return;
         }
 
-        conversation.State = Submitting;
-        conversation.UpdatedAt = DateTime.UtcNow;
-        await _uow.SaveAsync();
-
         FeedbackDetailDto? feedback = null;
         try
         {
+            conversation.State = Submitting;
+            conversation.UpdatedAt = DateTime.UtcNow;
+            await _uow.SaveAsync();
+
             var submissionUserId = await GetSubmissionUserIdAsync(cancellationToken);
             var attachmentRepository = _uow.GetRepository<MessengerFeedbackDraftAttachment>();
             var draftAttachments = await attachmentRepository.Entities
@@ -1124,10 +1147,18 @@ public class MessengerService : IMessengerService
                 throw new InvalidOperationException("Meta returned an unsupported image URL.");
             }
 
+            using var downloadTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken);
+            if (_httpClient.Timeout != Timeout.InfiniteTimeSpan)
+            {
+                downloadTimeout.CancelAfter(_httpClient.Timeout);
+            }
+
+            var downloadToken = downloadTimeout.Token;
             using var response = await _httpClient.GetAsync(
                 sourceUri,
                 HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+                downloadToken);
             if (!IsAllowedSourceUrl(response.RequestMessage?.RequestUri?.AbsoluteUri))
             {
                 throw new InvalidOperationException("Meta redirected to an unsupported image URL.");
@@ -1148,9 +1179,9 @@ public class MessengerService : IMessengerService
                     $"Meta image exceeds the {maximumBytes}-byte limit.");
             }
 
-            await using var sourceStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            await using var sourceStream = await response.Content.ReadAsStreamAsync(downloadToken);
             await using var uploadStream = new MemoryStream();
-            await CopyWithLimitAsync(sourceStream, uploadStream, maximumBytes, cancellationToken);
+            await CopyWithLimitAsync(sourceStream, uploadStream, maximumBytes, downloadToken);
             uploadStream.Position = 0;
 
             var extension = contentType.ToLowerInvariant() switch

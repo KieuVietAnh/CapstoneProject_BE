@@ -7,3 +7,6 @@
 - source_spec: `C:\Users\CytekPC\OneDrive\Desktop\SEP491\BE\UrbanService\_bmad-output\implementation-artifacts\spec-messenger-evidence-images.md`
   summary: Bổ sung `PageId` vào API quản trị xem và reset hội thoại Messenger.
   evidence: Webhook cô lập theo `PageId + SenderPsid`, nhưng API quản trị hiện chỉ nhận `SenderPsid`, nên môi trường nhiều Page có thể xem hoặc reset nhầm hội thoại.
+- source_spec: `C:\Users\CytekPC\OneDrive\Desktop\SEP491\BE\UrbanService\_bmad-output\implementation-artifacts\spec-messenger-evidence-images.md`
+  summary: Cô lập lỗi theo từng sự kiện trong một payload webhook Messenger.
+  evidence: `ProcessWebhookAsync` xử lý tuần tự nhiều sự kiện nhưng chưa có ranh giới lỗi cho từng sự kiện, nên một lỗi có thể ngăn các sự kiện hợp lệ phía sau trong cùng payload được xử lý.

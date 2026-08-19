@@ -119,6 +119,71 @@ public class MessengerServiceTests
     }
 
     [Fact]
+    public async Task SameImageUrlAcrossDifferentMids_IsStoredAndSubmittedOnce()
+    {
+        var conversation = CompleteDraftConversation("AwaitingEvidence");
+        var drafts = new List<MessengerFeedbackDraftAttachment>();
+        var unitOfWork = UnitOfWorkWithConversation(conversation, drafts);
+        ConfigureArea(unitOfWork, conversation.AreaId!.Value, "Phường 7");
+        var submissionUserId = ConfigureSubmissionUser(unitOfWork);
+        var feedbackService = Substitute.For<IFeedbackService>();
+        feedbackService.CreateAsync(
+                submissionUserId,
+                Arg.Any<FeedbackCreateRequest>(),
+                Arg.Any<IReadOnlyCollection<UploadedFeedbackAttachmentDto>>())
+            .Returns(new FeedbackDetailDto { FeedbackId = Guid.NewGuid() });
+        var cloudinaryService = Substitute.For<ICloudinaryService>();
+        cloudinaryService.UploadAsync(
+                Arg.Any<Stream>(),
+                Arg.Any<string>(),
+                "image/jpeg",
+                "urban-service/messenger-feedbacks",
+                Arg.Any<CancellationToken>())
+            .Returns(new CloudinaryUploadResultDto
+            {
+                FileUrl = "https://cloudinary.example/evidence.jpg",
+                FileType = "image/jpeg"
+            });
+        var handler = new RecordingHttpMessageHandler();
+        var configuration = BaseConfiguration();
+        configuration["Messenger:SubmissionUserId"] = submissionUserId.ToString();
+        var service = CreateService(
+            configuration,
+            unitOfWork,
+            new HttpClient(handler),
+            feedbackService,
+            cloudinaryService);
+        const string sourceUrl = "https://scontent.fbcdn.net/evidence.jpg";
+
+        await service.ProcessWebhookAsync(ImageWebhook("image-mid-1", sourceUrl));
+        await service.ProcessWebhookAsync(ImageWebhook("image-mid-2", sourceUrl));
+        Assert.Single(drafts);
+
+        await service.ProcessWebhookAsync(TextWebhook(
+            "evidence-done-distinct-mid",
+            "Xong",
+            "EVIDENCE_DONE"));
+        await service.ProcessWebhookAsync(TextWebhook(
+            "confirm-distinct-mid",
+            "Xác nhận",
+            "XAC NHAN"));
+
+        Assert.Equal("Completed", conversation.State);
+        Assert.Empty(drafts);
+        Assert.Equal(1, handler.GetRequestCount);
+        await cloudinaryService.Received(1).UploadAsync(
+            Arg.Any<Stream>(),
+            Arg.Any<string>(),
+            "image/jpeg",
+            "urban-service/messenger-feedbacks",
+            Arg.Any<CancellationToken>());
+        await feedbackService.Received(1).CreateAsync(
+            submissionUserId,
+            Arg.Any<FeedbackCreateRequest>(),
+            Arg.Is<IReadOnlyCollection<UploadedFeedbackAttachmentDto>>(items => items.Count == 1));
+    }
+
+    [Fact]
     public async Task ImageOutsideEvidence_DoesNotChangeDraftOrStoreAttachment()
     {
         var conversation = Conversation("AwaitingDescription");
@@ -211,6 +276,37 @@ public class MessengerServiceTests
         Assert.Contains(
             $"Ảnh minh chứng: {attachmentCount}",
             GetOutgoingText(Assert.Single(handler.RequestBodies)));
+    }
+
+    [Fact]
+    public async Task EvidenceTransitionSaveFailure_ClearsMidAndCanRetry()
+    {
+        var conversation = CompleteDraftConversation("AwaitingEvidence");
+        var unitOfWork = UnitOfWorkWithConversation(conversation);
+        ConfigureArea(unitOfWork, conversation.AreaId!.Value, "Phường 7");
+        var saveCalls = 0;
+        unitOfWork.SaveAsync().Returns(_ =>
+        {
+            saveCalls++;
+            return saveCalls == 2
+                ? Task.FromException(new InvalidOperationException("simulated save failure"))
+                : Task.CompletedTask;
+        });
+        var handler = new RecordingHttpMessageHandler();
+        var service = CreateService(BaseConfiguration(), unitOfWork, new HttpClient(handler));
+        var webhook = TextWebhook("evidence-save-retry", "Xong", "EVIDENCE_DONE");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ProcessWebhookAsync(webhook));
+
+        Assert.Equal("AwaitingEvidence", conversation.State);
+        Assert.Null(conversation.LastMessageId);
+
+        await service.ProcessWebhookAsync(webhook);
+
+        Assert.Equal("AwaitingConfirmation", conversation.State);
+        Assert.Equal("evidence-save-retry", conversation.LastMessageId);
+        Assert.Contains("Vui lòng kiểm tra", GetOutgoingText(Assert.Single(handler.RequestBodies)));
     }
 
     [Fact]
@@ -369,6 +465,62 @@ public class MessengerServiceTests
 
         await service.ProcessWebhookAsync(TextWebhook(
             $"confirm-{failureMode}",
+            "Xác nhận",
+            "XAC NHAN"));
+
+        Assert.Equal("AwaitingConfirmation", conversation.State);
+        Assert.Null(conversation.LastMessageId);
+        Assert.Single(drafts);
+        await cloudinaryService.DidNotReceiveWithAnyArgs().UploadAsync(
+            default!,
+            default!,
+            default,
+            default!,
+            default);
+        await feedbackService.DidNotReceiveWithAnyArgs().CreateAsync(
+            default,
+            default!,
+            default!);
+        Assert.Contains("Ảnh nháp vẫn được giữ", GetOutgoingText(Assert.Single(handler.RequestBodies)));
+    }
+
+    [Fact]
+    public async Task StalledImageBody_TimesOutAndRestoresConfirmation()
+    {
+        var conversation = CompleteDraftConversation("AwaitingConfirmation");
+        var drafts = new List<MessengerFeedbackDraftAttachment>
+        {
+            DraftAttachment(conversation, "https://scontent.fbcdn.net/evidence.jpg", "image-1", 0)
+        };
+        var unitOfWork = UnitOfWorkWithConversation(conversation, drafts);
+        var submissionUserId = ConfigureSubmissionUser(unitOfWork);
+        var feedbackService = Substitute.For<IFeedbackService>();
+        var cloudinaryService = Substitute.For<ICloudinaryService>();
+        var handler = new RecordingHttpMessageHandler
+        {
+            GetResponseFactory = _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new BlockingReadStream())
+                {
+                    Headers = { ContentType = new MediaTypeHeaderValue("image/jpeg") }
+                }
+            }
+        };
+        var httpClient = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromMilliseconds(100)
+        };
+        var configuration = BaseConfiguration();
+        configuration["Messenger:SubmissionUserId"] = submissionUserId.ToString();
+        var service = CreateService(
+            configuration,
+            unitOfWork,
+            httpClient,
+            feedbackService,
+            cloudinaryService);
+
+        await service.ProcessWebhookAsync(TextWebhook(
+            "confirm-stalled-body",
             "Xác nhận",
             "XAC NHAN"));
 
@@ -558,6 +710,56 @@ public class MessengerServiceTests
             "confirm-submitting",
             "Xác nhận",
             "XAC NHAN"));
+
+        Assert.Equal("Completed", conversation.State);
+        Assert.Equal(feedbackId, conversation.FeedbackId);
+        await feedbackService.Received(1).CreateAsync(
+            submissionUserId,
+            Arg.Any<FeedbackCreateRequest>(),
+            Arg.Any<IReadOnlyCollection<UploadedFeedbackAttachmentDto>>());
+    }
+
+    [Fact]
+    public async Task SubmittingTransitionSaveFailure_ClearsMidAndSameMidCanRetry()
+    {
+        var conversation = CompleteDraftConversation("AwaitingConfirmation");
+        var unitOfWork = UnitOfWorkWithConversation(conversation);
+        var submissionUserId = ConfigureSubmissionUser(unitOfWork);
+        var feedbackId = Guid.NewGuid();
+        var feedbackService = Substitute.For<IFeedbackService>();
+        feedbackService.CreateAsync(
+                submissionUserId,
+                Arg.Any<FeedbackCreateRequest>(),
+                Arg.Any<IReadOnlyCollection<UploadedFeedbackAttachmentDto>>())
+            .Returns(new FeedbackDetailDto { FeedbackId = feedbackId });
+        var saveCalls = 0;
+        unitOfWork.SaveAsync().Returns(_ =>
+        {
+            saveCalls++;
+            return saveCalls == 2
+                ? Task.FromException(new InvalidOperationException("simulated save failure"))
+                : Task.CompletedTask;
+        });
+        var handler = new RecordingHttpMessageHandler();
+        var configuration = BaseConfiguration();
+        configuration["Messenger:SubmissionUserId"] = submissionUserId.ToString();
+        var service = CreateService(
+            configuration,
+            unitOfWork,
+            new HttpClient(handler),
+            feedbackService);
+        var webhook = TextWebhook("confirm-save-retry", "Xác nhận", "XAC NHAN");
+
+        await service.ProcessWebhookAsync(webhook);
+
+        Assert.Equal("AwaitingConfirmation", conversation.State);
+        Assert.Null(conversation.LastMessageId);
+        await feedbackService.DidNotReceiveWithAnyArgs().CreateAsync(
+            default,
+            default!,
+            default!);
+
+        await service.ProcessWebhookAsync(webhook);
 
         Assert.Equal("Completed", conversation.State);
         Assert.Equal(feedbackId, conversation.FeedbackId);
@@ -980,5 +1182,42 @@ public class MessengerServiceTests
     private sealed class NonSeekableMemoryStream(byte[] buffer) : MemoryStream(buffer)
     {
         public override bool CanSeek => false;
+    }
+
+    private sealed class BlockingReadStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
     }
 }
