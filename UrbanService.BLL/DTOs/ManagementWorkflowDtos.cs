@@ -340,6 +340,9 @@ public class FeedbackResolutionDto
     public DateTime ResolvedAt { get; set; }
 
     public string Status { get; set; } = null!;
+
+    public IReadOnlyCollection<CompletionDocumentDto> CompletionDocuments { get; set; }
+    = Array.Empty<CompletionDocumentDto>();
 }
 
 public class FeedbackResolutionReviewDto
@@ -359,6 +362,7 @@ public class FeedbackResolutionReviewDto
     public string Comment { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; }
+    
 }
 
 public class CitizenResolutionReviewRequest

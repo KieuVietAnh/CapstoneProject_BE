@@ -2347,11 +2347,13 @@ public class FeedbackService : IFeedbackService
         await EnsureFeedbackExistsAsync(feedbackId);
 
         var resolutions = await _uow.GetRepository<FeedbackResolution>().Entities
-            .AsNoTracking()
-            .Include(r => r.CreatedByStaffUser)
-            .Where(r => r.FeedbackId == feedbackId)
-            .OrderByDescending(r => r.ResolvedAt)
-            .ToListAsync();
+    .AsNoTracking()
+    .Include(r => r.CreatedByStaffUser)
+    .Include(r => r.ProviderReport)
+        .ThenInclude(r => r.CompletionDocuments)
+    .Where(r => r.FeedbackId == feedbackId)
+    .OrderByDescending(r => r.ResolvedAt)
+    .ToListAsync();
 
         return resolutions
             .Select(MapResolution)
