@@ -14,6 +14,12 @@ public class FeedbackQueryParameters
 
     public int? CategoryId { get; set; }
 
+    /// <summary>
+    /// Lọc theo trạng thái có tọa độ chính xác. true: có đủ latitude/longitude,
+    /// false: thiếu latitude hoặc longitude, null: không lọc.
+    /// </summary>
+    public bool? HasPreciseLocation { get; set; }
+
     public string? Search { get; set; }
 }
 

@@ -68,6 +68,20 @@ public class ManagementFeedbacksController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Xóa một feedback bất kỳ trong hệ thống.</summary>
+    /// <remarks>Chỉ role `SYSTEMADMIN` được phép xóa phản ánh.</remarks>
+    [HttpDelete("{feedbackId:guid}")]
+    [Authorize(Roles = UserRole.SYSTEMADMIN)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> DeleteFeedback(Guid feedbackId)
+    {
+        await _feedbackService.DeleteByManagementAsync(feedbackId);
+        return NoContent();
+    }
+
     /// <summary>Lấy các phản ánh trùng đã được liên kết vào phản ánh chính.</summary>
     [HttpGet("{feedbackId:guid}/linked-feedbacks")]
     [ProducesResponseType(typeof(IReadOnlyCollection<FeedbackListItemDto>), StatusCodes.Status200OK)]
