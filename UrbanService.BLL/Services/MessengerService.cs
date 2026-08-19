@@ -24,6 +24,7 @@ public class MessengerService : IMessengerService
     private const string AwaitingDescription = "AwaitingDescription";
     private const string AwaitingLocation = "AwaitingLocation";
     private const string AwaitingArea = "AwaitingArea";
+    private const string AwaitingEvidence = "AwaitingEvidence";
     private const string AwaitingConfirmation = "AwaitingConfirmation";
     private const string Submitting = "Submitting";
     private const string Completed = "Completed";
@@ -40,10 +41,18 @@ public class MessengerService : IMessengerService
         CancelQuickReply
     ];
 
+    private static readonly IReadOnlyCollection<MessengerQuickReplyOption> EvidenceQuickReplies =
+    [
+        new("Xong", "EVIDENCE_DONE"),
+        new("Bỏ qua", "EVIDENCE_SKIP"),
+        CancelQuickReply
+    ];
+
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
     private readonly IUnitOfWork _uow;
     private readonly IFeedbackService _feedbackService;
+    private readonly ICloudinaryService _cloudinaryService;
     private readonly ILogger<MessengerService> _logger;
 
     public MessengerService(
@@ -51,12 +60,14 @@ public class MessengerService : IMessengerService
         IConfiguration configuration,
         IUnitOfWork uow,
         IFeedbackService feedbackService,
+        ICloudinaryService cloudinaryService,
         ILogger<MessengerService> logger)
     {
         _httpClient = httpClient;
         _configuration = configuration;
         _uow = uow;
         _feedbackService = feedbackService;
+        _cloudinaryService = cloudinaryService;
         _logger = logger;
     }
 
@@ -143,7 +154,7 @@ public class MessengerService : IMessengerService
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new Exception("Không tìm thấy hội thoại Messenger.");
 
-        ResetDraft(conversation);
+        await ResetDraftAsync(conversation, setIdle: false, cancellationToken);
         await _uow.SaveAsync();
         return Map(conversation);
     }
@@ -173,21 +184,32 @@ public class MessengerService : IMessengerService
 
         if (conversation != null && conversation.LastMessageId == messageId)
         {
-            return;
+            if (conversation.State == Completed && conversation.FeedbackId.HasValue)
+            {
+                await SendMainMenuAsync(
+                    senderPsid,
+                    $"Phản ánh đã được tiếp nhận thành công. Mã phản ánh: {conversation.FeedbackId}.",
+                    cancellationToken);
+                return;
+            }
+
+            if (conversation.State != Submitting)
+            {
+                return;
+            }
+
+            conversation.State = AwaitingConfirmation;
+            conversation.LastMessageId = null;
+            conversation.UpdatedAt = DateTime.UtcNow;
+            await _uow.SaveAsync();
         }
 
         var text = messagingEvent.Message?.QuickReply?.Payload ??
             messagingEvent.Message?.Text ??
             messagingEvent.Postback?.Payload;
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            await SendMainMenuAsync(
-                senderPsid,
-                "Hiện tại bot chỉ nhận nội dung chữ. Bạn muốn thực hiện thao tác nào?",
-                cancellationToken);
-            return;
-        }
+        var hasAttachments = messagingEvent.Message?.Attachments?.Count > 0;
 
+        var isNewConversation = conversation == null;
         if (conversation == null)
         {
             conversation = new MessengerFeedbackConversation
@@ -201,10 +223,78 @@ public class MessengerService : IMessengerService
             await _uow.GetRepository<MessengerFeedbackConversation>().AddAsync(conversation);
         }
 
-        // Persist the event id first so webhook retries cannot advance the draft twice.
+        if (hasAttachments && isNewConversation)
+        {
+            // Obtain the conversation identity without marking the attachment event complete.
+            await _uow.SaveAsync();
+        }
+
         conversation.LastMessageId = messageId;
         conversation.UpdatedAt = DateTime.UtcNow;
+
+        if (hasAttachments)
+        {
+            try
+            {
+                await HandleAttachmentsAsync(
+                    conversation,
+                    messagingEvent.Message!,
+                    messageId,
+                    cancellationToken);
+                // Invalid or wrong-step attachments do not otherwise mutate the draft.
+                await _uow.SaveAsync();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                conversation.LastMessageId = null;
+                conversation.UpdatedAt = DateTime.UtcNow;
+                try
+                {
+                    await _uow.SaveAsync();
+                }
+                catch
+                {
+                    _logger.LogError(
+                        "Failed to persist Messenger attachment recovery state.");
+                }
+
+                _logger.LogError(
+                    "Failed to process a Messenger attachment for conversation {ConversationId}.",
+                    conversation.ConversationId);
+                try
+                {
+                    await SendQuickRepliesAsync(
+                        conversation.SenderPsid,
+                        "Chưa thể lưu ảnh. Ảnh đã lưu trước đó vẫn được giữ; vui lòng gửi lại ảnh để thử lại.",
+                        EvidenceQuickReplies,
+                        cancellationToken);
+                }
+                catch
+                {
+                    _logger.LogError(
+                        "Failed to send Messenger attachment recovery guidance for conversation {ConversationId}.",
+                        conversation.ConversationId);
+                }
+            }
+
+            return;
+        }
+
+        // Persist text/postback event ids first so retries cannot advance the draft twice.
         await _uow.SaveAsync();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            await SendMainMenuAsync(
+                senderPsid,
+                "Hiện tại bot chỉ nhận nội dung chữ và ảnh minh chứng. Bạn muốn thực hiện thao tác nào?",
+                cancellationToken);
+            return;
+        }
 
         await HandleTextAsync(conversation, text.Trim(), cancellationToken);
     }
@@ -217,7 +307,7 @@ public class MessengerService : IMessengerService
         var command = Normalize(text);
         if (command is "LAM LAI" or "BAT DAU" or "START" or "START_FEEDBACK")
         {
-            ResetDraft(conversation);
+            await ResetDraftAsync(conversation, setIdle: false, cancellationToken);
             await _uow.SaveAsync();
             await SendDraftPromptAsync(
                 conversation.SenderPsid,
@@ -240,7 +330,7 @@ public class MessengerService : IMessengerService
 
         if (command is "MENU" or "MAIN_MENU")
         {
-            SetIdle(conversation);
+            await ResetDraftAsync(conversation, setIdle: true, cancellationToken);
             await _uow.SaveAsync();
             await SendMainMenuAsync(
                 conversation.SenderPsid,
@@ -251,7 +341,7 @@ public class MessengerService : IMessengerService
 
         if (command is "HUY" or "CANCEL")
         {
-            SetIdle(conversation);
+            await ResetDraftAsync(conversation, setIdle: true, cancellationToken);
             await _uow.SaveAsync();
             await SendMainMenuAsync(
                 conversation.SenderPsid,
@@ -280,6 +370,9 @@ public class MessengerService : IMessengerService
             case AwaitingArea:
                 await CaptureAreaAsync(conversation, text, cancellationToken);
                 break;
+            case AwaitingEvidence:
+                await CaptureEvidenceCommandAsync(conversation, command, cancellationToken);
+                break;
             case AwaitingConfirmation:
                 await ConfirmAsync(conversation, command, cancellationToken);
                 break;
@@ -296,7 +389,7 @@ public class MessengerService : IMessengerService
                     cancellationToken);
                 break;
             default:
-                SetIdle(conversation);
+                await ResetDraftAsync(conversation, setIdle: true, cancellationToken);
                 await _uow.SaveAsync();
                 await SendMainMenuAsync(
                     conversation.SenderPsid,
@@ -393,10 +486,176 @@ public class MessengerService : IMessengerService
         }
 
         conversation.AreaId = selectedArea.AreaId;
+        conversation.State = AwaitingEvidence;
+        conversation.UpdatedAt = DateTime.UtcNow;
+        await _uow.SaveAsync();
+        await SendEvidencePromptAsync(conversation.SenderPsid, 0, cancellationToken);
+    }
+
+    private async Task HandleAttachmentsAsync(
+        MessengerFeedbackConversation conversation,
+        MessengerIncomingMessage message,
+        string sourceMessageId,
+        CancellationToken cancellationToken)
+    {
+        if (conversation.State != AwaitingEvidence)
+        {
+            if (conversation.State == AwaitingConfirmation)
+            {
+                await SendQuickRepliesAsync(
+                    conversation.SenderPsid,
+                    "Bước thêm ảnh đã kết thúc. Chọn Xác nhận để gửi hoặc Nhập lại để tạo phản ánh mới.",
+                    ConfirmationQuickReplies,
+                    cancellationToken);
+            }
+            else if (conversation.State is Idle or Completed or Submitting)
+            {
+                await SendMainMenuAsync(
+                    conversation.SenderPsid,
+                    "Hãy bắt đầu phản ánh và hoàn tất các bước nội dung trước khi gửi ảnh minh chứng.",
+                    cancellationToken);
+            }
+            else
+            {
+                await SendDraftPromptAsync(
+                    conversation.SenderPsid,
+                    "Ảnh minh chứng được nhận sau khi bạn chọn khu vực. Hãy tiếp tục bước đang nhập.",
+                    cancellationToken);
+            }
+
+            return;
+        }
+
+        var maximumAttachments = GetPositiveConfiguration("Messenger:MaxImagesPerFeedback", 5);
+        var attachmentRepository = _uow.GetRepository<MessengerFeedbackDraftAttachment>();
+        var existingAttachments = await attachmentRepository.Entities
+            .Where(item => item.ConversationId == conversation.ConversationId)
+            .Select(item => new
+            {
+                item.SourceUrl,
+                item.SourceMessageId,
+                item.SourceOrdinal
+            })
+            .ToListAsync(cancellationToken);
+        var availableSlots = Math.Max(0, maximumAttachments - existingAttachments.Count);
+        if (availableSlots == 0)
+        {
+            await SendEvidencePromptAsync(
+                conversation.SenderPsid,
+                existingAttachments.Count,
+                cancellationToken,
+                $"Mỗi phản ánh được đính kèm tối đa {maximumAttachments} ảnh.");
+            return;
+        }
+
+        var storedMessageId = NormalizeSourceMessageId(sourceMessageId);
+        var existingUrls = existingAttachments
+            .Select(item => item.SourceUrl)
+            .ToHashSet(StringComparer.Ordinal);
+        var existingKeys = existingAttachments
+            .Select(item => (item.SourceMessageId, item.SourceOrdinal))
+            .ToHashSet();
+        var candidates = message.Attachments
+            .Select((attachment, ordinal) => new
+            {
+                Attachment = attachment,
+                Ordinal = ordinal
+            })
+            .Where(item =>
+                string.Equals(item.Attachment.Type, "image", StringComparison.OrdinalIgnoreCase) &&
+                item.Attachment.Payload?.Url is { Length: <= 2000 } url &&
+                IsAllowedSourceUrl(url))
+            .Select(item => new
+            {
+                SourceUrl = item.Attachment.Payload!.Url!,
+                SourceOrdinal = item.Ordinal
+            })
+            .ToList();
+        var uniqueUrls = new HashSet<string>(StringComparer.Ordinal);
+        var attachmentsToAdd = candidates
+            .Where(item =>
+                uniqueUrls.Add(item.SourceUrl) &&
+                !existingUrls.Contains(item.SourceUrl) &&
+                !existingKeys.Contains((storedMessageId, item.SourceOrdinal)))
+            .Take(availableSlots)
+            .ToList();
+
+        if (attachmentsToAdd.Count == 0)
+        {
+            var messageText = candidates.Count > 0
+                ? "Ảnh trong tin nhắn này đã được ghi nhận trước đó."
+                : "Không đọc được ảnh hợp lệ. Chỉ gửi ảnh từ nguồn Meta được hỗ trợ.";
+            await SendEvidencePromptAsync(
+                conversation.SenderPsid,
+                existingAttachments.Count,
+                cancellationToken,
+                messageText);
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        await attachmentRepository.AddRangeAsync(
+            attachmentsToAdd.Select(item => new MessengerFeedbackDraftAttachment
+            {
+                ConversationId = conversation.ConversationId,
+                SourceUrl = item.SourceUrl,
+                FileType = "image",
+                SourceMessageId = storedMessageId,
+                SourceOrdinal = item.SourceOrdinal,
+                CreatedAt = now
+            }));
+        conversation.UpdatedAt = now;
+        await _uow.SaveAsync();
+
+        var totalCount = existingAttachments.Count + attachmentsToAdd.Count;
+        await SendEvidencePromptAsync(
+            conversation.SenderPsid,
+            totalCount,
+            cancellationToken,
+            $"Đã thêm {attachmentsToAdd.Count} ảnh minh chứng.");
+    }
+
+    private async Task CaptureEvidenceCommandAsync(
+        MessengerFeedbackConversation conversation,
+        string command,
+        CancellationToken cancellationToken)
+    {
+        var attachmentCount = await _uow.GetRepository<MessengerFeedbackDraftAttachment>().Entities
+            .CountAsync(item => item.ConversationId == conversation.ConversationId, cancellationToken);
+        if (command is not ("EVIDENCE_DONE" or "EVIDENCE_SKIP"))
+        {
+            await SendEvidencePromptAsync(
+                conversation.SenderPsid,
+                attachmentCount,
+                cancellationToken,
+                "Hãy gửi ảnh, chọn Xong hoặc Bỏ qua để tiếp tục.");
+            return;
+        }
+
+        var selectedAreaName = await _uow.GetRepository<OperatingArea>().Entities
+            .AsNoTracking()
+            .Where(area => area.AreaId == conversation.AreaId && area.IsActive)
+            .Select(area => area.AreaName)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(selectedAreaName))
+        {
+            await ResetDraftAsync(conversation, setIdle: false, cancellationToken);
+            await _uow.SaveAsync();
+            await SendDraftPromptAsync(
+                conversation.SenderPsid,
+                "Khu vực không còn hợp lệ nên hội thoại đã được đặt lại. Hãy nhập tiêu đề phản ánh.",
+                cancellationToken);
+            return;
+        }
+
         conversation.State = AwaitingConfirmation;
         conversation.UpdatedAt = DateTime.UtcNow;
         await _uow.SaveAsync();
-        await SendConfirmationAsync(conversation, selectedArea.AreaName, cancellationToken);
+        await SendConfirmationAsync(
+            conversation,
+            selectedAreaName,
+            attachmentCount,
+            cancellationToken);
     }
 
     private async Task ConfirmAsync(
@@ -419,7 +678,7 @@ public class MessengerService : IMessengerService
             string.IsNullOrWhiteSpace(conversation.Description) ||
             string.IsNullOrWhiteSpace(conversation.LocationText))
         {
-            ResetDraft(conversation);
+            await ResetDraftAsync(conversation, setIdle: false, cancellationToken);
             await _uow.SaveAsync();
             await SendDraftPromptAsync(
                 conversation.SenderPsid,
@@ -432,32 +691,88 @@ public class MessengerService : IMessengerService
         conversation.UpdatedAt = DateTime.UtcNow;
         await _uow.SaveAsync();
 
-        var submissionUserId = await GetSubmissionUserIdAsync(cancellationToken);
-        var feedback = await _feedbackService.CreateAsync(
-            submissionUserId,
-            new FeedbackCreateRequest
-            {
-                AreaId = conversation.AreaId.Value,
-                Title = conversation.Title,
-                Description = conversation.Description,
-                LocationText = conversation.LocationText,
-                GeoSource = "Messenger",
-                SubmissionChannel = FeedbackSubmissionChannel.Messenger
-            },
-            []);
+        FeedbackDetailDto? feedback = null;
+        try
+        {
+            var submissionUserId = await GetSubmissionUserIdAsync(cancellationToken);
+            var attachmentRepository = _uow.GetRepository<MessengerFeedbackDraftAttachment>();
+            var draftAttachments = await attachmentRepository.Entities
+                .Where(item => item.ConversationId == conversation.ConversationId)
+                .OrderBy(item => item.CreatedAt)
+                .ThenBy(item => item.DraftAttachmentId)
+                .ToListAsync(cancellationToken);
+            var uploadedAttachments = await UploadDraftAttachmentsAsync(
+                draftAttachments,
+                cancellationToken);
+            feedback = await _feedbackService.CreateAsync(
+                submissionUserId,
+                new FeedbackCreateRequest
+                {
+                    AreaId = conversation.AreaId.Value,
+                    Title = conversation.Title,
+                    Description = conversation.Description,
+                    LocationText = conversation.LocationText,
+                    GeoSource = "Messenger",
+                    SubmissionChannel = FeedbackSubmissionChannel.Messenger
+                },
+                uploadedAttachments);
 
-        await _uow.GetRepository<MessengerFeedbackSubmission>().AddAsync(
-            new MessengerFeedbackSubmission
-            {
-                ConversationId = conversation.ConversationId,
-                FeedbackId = feedback.FeedbackId,
-                CreatedAt = DateTime.UtcNow
-            });
+            await _uow.GetRepository<MessengerFeedbackSubmission>().AddAsync(
+                new MessengerFeedbackSubmission
+                {
+                    ConversationId = conversation.ConversationId,
+                    FeedbackId = feedback.FeedbackId,
+                    CreatedAt = DateTime.UtcNow
+                });
 
-        conversation.FeedbackId = feedback.FeedbackId;
-        conversation.State = Completed;
-        conversation.UpdatedAt = DateTime.UtcNow;
-        await _uow.SaveAsync();
+            conversation.FeedbackId = feedback.FeedbackId;
+            conversation.State = Completed;
+            conversation.UpdatedAt = DateTime.UtcNow;
+            if (draftAttachments.Count > 0)
+            {
+                attachmentRepository.DeleteRange(draftAttachments);
+            }
+
+            await _uow.SaveAsync();
+        }
+        catch
+        {
+            if (feedback == null)
+            {
+                conversation.State = AwaitingConfirmation;
+                conversation.LastMessageId = null;
+            }
+            else
+            {
+                conversation.FeedbackId = feedback.FeedbackId;
+                conversation.State = Completed;
+            }
+
+            conversation.UpdatedAt = DateTime.UtcNow;
+            try
+            {
+                await _uow.SaveAsync();
+            }
+            catch
+            {
+                _logger.LogError(
+                    "Failed to persist Messenger submission recovery state.");
+                throw;
+            }
+
+            if (feedback == null)
+            {
+                _logger.LogError(
+                    "Messenger feedback submission failed for conversation {ConversationId}.",
+                    conversation.ConversationId);
+                await SendQuickRepliesAsync(
+                    conversation.SenderPsid,
+                    "Chưa thể gửi phản ánh. Ảnh nháp vẫn được giữ; vui lòng chọn Xác nhận để thử lại.",
+                    ConfirmationQuickReplies,
+                    cancellationToken);
+                return;
+            }
+        }
 
         await SendMainMenuAsync(
             conversation.SenderPsid,
@@ -502,18 +817,43 @@ public class MessengerService : IMessengerService
     private async Task SendConfirmationAsync(
         MessengerFeedbackConversation conversation,
         string selectedAreaName,
+        int attachmentCount,
         CancellationToken cancellationToken)
     {
         var summary = $"Vui lòng kiểm tra:\n" +
                       $"Tiêu đề: {conversation.Title}\n" +
                       $"Mô tả: {conversation.Description}\n" +
                       $"Vị trí: {conversation.LocationText}\n" +
-                      $"Khu vực: {selectedAreaName}\n\n" +
+                      $"Khu vực: {selectedAreaName}\n" +
+                      $"Ảnh minh chứng: {attachmentCount}\n\n" +
                       "Chọn Xác nhận để gửi hoặc Nhập lại để bắt đầu lại.";
         await SendQuickRepliesAsync(
             conversation.SenderPsid,
             summary,
             ConfirmationQuickReplies,
+            cancellationToken);
+    }
+
+    private Task SendEvidencePromptAsync(
+        string senderPsid,
+        int attachmentCount,
+        CancellationToken cancellationToken,
+        string? prefix = null)
+    {
+        var maximumAttachments = GetPositiveConfiguration("Messenger:MaxImagesPerFeedback", 5);
+        var prompt =
+            $"Bạn có thể gửi tối đa {maximumAttachments} ảnh minh chứng (không bắt buộc). " +
+            $"Hiện có {attachmentCount}/{maximumAttachments} ảnh. " +
+            "Chọn Xong để tiếp tục hoặc Bỏ qua nếu không cần thêm ảnh.";
+        if (!string.IsNullOrWhiteSpace(prefix))
+        {
+            prompt = $"{prefix}\n\n{prompt}";
+        }
+
+        return SendQuickRepliesAsync(
+            senderPsid,
+            prompt,
+            EvidenceQuickReplies,
             cancellationToken);
     }
 
@@ -549,7 +889,8 @@ public class MessengerService : IMessengerService
     {
         const string helpText =
             "Bạn có thể gửi phản ánh mới hoặc xem lại các phản ánh đã gửi từ Messenger. " +
-            "Khi tạo phản ánh, bot sẽ lần lượt hỏi tiêu đề, mô tả, vị trí, khu vực và yêu cầu xác nhận.";
+            "Khi tạo phản ánh, bot sẽ lần lượt hỏi tiêu đề, mô tả, vị trí, khu vực, " +
+            "ảnh minh chứng tùy chọn và yêu cầu xác nhận.";
         return SendMainMenuAsync(senderPsid, helpText, cancellationToken);
     }
 
@@ -766,6 +1107,128 @@ public class MessengerService : IMessengerService
         return matches.Count == 1 ? matches[0] : null;
     }
 
+    private async Task<IReadOnlyCollection<UploadedFeedbackAttachmentDto>> UploadDraftAttachmentsAsync(
+        IReadOnlyCollection<MessengerFeedbackDraftAttachment> draftAttachments,
+        CancellationToken cancellationToken)
+    {
+        var maximumBytes = GetPositiveConfiguration(
+            "Messenger:MaxImageBytes",
+            5 * 1024 * 1024);
+        var uploadedAttachments = new List<UploadedFeedbackAttachmentDto>(draftAttachments.Count);
+
+        foreach (var draftAttachment in draftAttachments)
+        {
+            if (!IsAllowedSourceUrl(draftAttachment.SourceUrl) ||
+                !Uri.TryCreate(draftAttachment.SourceUrl, UriKind.Absolute, out var sourceUri))
+            {
+                throw new InvalidOperationException("Meta returned an unsupported image URL.");
+            }
+
+            using var response = await _httpClient.GetAsync(
+                sourceUri,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+            if (!IsAllowedSourceUrl(response.RequestMessage?.RequestUri?.AbsoluteUri))
+            {
+                throw new InvalidOperationException("Meta redirected to an unsupported image URL.");
+            }
+
+            response.EnsureSuccessStatusCode();
+
+            var contentType = response.Content.Headers.ContentType?.MediaType;
+            if (contentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) != true)
+            {
+                throw new InvalidOperationException("Meta attachment is not a supported image.");
+            }
+
+            if (response.Content.Headers.ContentLength is long contentLength &&
+                contentLength > maximumBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Meta image exceeds the {maximumBytes}-byte limit.");
+            }
+
+            await using var sourceStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            await using var uploadStream = new MemoryStream();
+            await CopyWithLimitAsync(sourceStream, uploadStream, maximumBytes, cancellationToken);
+            uploadStream.Position = 0;
+
+            var extension = contentType.ToLowerInvariant() switch
+            {
+                "image/png" => ".png",
+                "image/webp" => ".webp",
+                "image/gif" => ".gif",
+                _ => ".jpg"
+            };
+            var upload = await _cloudinaryService.UploadAsync(
+                uploadStream,
+                $"messenger-{Guid.NewGuid():N}{extension}",
+                contentType,
+                "urban-service/messenger-feedbacks",
+                cancellationToken);
+            uploadedAttachments.Add(new UploadedFeedbackAttachmentDto
+            {
+                FileUrl = upload.FileUrl,
+                FileType = upload.FileType ?? contentType
+            });
+        }
+
+        return uploadedAttachments;
+    }
+
+    private static async Task CopyWithLimitAsync(
+        Stream source,
+        Stream destination,
+        int maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        var totalBytes = 0;
+        int bytesRead;
+        while ((bytesRead = await source.ReadAsync(buffer, cancellationToken)) > 0)
+        {
+            totalBytes += bytesRead;
+            if (totalBytes > maximumBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Meta image exceeds the {maximumBytes}-byte limit.");
+            }
+
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+        }
+    }
+
+    private bool IsAllowedSourceUrl(string? value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps)
+        {
+            return false;
+        }
+
+        var configuredHosts = _configuration["Messenger:AllowedMediaHostSuffixes"] ??
+            "fbcdn.net,fbsbx.com";
+        return configuredHosts
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(suffix =>
+                uri.Host.Equals(suffix, StringComparison.OrdinalIgnoreCase) ||
+                uri.Host.EndsWith($".{suffix}", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private int GetPositiveConfiguration(string key, int defaultValue)
+    {
+        return int.TryParse(_configuration[key], out var configuredValue) && configuredValue > 0
+            ? configuredValue
+            : defaultValue;
+    }
+
+    private static string NormalizeSourceMessageId(string sourceMessageId)
+    {
+        return sourceMessageId.Length <= 200
+            ? sourceMessageId
+            : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sourceMessageId)));
+    }
+
     private async Task<Guid> GetSubmissionUserIdAsync(CancellationToken cancellationToken)
     {
         var value = GetRequiredConfiguration("Messenger:SubmissionUserId");
@@ -796,9 +1259,20 @@ public class MessengerService : IMessengerService
             : throw new InvalidOperationException($"Missing configuration: {key}");
     }
 
-    private static void ResetDraft(MessengerFeedbackConversation conversation)
+    private async Task ResetDraftAsync(
+        MessengerFeedbackConversation conversation,
+        bool setIdle,
+        CancellationToken cancellationToken)
     {
-        conversation.State = AwaitingTitle;
+        var draftAttachments = await _uow.GetRepository<MessengerFeedbackDraftAttachment>().Entities
+            .Where(item => item.ConversationId == conversation.ConversationId)
+            .ToListAsync(cancellationToken);
+        if (draftAttachments.Count > 0)
+        {
+            _uow.GetRepository<MessengerFeedbackDraftAttachment>().DeleteRange(draftAttachments);
+        }
+
+        conversation.State = setIdle ? Idle : AwaitingTitle;
         conversation.Title = null;
         conversation.Description = null;
         conversation.LocationText = null;
@@ -806,12 +1280,6 @@ public class MessengerService : IMessengerService
         conversation.Area = null;
         conversation.FeedbackId = null;
         conversation.UpdatedAt = DateTime.UtcNow;
-    }
-
-    private static void SetIdle(MessengerFeedbackConversation conversation)
-    {
-        ResetDraft(conversation);
-        conversation.State = Idle;
     }
 
     private static MessengerConversationDto Map(MessengerFeedbackConversation conversation)

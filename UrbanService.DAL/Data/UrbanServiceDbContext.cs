@@ -53,6 +53,8 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<MessengerFeedbackConversation> MessengerFeedbackConversations { get; set; }
 
+    public virtual DbSet<MessengerFeedbackDraftAttachment> MessengerFeedbackDraftAttachments { get; set; }
+
     public virtual DbSet<MessengerFeedbackSubmission> MessengerFeedbackSubmissions { get; set; }
 
     public virtual DbSet<ZaloFeedbackConversation> ZaloFeedbackConversations { get; set; }
@@ -877,6 +879,37 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.FeedbackId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_messenger_feedback_submission_feedback");
+        });
+
+        modelBuilder.Entity<MessengerFeedbackDraftAttachment>(entity =>
+        {
+            entity.HasKey(e => e.DraftAttachmentId)
+                .HasName("messenger_feedback_draft_attachments_pkey");
+            entity.ToTable("messenger_feedback_draft_attachments");
+
+            entity.Property(e => e.DraftAttachmentId).HasColumnName("draft_attachment_id");
+            entity.Property(e => e.ConversationId).HasColumnName("conversation_id");
+            entity.Property(e => e.SourceUrl).HasMaxLength(2000).HasColumnName("source_url");
+            entity.Property(e => e.FileType).HasMaxLength(100).HasColumnName("file_type");
+            entity.Property(e => e.SourceMessageId).HasMaxLength(200).HasColumnName("source_message_id");
+            entity.Property(e => e.SourceOrdinal).HasColumnName("source_ordinal");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.HasIndex(e => new { e.ConversationId, e.CreatedAt })
+                .HasDatabaseName("ix_messenger_feedback_draft_attachments_conversation_created_at");
+
+            entity.HasIndex(e => new { e.ConversationId, e.SourceMessageId, e.SourceOrdinal })
+                .IsUnique()
+                .HasDatabaseName("uq_messenger_feedback_draft_attachments_message_ordinal");
+
+            entity.HasOne(d => d.Conversation)
+                .WithMany(p => p.DraftAttachments)
+                .HasForeignKey(d => d.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_messenger_feedback_draft_attachment_conversation");
         });
 
         modelBuilder.Entity<ZaloFeedbackConversation>(entity =>
