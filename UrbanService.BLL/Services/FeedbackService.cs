@@ -46,6 +46,65 @@ public class FeedbackService : IFeedbackService
         _slaService = slaService;
     }
 
+    public async Task ClearCompletionDocumentsAsync(
+    int providerReportId)
+    {
+        var report = await _uow
+            .GetRepository<FeedbackProviderReport>()
+            .Entities
+            .Include(x => x.Feedback)
+            .FirstOrDefaultAsync(x =>
+                x.ProviderReportId ==
+                    providerReportId)
+            ?? throw new Exception(
+                "Provider report khong ton tai.");
+
+        /*
+         * Sau khi manager NeedRework:
+         *
+         * Feedback       = NeedRework
+         * ProviderReport = InProgress
+         *
+         * Chỉ lúc này staff mới được replace bộ minh chứng.
+         */
+        if (!string.Equals(
+                report.ReportStatus,
+                "InProgress",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception(
+                "Provider report phải ở trạng thái InProgress để thay thế tài liệu.");
+        }
+
+        if (!string.Equals(
+                report.Feedback.Status,
+                FeedbackStatus.NeedRework,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception(
+                "Chỉ được thay thế tài liệu khi feedback đang NeedRework.");
+        }
+
+        var documentRepo =
+            _uow.GetRepository<CompletionDocument>();
+
+        var oldDocuments =
+            await documentRepo
+                .Entities
+                .Where(x =>
+                    x.ProviderReportId ==
+                        providerReportId)
+                .ToListAsync();
+
+        foreach (var document in oldDocuments)
+        {
+            documentRepo.Delete(
+                document);
+        }
+
+        await _uow.SaveAsync();
+    }
+
     public async Task<FeedbackDetailDto> CreateAsync(
         Guid userId,
         FeedbackCreateRequest request,
@@ -2024,8 +2083,7 @@ public class FeedbackService : IFeedbackService
 
         FeedbackStatusHistory? statusHistory = null;
         if (newStatus == "InProgress" &&
-            (report.Feedback.Status == FeedbackStatus.Assigned ||
-             report.Feedback.Status == FeedbackStatus.NeedRework))
+    report.Feedback.Status == FeedbackStatus.Assigned)
         {
             statusHistory = await ChangeStatusAsync(
                 report.Feedback,
@@ -2096,8 +2154,7 @@ public class FeedbackService : IFeedbackService
             report.ReportStatus = "InProgress";
             report.UpdatedAt = now;
 
-            if (report.Feedback.Status == FeedbackStatus.Assigned ||
-                report.Feedback.Status == FeedbackStatus.NeedRework)
+            if (report.Feedback.Status == FeedbackStatus.Assigned)
             {
                 statusHistory = await ChangeStatusAsync(
                     report.Feedback,
@@ -2298,99 +2355,276 @@ public class FeedbackService : IFeedbackService
     public async Task SubmitResolutionAsync(
     SubmitResolutionRequest request)
     {
+        if (string.IsNullOrWhiteSpace(
+                request.ResolutionSummary))
+        {
+            throw new Exception(
+                "ResolutionSummary là bắt buộc.");
+        }
+
+        if (string.IsNullOrWhiteSpace(
+                request.ActionTaken))
+        {
+            throw new Exception(
+                "ActionTaken là bắt buộc.");
+        }
+
         var feedback =
             await GetFeedbackWithDetailsAsync(
                 request.FeedbackId,
                 false);
 
+        var isRework =
+            string.Equals(
+                feedback.Status,
+                FeedbackStatus.NeedRework,
+                StringComparison.OrdinalIgnoreCase);
+
+        var isFirstSubmit =
+            string.Equals(
+                feedback.Status,
+                FeedbackStatus.InProgress,
+                StringComparison.OrdinalIgnoreCase);
+
+        if (!isFirstSubmit &&
+            !isRework)
+        {
+            throw new Exception(
+                "Feedback must be InProgress or NeedRework before submitting resolution.");
+        }
+
         FeedbackProviderReport? report = null;
+
         if (request.ProviderReportId.HasValue)
         {
             report = await _uow
                 .GetRepository<FeedbackProviderReport>()
-                .GetByIdAsync(request.ProviderReportId.Value);
+                .Entities
+                .FirstOrDefaultAsync(x =>
+                    x.ProviderReportId ==
+                        request.ProviderReportId.Value &&
+                    x.FeedbackId ==
+                        request.FeedbackId);
 
-            if (report == null || report.FeedbackId != request.FeedbackId)
+            if (report == null)
             {
-                throw new Exception("Provider report khong hop le.");
+                throw new Exception(
+                    "Provider report khong hop le.");
             }
         }
 
-        if (feedback.Status != FeedbackStatus.InProgress &&
-            feedback.Status != FeedbackStatus.NeedRework)
-        {
-            throw new Exception("Feedback must be InProgress or NeedRework before submitting resolution.");
-        }
-
         if (report != null &&
-            !string.Equals(report.ReportStatus, "InProgress", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(report.ReportStatus, "Done", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(
+                report.ReportStatus,
+                "InProgress",
+                StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(
+                report.ReportStatus,
+                "Done",
+                StringComparison.OrdinalIgnoreCase))
         {
-            throw new Exception("Provider report must be InProgress before submitting resolution.");
+            throw new Exception(
+                "Provider report must be InProgress before submitting resolution.");
         }
 
-        var resolution =
-            new FeedbackResolution
+        var now =
+            DateTime.UtcNow;
+
+        FeedbackResolution resolution;
+
+        /*
+         * ======================================================
+         * REWORK
+         * ======================================================
+         *
+         * Update chính resolution cũ.
+         * KHÔNG tạo resolution mới.
+         */
+        if (isRework)
+        {
+            resolution = await _uow
+                .GetRepository<FeedbackResolution>()
+                .Entities
+                .Where(x =>
+                    x.FeedbackId ==
+                        request.FeedbackId)
+                .OrderByDescending(x =>
+                    x.ResolvedAt)
+                .FirstOrDefaultAsync()
+                ?? throw new Exception(
+                    "Không tìm thấy resolution cần làm lại.");
+
+            if (!string.Equals(
+                    resolution.Status,
+                    FeedbackStatus.NeedRework,
+                    StringComparison.OrdinalIgnoreCase))
             {
-                FeedbackId =
-                    request.FeedbackId,
+                throw new Exception(
+                    "Resolution hiện tại không ở trạng thái NeedRework.");
+            }
 
-                ProviderReportId =
-                    request.ProviderReportId,
+            /*
+             * Không cho rework chuyển sang một Provider Report khác.
+             */
+            if (request.ProviderReportId.HasValue &&
+                resolution.ProviderReportId.HasValue &&
+                resolution.ProviderReportId.Value !=
+                    request.ProviderReportId.Value)
+            {
+                throw new Exception(
+                    "Resolution không thuộc Provider Report hiện tại.");
+            }
 
-                CreatedByStaffUserId =
-                    request.StaffUserId,
+            resolution.ProviderReportId =
+                request.ProviderReportId ??
+                resolution.ProviderReportId;
 
-                ResolutionSummary =
-                    request.ResolutionSummary,
+            resolution.CreatedByStaffUserId =
+                request.StaffUserId;
 
-                ActionTaken =
-                    request.ActionTaken,
+            resolution.ResolutionSummary =
+                request.ResolutionSummary.Trim();
 
-                ResultNote =
-                    request.ResultNote,
+            resolution.ActionTaken =
+                request.ActionTaken.Trim();
 
-                Status =
-                    FeedbackStatus.SubmittedForApproval,
+            resolution.ResultNote =
+                NormalizeOptional(
+                    request.ResultNote);
 
-                ResolvedAt =
-                    DateTime.UtcNow
-            };
+            resolution.Status =
+                FeedbackStatus.SubmittedForApproval;
 
-        await _uow
-            .GetRepository<FeedbackResolution>()
-            .AddAsync(resolution);
+            resolution.ResolvedAt =
+                now;
+        }
+        else
+        {
+            /*
+             * ======================================================
+             * SUBMIT LẦN ĐẦU
+             * ======================================================
+             */
 
+            var alreadyHasResolution =
+                await _uow
+                    .GetRepository<FeedbackResolution>()
+                    .Entities
+                    .AsNoTracking()
+                    .AnyAsync(x =>
+                        x.FeedbackId ==
+                            request.FeedbackId);
+
+            if (alreadyHasResolution)
+            {
+                throw new Exception(
+                    "Feedback đã có resolution. Không thể tạo resolution mới.");
+            }
+
+            resolution =
+                new FeedbackResolution
+                {
+                    FeedbackId =
+                        request.FeedbackId,
+
+                    ProviderReportId =
+                        request.ProviderReportId,
+
+                    CreatedByStaffUserId =
+                        request.StaffUserId,
+
+                    ResolutionSummary =
+                        request.ResolutionSummary.Trim(),
+
+                    ActionTaken =
+                        request.ActionTaken.Trim(),
+
+                    ResultNote =
+                        NormalizeOptional(
+                            request.ResultNote),
+
+                    Status =
+                        FeedbackStatus.SubmittedForApproval,
+
+                    ResolvedAt =
+                        now
+                };
+
+            await _uow
+                .GetRepository<FeedbackResolution>()
+                .AddAsync(resolution);
+        }
+
+        /*
+         * Provider Report quay lại Done sau khi
+         * staff gửi kết quả mới.
+         */
         if (report != null)
         {
-            report.ReportStatus = "Done";
-            report.UpdatedAt = DateTime.UtcNow;
+            report.ReportStatus =
+                "Done";
 
-            foreach (var image in request.ImageUrls)
+            report.UpdatedAt =
+                now;
+
+            /*
+             * Giữ đoạn này để tương thích nếu client khác
+             * vẫn còn gửi ImageUrls trực tiếp.
+             *
+             * FE workspace hiện tại gửi imageUrls = []
+             * vì đã upload qua completion-documents riêng.
+             */
+            foreach (var image in request.ImageUrls ?? [])
             {
+                if (string.IsNullOrWhiteSpace(
+                        image))
+                {
+                    continue;
+                }
+
                 await _uow
                     .GetRepository<CompletionDocument>()
                     .AddAsync(
                         new CompletionDocument
                         {
-                            ProviderReportId = report.ProviderReportId,
-                            FeedbackId = request.FeedbackId,
-                            CoordinatorId = report.CoordinatorId,
-                            UploadedByUserId = request.StaffUserId,
-                            FileUrl = image,
-                            FileType = "image",
-                            ReceivedAt = DateTime.UtcNow
+                            ProviderReportId =
+                                report.ProviderReportId,
+
+                            FeedbackId =
+                                request.FeedbackId,
+
+                            CoordinatorId =
+                                report.CoordinatorId,
+
+                            UploadedByUserId =
+                                request.StaffUserId,
+
+                            FileUrl =
+                                image.Trim(),
+
+                            FileType =
+                                "image",
+
+                            ReceivedAt =
+                                now
                         });
             }
         }
 
-        var history = await ChangeStatusAsync(
-            feedback,
-            FeedbackStatus.SubmittedForApproval,
-            request.StaffUserId);
+        var history =
+            await ChangeStatusAsync(
+                feedback,
+                FeedbackStatus.SubmittedForApproval,
+                request.StaffUserId,
+                isRework
+                    ? "Staff đã cập nhật và gửi lại kết quả sau yêu cầu làm lại."
+                    : "Staff đã gửi kết quả xử lý để chờ quản lý phê duyệt.");
 
         await _uow.SaveAsync();
-        await SendStatusUpdatedNotificationAsync(feedback, history);
+
+        await SendStatusUpdatedNotificationAsync(
+            feedback,
+            history);
     }
 
     public async Task ApproveResolutionAsync(
@@ -2455,54 +2689,115 @@ public class FeedbackService : IFeedbackService
     Guid managerId,
     string reason)
     {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new Exception(
+                "Lý do yêu cầu làm lại là bắt buộc.");
+        }
+
         var feedback =
             await GetFeedbackWithDetailsAsync(
                 feedbackId,
                 false);
 
-        var resolution =
-            (await _uow
-                .GetRepository<FeedbackResolution>()
-                .GetAllAsync(
-                    x => x.FeedbackId ==
-                         feedbackId))
-            .OrderByDescending(
-                x => x.ResolvedAt)
-            .First();
+        if (!string.Equals(
+                feedback.Status,
+                FeedbackStatus.SubmittedForApproval,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception(
+                "Feedback must be SubmittedForApproval before requiring rework.");
+        }
 
+        var resolution = await _uow
+            .GetRepository<FeedbackResolution>()
+            .Entities
+            .Where(x =>
+                x.FeedbackId == feedbackId)
+            .OrderByDescending(x =>
+                x.ResolvedAt)
+            .FirstOrDefaultAsync()
+            ?? throw new Exception(
+                "Không tìm thấy resolution để yêu cầu làm lại.");
+
+        if (!string.Equals(
+                resolution.Status,
+                FeedbackStatus.SubmittedForApproval,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception(
+                "Resolution hiện tại không ở trạng thái chờ phê duyệt.");
+        }
+
+        /*
+         * Chỉ đổi status của resolution.
+         *
+         * KHÔNG ghi đè:
+         * resolution.ResultNote = reason;
+         *
+         * ResultNote là dữ liệu do staff nhập.
+         */
         resolution.Status =
             FeedbackStatus.NeedRework;
 
-        if (feedback.Status != FeedbackStatus.SubmittedForApproval)
+        /*
+         * Mở lại đúng Provider Report đang gắn với resolution.
+         */
+        FeedbackProviderReport? providerReport = null;
+
+        if (resolution.ProviderReportId.HasValue)
         {
-            throw new Exception("Feedback must be SubmittedForApproval before requiring rework.");
+            providerReport = await _uow
+                .GetRepository<FeedbackProviderReport>()
+                .Entities
+                .FirstOrDefaultAsync(x =>
+                    x.ProviderReportId ==
+                        resolution.ProviderReportId.Value &&
+                    x.FeedbackId ==
+                        feedbackId);
         }
 
-        resolution.ResultNote =
-            reason;
+        /*
+         * Fallback cho dữ liệu cũ nếu resolution
+         * chưa có ProviderReportId.
+         */
+        providerReport ??=
+            await _uow
+                .GetRepository<FeedbackProviderReport>()
+                .Entities
+                .Where(x =>
+                    x.FeedbackId == feedbackId)
+                .OrderByDescending(x =>
+                    x.ReportedAt)
+                .FirstOrDefaultAsync();
 
-        var latestProviderReport = await _uow
-            .GetRepository<FeedbackProviderReport>()
-            .Entities
-            .Where(x => x.FeedbackId == feedbackId)
-            .OrderByDescending(x => x.ReportedAt)
-            .FirstOrDefaultAsync();
-
-        if (latestProviderReport != null &&
-            string.Equals(latestProviderReport.ReportStatus, "Done", StringComparison.OrdinalIgnoreCase))
+        if (providerReport != null)
         {
-            latestProviderReport.ReportStatus = "InProgress";
-            latestProviderReport.UpdatedAt = DateTime.UtcNow;
+            providerReport.ReportStatus =
+                "InProgress";
+
+            providerReport.UpdatedAt =
+                DateTime.UtcNow;
         }
 
-        var history = await ChangeStatusAsync(
-            feedback,
-            FeedbackStatus.NeedRework,
-            managerId,
-            reason);
+        /*
+         * Manager reason được lưu ở history.
+         */
+        var history =
+            await ChangeStatusAsync(
+                feedback,
+                FeedbackStatus.NeedRework,
+                managerId,
+                reason.Trim());
 
         await _uow.SaveAsync();
-        await SendStatusUpdatedNotificationAsync(feedback, history);
+
+        /*
+         * Không complete SLA.
+         */
+        await SendStatusUpdatedNotificationAsync(
+            feedback,
+            history);
     }
 
     public async Task<FeedbackResolutionReviewDto> CitizenReviewAsync(

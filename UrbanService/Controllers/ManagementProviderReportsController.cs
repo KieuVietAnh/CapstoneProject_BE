@@ -109,6 +109,30 @@ public class ManagementProviderReportsController : ControllerBase
         return Ok(result);
     }
 
+
+    /// <summary>
+    /// Xoa toan bo anh/tai lieu hoan thanh cu cua provider report.
+    /// Chi dung khi feedback dang NeedRework.
+    /// </summary>
+    [HttpDelete("{providerReportId:int}/completion-documents")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ClearCompletionDocuments(
+        int providerReportId)
+    {
+        await _feedbackService
+            .ClearCompletionDocumentsAsync(
+                providerReportId);
+
+        return Ok(new
+        {
+            Message = "Old completion documents cleared successfully."
+        });
+    }
+
     private async Task<IReadOnlyCollection<UploadedFeedbackAttachmentDto>> UploadFilesAsync(
         IReadOnlyCollection<IFormFile>? files,
         string folder)
