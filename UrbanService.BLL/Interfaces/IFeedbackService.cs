@@ -102,4 +102,7 @@ public interface IFeedbackService
 
     Task<FeedbackResolutionReviewDto> CitizenReviewAsync(
         CitizenReviewRequest request);
+
+    Task ClearCompletionDocumentsAsync(
+    int providerReportId);
 }
