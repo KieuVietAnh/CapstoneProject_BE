@@ -28,7 +28,6 @@ public class FeedbackService : IFeedbackService
     private readonly IUnitOfWork _uow;
     private readonly INotificationService _notificationService;
     private readonly IAiFeedbackReviewQueue _aiFeedbackReviewQueue;
-    private readonly IAiFeedbackDuplicateService _aiFeedbackDuplicateService;
     private readonly ISlaService _slaService;
 
 
@@ -42,7 +41,6 @@ public class FeedbackService : IFeedbackService
         _uow = uow;
         _notificationService = notificationService;
         _aiFeedbackReviewQueue = aiFeedbackReviewQueue;
-        _aiFeedbackDuplicateService = aiFeedbackDuplicateService;
         _slaService = slaService;
     }
 
@@ -100,7 +98,6 @@ public class FeedbackService : IFeedbackService
         await _uow.GetRepository<Feedback>().AddAsync(feedback);
         await _uow.SaveAsync();
 
-        await _aiFeedbackDuplicateService.CheckAndLinkDuplicateAsync(feedback, userId);
         await _aiFeedbackReviewQueue.EnqueueAsync(feedback.FeedbackId, userId);
         await SendFeedbackNotificationAsync(
             feedback,
