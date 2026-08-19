@@ -108,6 +108,23 @@ public class UserFeedbacksController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Xem lịch sử kết quả xử lý của feedback thuộc người dân hiện tại.</summary>
+    /// <remarks>
+    /// Yêu cầu role `SERVICEUSER` và phải là chủ sở hữu feedback.
+    /// Dùng cho trang người dân xem lại kết quả xử lý, kể cả sau khi đã đánh giá và feedback chuyển sang `Closed`.
+    /// </remarks>
+    [HttpGet("{feedbackId:guid}/resolutions")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<FeedbackResolutionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetMyFeedbackResolutions(Guid feedbackId)
+    {
+        await _feedbackService.GetMyFeedbackDetailAsync(GetCurrentUserId(), feedbackId);
+        var result = await _feedbackService.GetFeedbackResolutionsAsync(feedbackId);
+        return Ok(result);
+    }
+
     /// <summary>Lấy phản ánh đã có mà phản ánh của người dân được đánh dấu trùng.</summary>
     [HttpGet("{feedbackId:guid}/related")]
     [ProducesResponseType(typeof(RelatedFeedbacksDto), StatusCodes.Status200OK)]
