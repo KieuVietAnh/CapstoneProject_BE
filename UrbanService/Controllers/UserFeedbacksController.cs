@@ -74,6 +74,21 @@ public class UserFeedbacksController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Xem lịch sử kết quả xử lý của một phản ánh công khai.</summary>
+    [HttpGet("{feedbackId:guid}/resolutions")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(IReadOnlyCollection<FeedbackResolutionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetResidentFeedResolutions(Guid feedbackId)
+    {
+        await _feedbackService.GetResidentFeedFeedbackDetailAsync(
+            GetCurrentUserIdOrEmpty(),
+            feedbackId);
+
+        var result = await _feedbackService.GetFeedbackResolutionsAsync(feedbackId);
+        return Ok(result);
+    }
+
     /// <summary>Lấy phản ánh đã có mà một phản ánh công khai được đánh dấu trùng.</summary>
     [HttpGet("feed/{feedbackId:guid}/related")]
     [AllowAnonymous]
