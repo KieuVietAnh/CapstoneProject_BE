@@ -110,6 +110,10 @@ jobs:
             AI_NUM_PREDICT=${{ secrets.AI_NUM_PREDICT }}
             AI_NUM_CONTEXT=${{ secrets.AI_NUM_CONTEXT }}
             AI_TEMPERATURE=${{ secrets.AI_TEMPERATURE }}
+            AI_REVIEW_WORKER_ENABLED=${{ vars.AI_REVIEW_WORKER_ENABLED || 'true' }}
+            AI_DUPLICATE_NEARBY_RADIUS_METERS=${{ vars.AI_DUPLICATE_NEARBY_RADIUS_METERS || '200' }}
+            AI_DUPLICATE_MAX_CANDIDATES=${{ vars.AI_DUPLICATE_MAX_CANDIDATES || '10' }}
+            AI_DUPLICATE_LOOKBACK_DAYS=${{ vars.AI_DUPLICATE_LOOKBACK_DAYS || '7' }}
             OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
             OPENROUTER_MODEL=${{ secrets.OPENROUTER_MODEL }}
             OPENROUTER_BASE_URL=${{ secrets.OPENROUTER_BASE_URL }}

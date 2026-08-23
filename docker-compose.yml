@@ -36,6 +36,10 @@ services:
       AI__NumPredict: ${AI_NUM_PREDICT:-512}
       AI__NumContext: ${AI_NUM_CONTEXT:-4096}
       AI__Temperature: ${AI_TEMPERATURE:-0.1}
+      AI__ReviewWorkerEnabled: ${AI_REVIEW_WORKER_ENABLED:-true}
+      AI__DuplicateNearbyRadiusMeters: ${AI_DUPLICATE_NEARBY_RADIUS_METERS:-200}
+      AI__DuplicateMaxCandidates: ${AI_DUPLICATE_MAX_CANDIDATES:-10}
+      AI__DuplicateLookbackDays: ${AI_DUPLICATE_LOOKBACK_DAYS:-7}
       OpenRouter__ApiKey: ${OPENROUTER_API_KEY}
       OpenRouter__Model: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
       OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
