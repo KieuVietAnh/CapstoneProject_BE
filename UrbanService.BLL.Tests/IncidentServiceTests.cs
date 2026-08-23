@@ -22,7 +22,8 @@ public sealed class IncidentServiceTests
         var incident = Assert.Single(context.Incidents);
         Assert.Equal(incidentId, incident.IncidentId);
         Assert.Equal(feedback.AreaId, incident.AreaId);
-        Assert.Equal(feedback.Status, incident.Status);
+        Assert.Equal(IncidentStatus.New, incident.Status);
+        Assert.Equal(IncidentSeverity.Medium, incident.Severity);
 
         var link = Assert.Single(context.Links);
         Assert.Equal(incidentId, link.IncidentId);

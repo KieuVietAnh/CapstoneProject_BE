@@ -85,6 +85,7 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
     {
         Feedback childFeedback;
         Feedback parentFeedback;
+        Guid? confirmedIncidentId = null;
 
         _uow.BeginTransaction();
         try
@@ -189,12 +190,13 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             candidate.ReviewedAt = reviewedAt;
             candidate.UpdatedAt = reviewedAt;
 
-            await _incidentService.RelinkConfirmedDuplicateAsync(
+            var linkedIncidentId = await _incidentService.RelinkConfirmedDuplicateAsync(
                 childFeedback,
                 parentFeedback,
                 staffUserId,
                 candidate.ConfidenceScore,
                 candidate.Reason);
+            confirmedIncidentId = linkedIncidentId == Guid.Empty ? null : linkedIncidentId;
 
             await _uow.SaveAsync();
             _uow.CommitTransaction();
@@ -205,12 +207,29 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             throw;
         }
 
-        await _notificationService.SendAsync(
-            childFeedback.UserId,
-            "Phản ánh đã được ghi nhận vào sự vụ hiện có",
-            "Phản ánh của bạn được xác nhận là thông tin bổ sung cho một sự vụ đã được ghi nhận. Nội dung phản ánh vẫn được lưu giữ.",
-            NotificationType.TicketUpdated,
-            $"/community/feed/{parentFeedback.FeedbackId}");
+        const string notificationTitle = "Phản ánh đã được ghi nhận vào sự vụ hiện có";
+        const string notificationMessage = "Phản ánh của bạn được xác nhận là thông tin bổ sung cho một sự vụ đã được ghi nhận. Nội dung phản ánh vẫn được lưu giữ.";
+        if (confirmedIncidentId.HasValue)
+        {
+            await _notificationService.SendAsync(
+                childFeedback.UserId,
+                notificationTitle,
+                notificationMessage,
+                NotificationType.TicketUpdated,
+                $"/community/incidents/{confirmedIncidentId.Value}",
+                confirmedIncidentId,
+                "Incident",
+                confirmedIncidentId.Value.ToString());
+        }
+        else
+        {
+            await _notificationService.SendAsync(
+                childFeedback.UserId,
+                notificationTitle,
+                notificationMessage,
+                NotificationType.TicketUpdated,
+                $"/community/feed/{parentFeedback.FeedbackId}");
+        }
 
         return await GetCandidateDetailAsync(duplicateCandidateId);
     }
@@ -273,7 +292,7 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
         await EnsureFeedbackExistsAsync(feedbackId);
 
         var linkedFeedbacks = await _uow.GetRepository<Feedback>().Entities
-            .AsNoTracking()
+            .AsNoTrackingWithIdentityResolution()
             .Include(f => f.User)
             .Include(f => f.Area)
             .Include(f => f.Category)
@@ -320,7 +339,7 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
     private IQueryable<FeedbackDuplicateCandidate> BaseCandidateQuery()
     {
         return _uow.GetRepository<FeedbackDuplicateCandidate>().Entities
-            .AsNoTracking()
+            .AsNoTrackingWithIdentityResolution()
             .Include(c => c.Feedback)
                 .ThenInclude(f => f.User)
             .Include(c => c.Feedback)
@@ -359,7 +378,7 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
     private IQueryable<Feedback> FeedbackListQuery()
     {
         return _uow.GetRepository<Feedback>().Entities
-            .AsNoTracking()
+            .AsNoTrackingWithIdentityResolution()
             .Include(f => f.User)
             .Include(f => f.Area)
             .Include(f => f.Category)

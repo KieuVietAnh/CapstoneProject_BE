@@ -9,7 +9,10 @@ public interface INotificationService
         string title,
         string message,
         string type,
-        string? targetUrl = null);
+        string? targetUrl = null,
+        Guid? incidentId = null,
+        string? targetType = null,
+        string? targetId = null);
 
     Task<PagedResultDto<NotificationDto>> GetMyNotificationsAsync(
         Guid userId,

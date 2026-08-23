@@ -32,7 +32,10 @@ public class NotificationService : INotificationService
         string title,
         string message,
         string type,
-        string? targetUrl = null)
+        string? targetUrl = null,
+        Guid? incidentId = null,
+        string? targetType = null,
+        string? targetId = null)
     {
         if (userId == Guid.Empty)
         {
@@ -65,6 +68,9 @@ public class NotificationService : INotificationService
             TargetUrl = string.IsNullOrWhiteSpace(targetUrl)
                 ? null
                 : targetUrl.Trim(),
+            IncidentId = incidentId,
+            TargetType = string.IsNullOrWhiteSpace(targetType) ? null : targetType.Trim(),
+            TargetId = string.IsNullOrWhiteSpace(targetId) ? null : targetId.Trim(),
             CreatedAt = SlaDateTimeHelper.UtcNow
         };
 
@@ -170,6 +176,12 @@ public class NotificationService : INotificationService
 
                         TargetUrl =
                             n.TargetUrl,
+
+                        IncidentId = n.IncidentId,
+
+                        TargetType = n.TargetType,
+
+                        TargetId = n.TargetId,
 
                         CreatedAt =
                             n.CreatedAt
@@ -283,6 +295,12 @@ public class NotificationService : INotificationService
 
             TargetUrl =
                 notification.TargetUrl,
+
+            IncidentId = notification.IncidentId,
+
+            TargetType = notification.TargetType,
+
+            TargetId = notification.TargetId,
 
             CreatedAt =
                 SlaDateTimeHelper.AsUtc(

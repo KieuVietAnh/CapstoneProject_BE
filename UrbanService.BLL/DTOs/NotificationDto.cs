@@ -16,5 +16,11 @@ public class NotificationDto
 
     public string? TargetUrl { get; set; }
 
+    public Guid? IncidentId { get; set; }
+
+    public string? TargetType { get; set; }
+
+    public string? TargetId { get; set; }
+
     public DateTime CreatedAt { get; set; }
 }

@@ -10,6 +10,8 @@ public partial class StaffAreaAssignment
 
     public int AreaId { get; set; }
 
+    public int? CategoryId { get; set; }
+
     public Guid? AssignedByUserId { get; set; }
 
     public bool IsPrimary { get; set; }
@@ -25,6 +27,8 @@ public partial class StaffAreaAssignment
     public virtual User? AssignedByUser { get; set; }
 
     public virtual OperatingArea Area { get; set; } = null!;
+
+    public virtual UrbanServiceCategory? Category { get; set; }
 
     public virtual User User { get; set; } = null!;
 }

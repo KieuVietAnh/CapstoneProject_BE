@@ -199,12 +199,16 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.StaffAreaAssignmentId).HasColumnName("staff_area_assignment_id");
             entity.Property(e => e.UserId).HasColumnName("user_id");
             entity.Property(e => e.AreaId).HasColumnName("area_id");
+            entity.Property(e => e.CategoryId).HasColumnName("category_id");
             entity.Property(e => e.AssignedByUserId).HasColumnName("assigned_by_user_id");
             entity.Property(e => e.IsPrimary).HasDefaultValue(false).HasColumnName("is_primary");
             entity.Property(e => e.StartDate).HasColumnName("start_date");
             entity.Property(e => e.EndDate).HasColumnName("end_date");
             entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+
+            entity.HasIndex(e => new { e.UserId, e.AreaId, e.CategoryId }, "uq_staff_responsibility_scope")
+                .IsUnique();
 
             entity.HasOne(d => d.User).WithMany(p => p.StaffAreaAssignmentUsers)
                 .HasForeignKey(d => d.UserId)
@@ -220,6 +224,11 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.AreaId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_staff_area_assignment_area");
+
+            entity.HasOne(d => d.Category).WithMany(p => p.StaffAreaAssignments)
+                .HasForeignKey(d => d.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_staff_area_assignment_category");
         });
 
         modelBuilder.Entity<UrbanServiceCategory>(entity =>
@@ -357,11 +366,15 @@ public partial class UrbanServiceDbContext : DbContext
                 table.HasCheckConstraint(
                     "ck_incident_merge_not_self",
                     "merged_into_incident_id IS NULL OR merged_into_incident_id <> incident_id");
+                table.HasCheckConstraint(
+                    "ck_incident_severity",
+                    "severity IN ('Low', 'Medium', 'High', 'Critical')");
             });
 
             entity.HasIndex(e => new { e.AreaId, e.Status, e.CreatedAt }, "ix_incidents_area_status_created_at");
             entity.HasIndex(e => new { e.CategoryId, e.Status }, "ix_incidents_category_status");
             entity.HasIndex(e => e.MergedIntoIncidentId, "ix_incidents_merged_into_incident_id");
+            entity.HasIndex(e => e.AssignedStaffUserId, "ix_incidents_assigned_staff_user_id");
 
             entity.Property(e => e.IncidentId).HasDefaultValueSql("gen_random_uuid()").HasColumnName("incident_id");
             entity.Property(e => e.AreaId).HasColumnName("area_id");
@@ -372,11 +385,13 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.Latitude).HasPrecision(10, 7).HasColumnName("latitude");
             entity.Property(e => e.Longitude).HasPrecision(10, 7).HasColumnName("longitude");
             entity.Property(e => e.Priority).HasMaxLength(50).HasDefaultValueSql("'Medium'::character varying").HasColumnName("priority");
+            entity.Property(e => e.Severity).HasMaxLength(20).HasDefaultValue("Medium").HasColumnName("severity");
             entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValueSql("'New'::character varying").HasColumnName("status");
             entity.Property(e => e.DueDate).HasColumnName("due_date");
             entity.Property(e => e.ResolvedAt).HasColumnName("resolved_at");
             entity.Property(e => e.ClosedAt).HasColumnName("closed_at");
             entity.Property(e => e.MergedIntoIncidentId).HasColumnName("merged_into_incident_id");
+            entity.Property(e => e.AssignedStaffUserId).HasColumnName("assigned_staff_user_id");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
 
@@ -394,6 +409,11 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.MergedIntoIncidentId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_incident_merged_into");
+
+            entity.HasOne(d => d.AssignedStaffUser).WithMany()
+                .HasForeignKey(d => d.AssignedStaffUserId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_incident_assigned_staff");
         });
 
         modelBuilder.Entity<IncidentReportLink>(entity =>
@@ -493,7 +513,7 @@ public partial class UrbanServiceDbContext : DbContext
             {
                 table.HasCheckConstraint(
                     "ck_incident_subscription_source_type",
-                    "source_type IN ('Report', 'Follow', 'Support', 'Backfill')");
+                    "source_type IN ('Report', 'Follow', 'Support', 'Backfill', 'Manual')");
             });
 
             entity.HasIndex(e => new { e.IncidentId, e.UserId }, "uq_incident_subscriptions_incident_user").IsUnique();
@@ -970,11 +990,14 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.NotificationId).HasColumnName("notification_id");
             entity.Property(e => e.UserId).HasColumnName("user_id");
             entity.Property(e => e.AlertId).HasColumnName("alert_id");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
             entity.Property(e => e.Title).HasMaxLength(200).HasColumnName("title");
             entity.Property(e => e.Message).HasColumnName("message");
             entity.Property(e => e.Type).HasMaxLength(50).HasColumnName("type");
             entity.Property(e => e.IsRead).HasDefaultValue(false).HasColumnName("is_read");
             entity.Property(e => e.TargetUrl).HasMaxLength(500).HasColumnName("target_url");
+            entity.Property(e => e.TargetType).HasMaxLength(50).HasColumnName("target_type");
+            entity.Property(e => e.TargetId).HasMaxLength(100).HasColumnName("target_id");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
 
@@ -987,6 +1010,11 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.AlertId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_notification_area_alert");
+
+            entity.HasOne(d => d.Incident).WithMany()
+                .HasForeignKey(d => d.IncidentId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_notification_incident");
         });
 
         modelBuilder.Entity<MessengerFeedbackConversation>(entity =>

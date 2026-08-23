@@ -188,6 +188,37 @@ public class UserFeedbacksController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Người dân gửi thêm một Report vào Incident công khai đã tồn tại.</summary>
+    [HttpPost("~/api/user/incidents/{incidentId:guid}/reports")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(typeof(FeedbackDetailDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CreateReportForIncident(
+        Guid incidentId,
+        [FromForm] FeedbackCreateFormRequest form)
+    {
+        var attachments = await UploadFilesAsync(form.Attachments, "urban-service/feedbacks");
+        var request = new FeedbackCreateRequest
+        {
+            AreaId = form.AreaId,
+            CategoryId = form.CategoryId,
+            Title = form.Title,
+            Description = form.Description,
+            LocationText = form.LocationText,
+            Latitude = form.Latitude,
+            Longitude = form.Longitude,
+            LocationAccuracyMeters = form.LocationAccuracyMeters,
+            GeoSource = form.GeoSource,
+            Priority = form.Priority,
+            DueDate = form.DueDate
+        };
+
+        return Ok(await _feedbackService.CreateAsync(
+            GetCurrentUserId(),
+            request,
+            attachments,
+            incidentId));
+    }
+
     /// <summary>Chỉnh sửa feedback của người dân hiện tại.</summary>
     /// <remarks>
     /// Yêu cầu role `SERVICEUSER` và phải là chủ sở hữu feedback. Chỉ các trường

@@ -64,6 +64,65 @@ public sealed class ManagementIncidentsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Cập nhật dữ liệu điều phối của Incident, gồm Severity.</summary>
+    [HttpPatch("{incidentId:guid}")]
+    [ProducesResponseType(typeof(IncidentDetailDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateIncident(Guid incidentId, [FromBody] UpdateIncidentRequest request)
+        => Ok(await _incidentService.UpdateIncidentAsync(
+            incidentId,
+            request,
+            GetCurrentUserId(),
+            HttpContext.RequestAborted));
+
+    /// <summary>Chuyển trạng thái xử lý ở cấp Incident.</summary>
+    [HttpPatch("{incidentId:guid}/status")]
+    [ProducesResponseType(typeof(IncidentDetailDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateStatus(Guid incidentId, [FromBody] UpdateIncidentStatusRequest request)
+        => Ok(await _incidentService.UpdateStatusAsync(
+            incidentId,
+            request,
+            GetCurrentUserId(),
+            HttpContext.RequestAborted));
+
+    /// <summary>Lấy Staff phù hợp khu vực và danh mục của Incident.</summary>
+    [HttpGet("{incidentId:guid}/assignee-candidates")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<IncidentAssigneeCandidateDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAssigneeCandidates(Guid incidentId)
+        => Ok(await _incidentService.GetAssigneeCandidatesAsync(incidentId, HttpContext.RequestAborted));
+
+    /// <summary>Phân công Staff xử lý Incident.</summary>
+    [HttpPost("{incidentId:guid}/assign")]
+    [ProducesResponseType(typeof(IncidentDetailDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Assign(Guid incidentId, [FromBody] AssignIncidentRequest request)
+        => Ok(await _incidentService.AssignAsync(
+            incidentId,
+            request,
+            GetCurrentUserId(),
+            HttpContext.RequestAborted));
+
+    /// <summary>Merge Incident nguồn vào Incident đích.</summary>
+    [HttpPost("{incidentId:guid}/merge")]
+    [ProducesResponseType(typeof(IncidentDetailDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Merge(Guid incidentId, [FromBody] MergeIncidentRequest request)
+        => Ok(await _incidentService.MergeAsync(
+            incidentId,
+            request,
+            GetCurrentUserId(),
+            HttpContext.RequestAborted));
+
+    /// <summary>Lấy timeline Incident có phân trang.</summary>
+    [HttpGet("{incidentId:guid}/timeline")]
+    [ProducesResponseType(typeof(PagedResultDto<IncidentEventDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTimeline(
+        Guid incidentId,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20)
+        => Ok(await _incidentService.GetManagementTimelineAsync(
+            incidentId,
+            pageNumber,
+            pageSize,
+            HttpContext.RequestAborted));
+
     private Guid GetCurrentUserId()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);

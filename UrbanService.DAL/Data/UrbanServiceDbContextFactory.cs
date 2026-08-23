@@ -42,13 +42,16 @@ public class UrbanServiceDbContextFactory : IDesignTimeDbContextFactory<UrbanSer
         while (directory != null)
         {
             var directAppSettings = Path.Combine(directory.FullName, "appsettings.json");
-            if (File.Exists(directAppSettings))
+            var directEnvironmentSettings = Path.Combine(directory.FullName, $"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development"}.json");
+            if (File.Exists(directAppSettings) || File.Exists(directEnvironmentSettings))
             {
                 return directory.FullName;
             }
 
-            var apiAppSettings = Path.Combine(directory.FullName, "UrbanService", "appsettings.json");
-            if (File.Exists(apiAppSettings))
+            var apiDirectory = Path.Combine(directory.FullName, "UrbanService");
+            var apiAppSettings = Path.Combine(apiDirectory, "appsettings.json");
+            var apiEnvironmentSettings = Path.Combine(apiDirectory, $"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development"}.json");
+            if (File.Exists(apiAppSettings) || File.Exists(apiEnvironmentSettings))
             {
                 return Path.Combine(directory.FullName, "UrbanService");
             }

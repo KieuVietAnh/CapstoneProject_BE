@@ -23,6 +23,8 @@ public partial class Incident
 
     public string? Priority { get; set; }
 
+    public string Severity { get; set; } = null!;
+
     public string Status { get; set; } = null!;
 
     public DateTime? DueDate { get; set; }
@@ -33,6 +35,8 @@ public partial class Incident
 
     public Guid? MergedIntoIncidentId { get; set; }
 
+    public Guid? AssignedStaffUserId { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }
@@ -40,6 +44,8 @@ public partial class Incident
     public virtual OperatingArea Area { get; set; } = null!;
 
     public virtual UrbanServiceCategory? Category { get; set; }
+
+    public virtual User? AssignedStaffUser { get; set; }
 
     public virtual Incident? MergedIntoIncident { get; set; }
 

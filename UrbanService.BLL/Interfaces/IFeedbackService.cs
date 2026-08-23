@@ -8,7 +8,8 @@ public interface IFeedbackService
     Task<FeedbackDetailDto> CreateAsync(
         Guid userId,
         FeedbackCreateRequest request,
-        IReadOnlyCollection<UploadedFeedbackAttachmentDto> attachments);
+        IReadOnlyCollection<UploadedFeedbackAttachmentDto> attachments,
+        Guid? targetIncidentId = null);
 
     Task<PagedResultDto<FeedbackListItemDto>> GetMyFeedbacksAsync(Guid userId, FeedbackQueryParameters query);
 

@@ -597,6 +597,10 @@ public class StaffAreaAssignmentDto
 
     public string? AreaName { get; set; }
 
+    public int? CategoryId { get; set; }
+
+    public string? CategoryName { get; set; }
+
     public Guid? AssignedByUserId { get; set; }
 
     public string? AssignedByUserName { get; set; }
@@ -618,9 +622,22 @@ public class StaffAreaAssignmentCreateRequest
 
     public int AreaId { get; set; }
 
+    public int? CategoryId { get; set; }
+
     public bool IsPrimary { get; set; }
 
     public DateOnly? StartDate { get; set; }
 
+    public DateOnly? EndDate { get; set; }
+}
+
+public class StaffAreaAssignmentUpdateRequest
+{
+    public int AreaId { get; set; }
+
+    public int? CategoryId { get; set; }
+
+    public bool IsPrimary { get; set; }
+    public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
 }

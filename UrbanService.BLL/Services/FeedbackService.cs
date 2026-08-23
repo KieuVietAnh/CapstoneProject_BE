@@ -109,12 +109,14 @@ public class FeedbackService : IFeedbackService
     public async Task<FeedbackDetailDto> CreateAsync(
         Guid userId,
         FeedbackCreateRequest request,
-        IReadOnlyCollection<UploadedFeedbackAttachmentDto> attachments)
+        IReadOnlyCollection<UploadedFeedbackAttachmentDto> attachments,
+        Guid? targetIncidentId = null)
     {
         ValidateCreate(request);
         await EnsureAreaMatchesLocationAsync(request.AreaId, request.Latitude, request.Longitude);
 
         var now = DateTime.UtcNow;
+        Guid? createdIncidentId = null;
         var feedback = new Feedback
         {
             FeedbackId = Guid.NewGuid(),
@@ -161,7 +163,19 @@ public class FeedbackService : IFeedbackService
         try
         {
             await _uow.GetRepository<Feedback>().AddAsync(feedback);
-            await _incidentService.StageNewReportIncidentAsync(feedback, userId, now);
+            if (targetIncidentId.HasValue)
+            {
+                createdIncidentId = targetIncidentId.Value;
+                await _incidentService.StageReportInExistingIncidentAsync(
+                    feedback,
+                    targetIncidentId.Value,
+                    userId,
+                    now);
+            }
+            else
+            {
+                createdIncidentId = await _incidentService.StageNewReportIncidentAsync(feedback, userId, now);
+            }
             await _uow.SaveAsync();
             _uow.CommitTransaction();
         }
@@ -175,7 +189,8 @@ public class FeedbackService : IFeedbackService
         await SendFeedbackNotificationAsync(
             feedback,
             "Phản ánh đã được tạo",
-            $"Phản ánh \"{feedback.Title}\" đã được tiếp nhận và đang chờ xử lý.");
+            $"Phản ánh \"{feedback.Title}\" đã được tiếp nhận và đang chờ xử lý.",
+            incidentIdOverride: createdIncidentId);
 
         return await GetMyFeedbackDetailAsync(userId, feedback.FeedbackId);
     }
@@ -1271,7 +1286,7 @@ public class FeedbackService : IFeedbackService
 
         if (asNoTracking)
         {
-            query = query.AsNoTracking();
+            query = query.AsNoTrackingWithIdentityResolution();
         }
 
         var feedback = await query
@@ -1322,26 +1337,47 @@ public class FeedbackService : IFeedbackService
                 $"Phản ánh \"{feedback.Title}\" đã chuyển trạng thái từ \"{history.OldStatus}\" sang \"{history.NewStatus}\"."
         };
 
+        var incidentId = feedback.IncidentReportLinks
+            .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+            .Select(link => (Guid?)link.IncidentId)
+            .FirstOrDefault();
+
         await _notificationService.SendAsync(
             feedback.UserId,
             "Trạng thái phản ánh đã được cập nhật",
             message,
             NotificationType.TicketUpdated,
-            $"/feedbacks/{feedback.FeedbackId}");
+            incidentId.HasValue
+                ? $"/community/incidents/{incidentId.Value}"
+                : $"/feedbacks/{feedback.FeedbackId}",
+            incidentId,
+            incidentId.HasValue ? "Incident" : "Feedback",
+            (incidentId ?? feedback.FeedbackId).ToString());
     }
 
     private async Task SendFeedbackNotificationAsync(
         Feedback feedback,
         string title,
         string message,
-        string? targetUrl = null)
+        string? targetUrl = null,
+        Guid? incidentIdOverride = null)
     {
+        var incidentId = incidentIdOverride ?? feedback.IncidentReportLinks
+            .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+            .Select(link => (Guid?)link.IncidentId)
+            .FirstOrDefault();
+
         await _notificationService.SendAsync(
             feedback.UserId,
             title,
             message,
             NotificationType.TicketUpdated,
-            targetUrl ?? $"/feedbacks/{feedback.FeedbackId}");
+            targetUrl ?? (incidentId.HasValue
+                ? $"/community/incidents/{incidentId.Value}"
+                : $"/feedbacks/{feedback.FeedbackId}"),
+            incidentId,
+            incidentId.HasValue ? "Incident" : "Feedback",
+            (incidentId ?? feedback.FeedbackId).ToString());
     }
 
     private async Task<Feedback> GetOwnedFeedbackWithDetailsAsync(Guid userId, Guid feedbackId, bool asNoTracking)
@@ -1350,7 +1386,7 @@ public class FeedbackService : IFeedbackService
 
         if (asNoTracking)
         {
-            query = query.AsNoTracking();
+            query = query.AsNoTrackingWithIdentityResolution();
         }
 
         var feedback = await query
