@@ -20,6 +20,7 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
     private readonly ILogger<AiFeedbackDuplicateService> _logger;
     private readonly double _nearbyRadiusMeters;
     private readonly int _maxCandidates;
+    private readonly int _lookbackDays;
 
     public AiFeedbackDuplicateService(
         IUnitOfWork uow,
@@ -36,6 +37,9 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
         _maxCandidates = int.TryParse(configuration["AI:DuplicateMaxCandidates"], out var maxCandidates)
             ? Math.Clamp(maxCandidates, 1, 10)
             : 5;
+        _lookbackDays = int.TryParse(configuration["AI:DuplicateLookbackDays"], out var lookbackDays)
+            ? Math.Clamp(lookbackDays, 1, 30)
+            : 7;
     }
 
     public async Task CheckAndLinkDuplicateAsync(Feedback feedback, Guid reviewedByUserId)
@@ -232,6 +236,7 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
 
     private async Task<bool> HasOlderUnresolvedFeedbackAsync(Feedback feedback)
     {
+        var oldestCreatedAt = feedback.CreatedAt.AddDays(-_lookbackDays);
         var excludedStatuses = new[]
         {
             FeedbackStatus.Closed,
@@ -247,6 +252,7 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
             .Where(candidate =>
                 candidate.FeedbackId != feedback.FeedbackId &&
                 candidate.AreaId == feedback.AreaId &&
+                candidate.CreatedAt >= oldestCreatedAt &&
                 candidate.CreatedAt <= feedback.CreatedAt &&
                 !candidate.IsMasterTicket &&
                 candidate.ParentTicketId == null &&
@@ -259,6 +265,7 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
 
     private async Task<IReadOnlyCollection<NearbyFeedbackCandidate>> FindNearbyCandidatesAsync(Feedback feedback)
     {
+        var oldestCreatedAt = feedback.CreatedAt.AddDays(-_lookbackDays);
         var excludedStatuses = new[]
         {
             FeedbackStatus.Closed,
@@ -270,6 +277,7 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
             .Where(f =>
                 f.FeedbackId != feedback.FeedbackId &&
                 f.AreaId == feedback.AreaId &&
+                f.CreatedAt >= oldestCreatedAt &&
                 f.CreatedAt <= feedback.CreatedAt &&
                 f.IsMasterTicket &&
                 f.ParentTicketId == null &&
@@ -410,6 +418,7 @@ public class AiFeedbackDuplicateService : IAiFeedbackDuplicateService
         return $$"""
         Ban la he thong phat hien phan anh do thi bi trung lap cho UrbanService.
         He thong da loc truoc cac phan anh gan nhau theo toa do trong ban kinh {{_nearbyRadiusMeters}} met.
+        Chi cac phan anh cu duoc tao trong vong {{_lookbackDays}} ngay truoc phan anh moi moi duoc xem xet.
         Hay quyet dinh feedback moi co trung voi mot feedback cu nao khong.
 
         Quy tac:

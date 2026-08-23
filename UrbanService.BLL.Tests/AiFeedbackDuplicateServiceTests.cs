@@ -228,6 +228,95 @@ public class AiFeedbackDuplicateServiceTests
             default);
     }
 
+    [Fact]
+    public async Task MasterOlderThanLookbackWindow_IsNotOfferedToAi()
+    {
+        var context = new DuplicateTestContext();
+        var createdAt = DateTime.UtcNow;
+        var oldMaster = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            createdAt.AddDays(-8),
+            isMaster: true);
+        var feedback = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            createdAt,
+            isMaster: false);
+        context.Feedbacks.AddRange([oldMaster, feedback]);
+
+        var aiClient = Substitute.For<IAiClient>();
+        var service = CreateService(context, aiClient);
+
+        await service.CheckAndLinkDuplicateAsync(feedback, Guid.NewGuid());
+
+        Assert.True(feedback.IsMasterTicket);
+        Assert.Empty(context.Candidates);
+        await aiClient.DidNotReceiveWithAnyArgs().ChatAsync(
+            default!,
+            default,
+            default,
+            default);
+    }
+
+    [Fact]
+    public async Task UnresolvedFeedbackOlderThanLookbackWindow_DoesNotDeferClassification()
+    {
+        var context = new DuplicateTestContext();
+        var createdAt = DateTime.UtcNow;
+        var oldUnresolved = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            createdAt.AddDays(-8),
+            isMaster: false);
+        var feedback = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            createdAt,
+            isMaster: false);
+        context.Feedbacks.AddRange([oldUnresolved, feedback]);
+
+        var aiClient = Substitute.For<IAiClient>();
+        var service = CreateService(context, aiClient);
+
+        await service.CheckAndLinkDuplicateAsync(feedback, Guid.NewGuid());
+
+        Assert.True(feedback.IsMasterTicket);
+        Assert.Empty(context.Candidates);
+        await aiClient.DidNotReceiveWithAnyArgs().ChatAsync(
+            default!,
+            default,
+            default,
+            default);
+    }
+
+    [Fact]
+    public async Task MasterOutsideTwoHundredMeters_IsNotOfferedToAi()
+    {
+        var context = new DuplicateTestContext();
+        var createdAt = DateTime.UtcNow;
+        var distantMaster = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            createdAt.AddMinutes(-5),
+            isMaster: true,
+            latitude: 10.7655m,
+            longitude: 106.660172m);
+        var feedback = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            createdAt,
+            isMaster: false);
+        context.Feedbacks.AddRange([distantMaster, feedback]);
+
+        var aiClient = Substitute.For<IAiClient>();
+        var service = CreateService(context, aiClient);
+
+        await service.CheckAndLinkDuplicateAsync(feedback, Guid.NewGuid());
+
+        Assert.True(feedback.IsMasterTicket);
+        Assert.Empty(context.Candidates);
+        await aiClient.DidNotReceiveWithAnyArgs().ChatAsync(
+            default!,
+            default,
+            default,
+            default);
+    }
+
     private static AiFeedbackDuplicateService CreateService(
         DuplicateTestContext context,
         IAiClient aiClient)
