@@ -17,15 +17,18 @@ public class ZaloController : ControllerBase
     private readonly IZaloService _zaloService;
     private readonly IZaloWebhookInbox _webhookInbox;
     private readonly IZaloWebhookQueue _webhookQueue;
+    private readonly bool _isEnabled;
 
     public ZaloController(
         IZaloService zaloService,
         IZaloWebhookInbox webhookInbox,
-        IZaloWebhookQueue webhookQueue)
+        IZaloWebhookQueue webhookQueue,
+        IConfiguration configuration)
     {
         _zaloService = zaloService;
         _webhookInbox = webhookInbox;
         _webhookQueue = webhookQueue;
+        _isEnabled = configuration.GetValue("Zalo:Enabled", false);
     }
 
     /// <summary>Nhận sự kiện từ Zalo OA và đưa vào hàng đợi xử lý.</summary>
@@ -36,6 +39,11 @@ public class ZaloController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> ReceiveWebhook(CancellationToken cancellationToken)
     {
+        if (!_isEnabled)
+        {
+            return NotFound();
+        }
+
         using var reader = new StreamReader(Request.Body, Encoding.UTF8);
         var payload = await reader.ReadToEndAsync(cancellationToken);
         var signature = Request.Headers["X-ZEvent-Signature"].FirstOrDefault();
@@ -63,6 +71,11 @@ public class ZaloController : ControllerBase
         string senderUserId,
         CancellationToken cancellationToken)
     {
+        if (!_isEnabled)
+        {
+            return NotFound();
+        }
+
         var conversation = await _zaloService.GetConversationAsync(
             senderUserId,
             cancellationToken);
@@ -77,6 +90,11 @@ public class ZaloController : ControllerBase
         string senderUserId,
         CancellationToken cancellationToken)
     {
+        if (!_isEnabled)
+        {
+            return NotFound();
+        }
+
         var conversation = await _zaloService.ResetConversationAsync(
             senderUserId,
             cancellationToken);

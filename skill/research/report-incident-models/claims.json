@@ -1,0 +1,7 @@
+[
+  {"claim":"Open311 GeoReport v2 is request-centric and has no canonical incident relationship","class":"standard","pub_date":"2026-08-23"},
+  {"claim":"CivicPlus supports identifying and merging duplicate submissions","class":"vendor-product","pub_date":"2026-08-23"},
+  {"claim":"Tacoma linked a duplicate request to an existing open case","class":"production-behavior","pub_date":"2026-04-21"},
+  {"claim":"ServiceNow separates customer cases from Incident and Request records","class":"architecture-pattern","pub_date":"2026-03-12"},
+  {"claim":"Dynamics merges cases into a target and preserves related records","class":"vendor-product","pub_date":"2026-05-08"}
+]

@@ -29,6 +29,7 @@ public class FeedbackService : IFeedbackService
     private readonly INotificationService _notificationService;
     private readonly IAiFeedbackReviewQueue _aiFeedbackReviewQueue;
     private readonly ISlaService _slaService;
+    private readonly IIncidentService _incidentService;
 
 
     public FeedbackService(
@@ -36,12 +37,14 @@ public class FeedbackService : IFeedbackService
     INotificationService notificationService,
     IAiFeedbackReviewQueue aiFeedbackReviewQueue,
     IAiFeedbackDuplicateService aiFeedbackDuplicateService,
-    ISlaService slaService)
+    ISlaService slaService,
+    IIncidentService incidentService)
     {
         _uow = uow;
         _notificationService = notificationService;
         _aiFeedbackReviewQueue = aiFeedbackReviewQueue;
         _slaService = slaService;
+        _incidentService = incidentService;
     }
 
     public async Task ClearCompletionDocumentsAsync(
@@ -154,8 +157,19 @@ public class FeedbackService : IFeedbackService
             ChangedAt = now
         });
 
-        await _uow.GetRepository<Feedback>().AddAsync(feedback);
-        await _uow.SaveAsync();
+        _uow.BeginTransaction();
+        try
+        {
+            await _uow.GetRepository<Feedback>().AddAsync(feedback);
+            await _incidentService.StageNewReportIncidentAsync(feedback, userId, now);
+            await _uow.SaveAsync();
+            _uow.CommitTransaction();
+        }
+        catch
+        {
+            _uow.RollBack();
+            throw;
+        }
 
         await _aiFeedbackReviewQueue.EnqueueAsync(feedback.FeedbackId, userId);
         await SendFeedbackNotificationAsync(
@@ -236,7 +250,19 @@ public class FeedbackService : IFeedbackService
                 SupportCount = f.FeedbackSupports.Count,
                 DuplicateWarning = f.FeedbackDuplicateCandidates.Any(candidate => candidate.Status == "Pending"),
                 ParentTicketId = f.ParentTicketId,
-                IsMasterTicket = f.IsMasterTicket
+                IsMasterTicket = f.IsMasterTicket,
+                IncidentId = f.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .Select(link => (Guid?)link.IncidentId)
+                    .FirstOrDefault(),
+                IncidentReportCount = f.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .Select(link => link.Incident.IncidentReportLinks.Count(item => item.LinkStatus == IncidentLinkStatus.Active))
+                    .FirstOrDefault(),
+                IncidentLinkStatus = f.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .Select(link => link.LinkStatus)
+                    .FirstOrDefault()
             })
             .ToListAsync();
 
@@ -342,7 +368,19 @@ public class FeedbackService : IFeedbackService
                 SupportCount = f.FeedbackSupports.Count,
                 DuplicateWarning = f.FeedbackDuplicateCandidates.Any(candidate => candidate.Status == "Pending"),
                 ParentTicketId = f.ParentTicketId,
-                IsMasterTicket = f.IsMasterTicket
+                IsMasterTicket = f.IsMasterTicket,
+                IncidentId = f.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .Select(link => (Guid?)link.IncidentId)
+                    .FirstOrDefault(),
+                IncidentReportCount = f.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .Select(link => link.Incident.IncidentReportLinks.Count(item => item.LinkStatus == IncidentLinkStatus.Active))
+                    .FirstOrDefault(),
+                IncidentLinkStatus = f.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .Select(link => link.LinkStatus)
+                    .FirstOrDefault()
             })
             .ToListAsync();
 
@@ -425,7 +463,19 @@ public class FeedbackService : IFeedbackService
                 SupportCount = f.FeedbackSupports.Count,
                 DuplicateWarning = f.FeedbackDuplicateCandidates.Any(candidate => candidate.Status == "Pending"),
                 ParentTicketId = f.ParentTicketId,
-                IsMasterTicket = f.IsMasterTicket
+                IsMasterTicket = f.IsMasterTicket,
+                IncidentId = f.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .Select(link => (Guid?)link.IncidentId)
+                    .FirstOrDefault(),
+                IncidentReportCount = f.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .Select(link => link.Incident.IncidentReportLinks.Count(item => item.LinkStatus == IncidentLinkStatus.Active))
+                    .FirstOrDefault(),
+                IncidentLinkStatus = f.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .Select(link => link.LinkStatus)
+                    .FirstOrDefault()
             })
             .ToListAsync();
 
@@ -505,7 +555,19 @@ public class FeedbackService : IFeedbackService
                     SupportCount = f.FeedbackSupports.Count,
                     DuplicateWarning = f.FeedbackDuplicateCandidates.Any(candidate => candidate.Status == "Pending"),
                     ParentTicketId = f.ParentTicketId,
-                    IsMasterTicket = f.IsMasterTicket
+                    IsMasterTicket = f.IsMasterTicket,
+                    IncidentId = f.IncidentReportLinks
+                        .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                        .Select(link => (Guid?)link.IncidentId)
+                        .FirstOrDefault(),
+                    IncidentReportCount = f.IncidentReportLinks
+                        .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                        .Select(link => link.Incident.IncidentReportLinks.Count(item => item.LinkStatus == IncidentLinkStatus.Active))
+                        .FirstOrDefault(),
+                    IncidentLinkStatus = f.IncidentReportLinks
+                        .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                        .Select(link => link.LinkStatus)
+                        .FirstOrDefault()
                 },
                 AnalysisResult = f.AnalysisResults
                     .OrderByDescending(a => a.CreatedAt)
@@ -1222,6 +1284,9 @@ public class FeedbackService : IFeedbackService
             .Include(f => f.FeedbackStatusHistories)
                 .ThenInclude(h => h.ChangedByUser)
             .Include(f => f.FeedbackSupports)
+            .Include(f => f.IncidentReportLinks)
+                .ThenInclude(link => link.Incident)
+                    .ThenInclude(incident => incident.IncidentReportLinks)
             .FirstOrDefaultAsync(f => f.FeedbackId == feedbackId);
 
         return feedback ?? throw new Exception("Không tìm thấy feedback.");
@@ -1298,6 +1363,9 @@ public class FeedbackService : IFeedbackService
             .Include(f => f.FeedbackStatusHistories)
                 .ThenInclude(h => h.ChangedByUser)
             .Include(f => f.FeedbackSupports)
+            .Include(f => f.IncidentReportLinks)
+                .ThenInclude(link => link.Incident)
+                    .ThenInclude(incident => incident.IncidentReportLinks)
             .FirstOrDefaultAsync(f => f.FeedbackId == feedbackId && f.UserId == userId);
 
         return feedback ?? throw new Exception("Không tìm thấy feedback.");
@@ -1570,6 +1638,11 @@ public class FeedbackService : IFeedbackService
 
     private static FeedbackDetailDto MapDetail(Feedback feedback, Guid userId)
     {
+        var activeIncidentLink = feedback.IncidentReportLinks
+            .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+            .OrderByDescending(link => link.LinkedAt)
+            .FirstOrDefault();
+
         return new FeedbackDetailDto
         {
             FeedbackId = feedback.FeedbackId,
@@ -1600,6 +1673,10 @@ public class FeedbackService : IFeedbackService
             PotentialDuplicate = null,
             ParentTicketId = feedback.ParentTicketId,
             IsMasterTicket = feedback.IsMasterTicket,
+            IncidentId = activeIncidentLink?.IncidentId,
+            IncidentReportCount = activeIncidentLink?.Incident.IncidentReportLinks
+                .Count(link => link.LinkStatus == IncidentLinkStatus.Active) ?? 0,
+            IncidentLinkStatus = activeIncidentLink?.LinkStatus,
             IsSupportedByCurrentUser = feedback.FeedbackSupports.Any(s => s.UserId == userId),
             Attachments = feedback.FeedbackAttachments
                 .OrderBy(a => a.UploadedAt)

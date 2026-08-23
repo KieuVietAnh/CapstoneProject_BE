@@ -28,6 +28,17 @@ public class FeedbackDuplicateCandidateDto
 
     public Guid PotentialParentFeedbackId { get; set; }
 
+    public Guid? IncidentId { get; set; }
+
+    /// <summary>Incident active hiện tại của Report đang được đánh giá.</summary>
+    public Guid? CurrentIncidentId { get; set; }
+
+    /// <summary>Incident active của Report canonical được đề xuất.</summary>
+    public Guid? SuggestedIncidentId { get; set; }
+
+    /// <summary>Hai Report hiện đã có cùng active Incident hay chưa.</summary>
+    public bool AreInSameIncident { get; set; }
+
     public string Status { get; set; } = null!;
 
     public decimal? ConfidenceScore { get; set; }

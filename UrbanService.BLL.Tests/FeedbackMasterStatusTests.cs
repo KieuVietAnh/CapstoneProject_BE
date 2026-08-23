@@ -104,6 +104,7 @@ public class FeedbackMasterStatusTests
             Substitute.For<INotificationService>(),
             Substitute.For<IAiFeedbackReviewQueue>(),
             Substitute.For<IAiFeedbackDuplicateService>(),
-            Substitute.For<ISlaService>());
+            Substitute.For<ISlaService>(),
+            Substitute.For<IIncidentService>());
     }
 }

@@ -33,5 +33,7 @@ public partial class UrbanServiceCategory
 
     public virtual ICollection<Feedback> Feedbacks { get; set; } = new List<Feedback>();
 
+    public virtual ICollection<Incident> Incidents { get; set; } = new List<Incident>();
+
     public virtual ICollection<ProviderContract> ProviderContracts { get; set; } = new List<ProviderContract>();
 }

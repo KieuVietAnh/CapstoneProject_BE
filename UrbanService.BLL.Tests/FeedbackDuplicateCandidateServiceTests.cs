@@ -1,7 +1,10 @@
+using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Interfaces;
 using UrbanService.BLL.Services;
+using UrbanService.Controllers;
+using UrbanService.DAL.Entities;
 using Xunit;
 
 namespace UrbanService.BLL.Tests;
@@ -26,7 +29,11 @@ public class FeedbackDuplicateCandidateServiceTests
         context.Feedbacks.AddRange([a, b]);
         var candidate = context.Candidate(b, a);
         var notificationService = Substitute.For<INotificationService>();
-        var service = new FeedbackDuplicateCandidateService(context.UnitOfWork, notificationService);
+        var incidentService = Substitute.For<IIncidentService>();
+        var service = new FeedbackDuplicateCandidateService(
+            context.UnitOfWork,
+            notificationService,
+            incidentService);
         var staffUserId = Guid.NewGuid();
 
         await service.ConfirmAsync(candidate.DuplicateCandidateId, staffUserId);
@@ -37,12 +44,55 @@ public class FeedbackDuplicateCandidateServiceTests
         Assert.Equal("Confirmed", candidate.Status);
         Assert.Equal(staffUserId, candidate.ReviewedByUserId);
         context.UnitOfWork.Received(1).CommitTransaction();
+        await incidentService.Received(1).RelinkConfirmedDuplicateAsync(
+            b,
+            a,
+            staffUserId,
+            candidate.ConfidenceScore,
+            candidate.Reason,
+            Arg.Any<CancellationToken>());
         await notificationService.Received(1).SendAsync(
             b.UserId,
-            Arg.Any<string>(),
-            Arg.Any<string>(),
+            "Phản ánh đã được ghi nhận vào sự vụ hiện có",
+            Arg.Is<string>(message => message.Contains("thông tin bổ sung") && message.Contains("vẫn được lưu giữ")),
             Arg.Any<string>(),
             $"/community/feed/{a.FeedbackId}");
+    }
+
+    [Fact]
+    public async Task CandidateDetail_ExposesCurrentAndSuggestedIncidents()
+    {
+        var context = new DuplicateTestContext();
+        var createdAt = DateTime.UtcNow;
+        var parent = DuplicateTestContext.Feedback(Guid.NewGuid(), createdAt.AddMinutes(-10), isMaster: true);
+        var report = DuplicateTestContext.Feedback(Guid.NewGuid(), createdAt, isMaster: false);
+        var currentIncidentId = Guid.NewGuid();
+        var suggestedIncidentId = Guid.NewGuid();
+        report.IncidentReportLinks.Add(ActiveLink(currentIncidentId, report));
+        parent.IncidentReportLinks.Add(ActiveLink(suggestedIncidentId, parent));
+        context.Feedbacks.AddRange([parent, report]);
+        var candidate = context.Candidate(report, parent);
+        var service = CreateService(context);
+
+        var result = await service.GetCandidateDetailAsync(candidate.DuplicateCandidateId);
+
+        Assert.Equal(currentIncidentId, result.IncidentId);
+        Assert.Equal(currentIncidentId, result.CurrentIncidentId);
+        Assert.Equal(suggestedIncidentId, result.SuggestedIncidentId);
+        Assert.False(result.AreInSameIncident);
+    }
+
+    [Fact]
+    public void Controller_ExposesIncidentMatchRouteAlongsideLegacyRoute()
+    {
+        var routes = typeof(StaffFeedbackDuplicatesController)
+            .GetCustomAttributes(typeof(RouteAttribute), inherit: true)
+            .Cast<RouteAttribute>()
+            .Select(attribute => attribute.Template)
+            .ToList();
+
+        Assert.Contains("api/staff/feedback-duplicates", routes);
+        Assert.Contains("api/management/incident-match-candidates", routes);
     }
 
     [Fact]
@@ -65,6 +115,36 @@ public class FeedbackDuplicateCandidateServiceTests
         Assert.Equal("Rejected", competing.Status);
         Assert.Equal(staffUserId, competing.ReviewedByUserId);
         Assert.Equal(a.FeedbackId, b.ParentTicketId);
+    }
+
+    [Fact]
+    public async Task Confirm_WhenAlreadyConfirmed_IsIdempotent()
+    {
+        var context = new DuplicateTestContext();
+        var createdAt = DateTime.UtcNow;
+        var parent = DuplicateTestContext.Feedback(Guid.NewGuid(), createdAt.AddMinutes(-10), isMaster: true);
+        var report = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            createdAt,
+            isMaster: false,
+            parentTicketId: parent.FeedbackId);
+        context.Feedbacks.AddRange([parent, report]);
+        var candidate = context.Candidate(report, parent, status: "Confirmed");
+        var notificationService = Substitute.For<INotificationService>();
+        var incidentService = Substitute.For<IIncidentService>();
+        var service = new FeedbackDuplicateCandidateService(
+            context.UnitOfWork,
+            notificationService,
+            incidentService);
+
+        var result = await service.ConfirmAsync(candidate.DuplicateCandidateId, Guid.NewGuid());
+
+        Assert.Equal("Confirmed", result.Status);
+        await incidentService.DidNotReceiveWithAnyArgs().RelinkConfirmedDuplicateAsync(
+            default!, default!, default, default, default);
+        await notificationService.DidNotReceiveWithAnyArgs().SendAsync(
+            default, default!, default!, default!, default!);
+        context.UnitOfWork.Received(1).CommitTransaction();
     }
 
     [Fact]
@@ -217,10 +297,57 @@ public class FeedbackDuplicateCandidateServiceTests
         Assert.Null(b.ParentTicketId);
     }
 
+    [Fact]
+    public async Task Reject_WhenAlreadyRejected_IsIdempotent()
+    {
+        var context = new DuplicateTestContext();
+        var createdAt = DateTime.UtcNow;
+        var parent = DuplicateTestContext.Feedback(Guid.NewGuid(), createdAt.AddMinutes(-10), isMaster: true);
+        var report = DuplicateTestContext.Feedback(Guid.NewGuid(), createdAt, isMaster: true);
+        context.Feedbacks.AddRange([parent, report]);
+        var candidate = context.Candidate(report, parent, status: "Rejected");
+        var service = CreateService(context);
+
+        var result = await service.RejectAsync(candidate.DuplicateCandidateId, Guid.NewGuid());
+
+        Assert.Equal("Rejected", result.Status);
+        Assert.True(report.IsMasterTicket);
+        Assert.Null(report.ParentTicketId);
+        context.UnitOfWork.Received(1).CommitTransaction();
+        await context.UnitOfWork.DidNotReceive().SaveAsync();
+    }
+
     private static FeedbackDuplicateCandidateService CreateService(DuplicateTestContext context)
     {
         return new FeedbackDuplicateCandidateService(
             context.UnitOfWork,
-            Substitute.For<INotificationService>());
+            Substitute.For<INotificationService>(),
+            Substitute.For<IIncidentService>());
+    }
+
+    private static IncidentReportLink ActiveLink(Guid incidentId, Feedback feedback)
+    {
+        var incident = new Incident
+        {
+            IncidentId = incidentId,
+            AreaId = feedback.AreaId,
+            Title = feedback.Title,
+            LocationText = feedback.LocationText,
+            Status = feedback.Status,
+            CreatedAt = feedback.CreatedAt
+        };
+
+        return new IncidentReportLink
+        {
+            IncidentReportLinkId = Guid.NewGuid(),
+            IncidentId = incidentId,
+            Incident = incident,
+            FeedbackId = feedback.FeedbackId,
+            Feedback = feedback,
+            LinkStatus = IncidentLinkStatus.Active,
+            LinkMethod = IncidentLinkMethod.Created,
+            LinkRole = IncidentLinkRole.Primary,
+            LinkedAt = feedback.CreatedAt
+        };
     }
 }

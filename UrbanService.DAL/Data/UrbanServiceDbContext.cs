@@ -49,6 +49,14 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<InteractionMessage> InteractionMessages { get; set; }
 
+    public virtual DbSet<Incident> Incidents { get; set; }
+
+    public virtual DbSet<IncidentEvent> IncidentEvents { get; set; }
+
+    public virtual DbSet<IncidentReportLink> IncidentReportLinks { get; set; }
+
+    public virtual DbSet<IncidentSubscription> IncidentSubscriptions { get; set; }
+
     public virtual DbSet<MessageAttachment> MessageAttachments { get; set; }
 
     public virtual DbSet<MessengerFeedbackConversation> MessengerFeedbackConversations { get; set; }
@@ -336,6 +344,184 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.UploadedByUserId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_provider_contract_attachment_uploaded_by");
+        });
+
+        modelBuilder.Entity<Incident>(entity =>
+        {
+            entity.HasKey(e => e.IncidentId).HasName("incidents_pkey");
+            entity.ToTable("incidents", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_incident_status",
+                    "status IN ('New', 'Submitted', 'AiReviewed', 'Verified', 'Assigned', 'InProgress', 'Resolved', 'SubmittedForApproval', 'Approved', 'Rejected', 'NeedRework', 'Closed', 'Cancelled', 'Merged')");
+                table.HasCheckConstraint(
+                    "ck_incident_merge_not_self",
+                    "merged_into_incident_id IS NULL OR merged_into_incident_id <> incident_id");
+            });
+
+            entity.HasIndex(e => new { e.AreaId, e.Status, e.CreatedAt }, "ix_incidents_area_status_created_at");
+            entity.HasIndex(e => new { e.CategoryId, e.Status }, "ix_incidents_category_status");
+            entity.HasIndex(e => e.MergedIntoIncidentId, "ix_incidents_merged_into_incident_id");
+
+            entity.Property(e => e.IncidentId).HasDefaultValueSql("gen_random_uuid()").HasColumnName("incident_id");
+            entity.Property(e => e.AreaId).HasColumnName("area_id");
+            entity.Property(e => e.CategoryId).HasColumnName("category_id");
+            entity.Property(e => e.Title).HasMaxLength(200).HasColumnName("title");
+            entity.Property(e => e.Description).HasColumnName("description");
+            entity.Property(e => e.LocationText).HasMaxLength(255).HasColumnName("location_text");
+            entity.Property(e => e.Latitude).HasPrecision(10, 7).HasColumnName("latitude");
+            entity.Property(e => e.Longitude).HasPrecision(10, 7).HasColumnName("longitude");
+            entity.Property(e => e.Priority).HasMaxLength(50).HasDefaultValueSql("'Medium'::character varying").HasColumnName("priority");
+            entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValueSql("'New'::character varying").HasColumnName("status");
+            entity.Property(e => e.DueDate).HasColumnName("due_date");
+            entity.Property(e => e.ResolvedAt).HasColumnName("resolved_at");
+            entity.Property(e => e.ClosedAt).HasColumnName("closed_at");
+            entity.Property(e => e.MergedIntoIncidentId).HasColumnName("merged_into_incident_id");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Area).WithMany(p => p.Incidents)
+                .HasForeignKey(d => d.AreaId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_incident_area");
+
+            entity.HasOne(d => d.Category).WithMany(p => p.Incidents)
+                .HasForeignKey(d => d.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_incident_category");
+
+            entity.HasOne(d => d.MergedIntoIncident).WithMany(p => p.MergedIncidents)
+                .HasForeignKey(d => d.MergedIntoIncidentId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_incident_merged_into");
+        });
+
+        modelBuilder.Entity<IncidentReportLink>(entity =>
+        {
+            entity.HasKey(e => e.IncidentReportLinkId).HasName("incident_report_links_pkey");
+            entity.ToTable("incident_report_links", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_incident_report_link_status",
+                    "link_status IN ('Active', 'Unlinked')");
+                table.HasCheckConstraint(
+                    "ck_incident_report_link_method",
+                    "link_method IN ('Created', 'Backfill', 'UserSelected', 'AiSuggested', 'StaffConfirmed')");
+                table.HasCheckConstraint(
+                    "ck_incident_report_link_role",
+                    "link_role IN ('Primary', 'Corroborating')");
+                table.HasCheckConstraint(
+                    "ck_incident_report_link_unlinked",
+                    "(link_status = 'Active' AND unlinked_at IS NULL) OR (link_status = 'Unlinked' AND unlinked_at IS NOT NULL)");
+            });
+
+            entity.HasIndex(e => e.IncidentId, "ix_incident_report_links_incident_id");
+            entity.HasIndex(e => e.FeedbackId, "uq_incident_report_links_active_feedback")
+                .IsUnique()
+                .HasFilter("link_status = 'Active'");
+
+            entity.Property(e => e.IncidentReportLinkId).HasDefaultValueSql("gen_random_uuid()").HasColumnName("incident_report_link_id");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
+            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
+            entity.Property(e => e.LinkStatus).HasMaxLength(20).HasDefaultValue("Active").HasColumnName("link_status");
+            entity.Property(e => e.LinkMethod).HasMaxLength(30).HasColumnName("link_method");
+            entity.Property(e => e.LinkRole).HasMaxLength(30).HasDefaultValue("Corroborating").HasColumnName("link_role");
+            entity.Property(e => e.ConfidenceScore).HasPrecision(5, 4).HasColumnName("confidence_score");
+            entity.Property(e => e.Reason).HasColumnName("reason");
+            entity.Property(e => e.LinkedByUserId).HasColumnName("linked_by_user_id");
+            entity.Property(e => e.LinkedAt).HasDefaultValueSql("now()").HasColumnName("linked_at");
+            entity.Property(e => e.UnlinkedByUserId).HasColumnName("unlinked_by_user_id");
+            entity.Property(e => e.UnlinkedAt).HasColumnName("unlinked_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Incident).WithMany(p => p.IncidentReportLinks)
+                .HasForeignKey(d => d.IncidentId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_incident_report_link_incident");
+
+            entity.HasOne(d => d.Feedback).WithMany(p => p.IncidentReportLinks)
+                .HasForeignKey(d => d.FeedbackId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_incident_report_link_feedback");
+
+            entity.HasOne(d => d.LinkedByUser).WithMany()
+                .HasForeignKey(d => d.LinkedByUserId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_incident_report_link_linked_by");
+
+            entity.HasOne(d => d.UnlinkedByUser).WithMany()
+                .HasForeignKey(d => d.UnlinkedByUserId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_incident_report_link_unlinked_by");
+        });
+
+        modelBuilder.Entity<IncidentEvent>(entity =>
+        {
+            entity.HasKey(e => e.IncidentEventId).HasName("incident_events_pkey");
+            entity.ToTable("incident_events");
+
+            entity.HasIndex(e => new { e.IncidentId, e.CreatedAt }, "ix_incident_events_incident_created_at");
+
+            entity.Property(e => e.IncidentEventId).HasColumnName("incident_event_id");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
+            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
+            entity.Property(e => e.EventType).HasMaxLength(50).HasColumnName("event_type");
+            entity.Property(e => e.ActorUserId).HasColumnName("actor_user_id");
+            entity.Property(e => e.PayloadJson).HasColumnType("jsonb").HasColumnName("payload_json");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+
+            entity.HasOne(d => d.Incident).WithMany(p => p.IncidentEvents)
+                .HasForeignKey(d => d.IncidentId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_incident_event_incident");
+
+            entity.HasOne(d => d.Feedback).WithMany(p => p.IncidentEvents)
+                .HasForeignKey(d => d.FeedbackId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_incident_event_feedback");
+
+            entity.HasOne(d => d.ActorUser).WithMany()
+                .HasForeignKey(d => d.ActorUserId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_incident_event_actor");
+        });
+
+        modelBuilder.Entity<IncidentSubscription>(entity =>
+        {
+            entity.HasKey(e => e.IncidentSubscriptionId).HasName("incident_subscriptions_pkey");
+            entity.ToTable("incident_subscriptions", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_incident_subscription_source_type",
+                    "source_type IN ('Report', 'Follow', 'Support', 'Backfill')");
+            });
+
+            entity.HasIndex(e => new { e.IncidentId, e.UserId }, "uq_incident_subscriptions_incident_user").IsUnique();
+            entity.HasIndex(e => new { e.UserId, e.IsActive }, "ix_incident_subscriptions_user_active");
+
+            entity.Property(e => e.IncidentSubscriptionId).HasDefaultValueSql("gen_random_uuid()").HasColumnName("incident_subscription_id");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.SourceType).HasMaxLength(20).HasColumnName("source_type");
+            entity.Property(e => e.SourceFeedbackId).HasColumnName("source_feedback_id");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Incident).WithMany(p => p.IncidentSubscriptions)
+                .HasForeignKey(d => d.IncidentId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_incident_subscription_incident");
+
+            entity.HasOne(d => d.User).WithMany()
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_incident_subscription_user");
+
+            entity.HasOne(d => d.SourceFeedback).WithMany(p => p.IncidentSubscriptions)
+                .HasForeignKey(d => d.SourceFeedbackId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_incident_subscription_source_feedback");
         });
 
         modelBuilder.Entity<Feedback>(entity =>

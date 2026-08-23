@@ -191,7 +191,8 @@ public class FeedbackAdminDeleteTests
             Substitute.For<INotificationService>(),
             Substitute.For<IAiFeedbackReviewQueue>(),
             Substitute.For<IAiFeedbackDuplicateService>(),
-            Substitute.For<ISlaService>());
+            Substitute.For<ISlaService>(),
+            Substitute.For<IIncidentService>());
     }
 
     private static ManagementFeedbacksController CreateController(IFeedbackService feedbackService)

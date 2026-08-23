@@ -12,6 +12,7 @@ namespace UrbanService.Controllers;
 [ApiController]
 [Authorize(Roles = UserRole.SYSTEMSTAFF + "," + UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
 [Route("api/staff/feedback-duplicates")]
+[Route("api/management/incident-match-candidates")]
 public class StaffFeedbackDuplicatesController : ControllerBase
 {
     private readonly IFeedbackDuplicateCandidateService _duplicateCandidateService;
@@ -21,7 +22,7 @@ public class StaffFeedbackDuplicatesController : ControllerBase
         _duplicateCandidateService = duplicateCandidateService;
     }
 
-    /// <summary>Lấy số lượng case feedback nghi trùng theo trạng thái.</summary>
+    /// <summary>Lấy số lượng đề xuất các Report có thể cùng thuộc một Incident.</summary>
     /// <remarks>
     /// Role được phép: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER.
     /// FE dùng để hiển thị badge/card pending count trên staff dashboard.
@@ -36,7 +37,7 @@ public class StaffFeedbackDuplicatesController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Lấy danh sách case feedback nghi trùng.</summary>
+    /// <summary>Lấy danh sách đề xuất các Report có thể cùng thuộc một Incident.</summary>
     /// <remarks>
     /// Role được phép: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER.
     /// Hỗ trợ filter theo status, ví dụ Pending/Confirmed/Rejected, và phân trang.
@@ -51,7 +52,7 @@ public class StaffFeedbackDuplicatesController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Xem chi tiết một case feedback nghi trùng.</summary>
+    /// <summary>So sánh Report mới với Report đại diện của Incident được đề xuất.</summary>
     /// <remarks>
     /// Role được phép: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER.
     /// FE dùng response này để render màn compare feedback mới và potential parent feedback.
@@ -67,14 +68,12 @@ public class StaffFeedbackDuplicatesController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Staff xác nhận hai feedback là trùng nhau và thực hiện gộp ticket.</summary>
+    /// <summary>Xác nhận hai Report cùng sự vụ và chuyển Report vào Incident canonical.</summary>
     /// <remarks>
     /// Chỉ role SYSTEMSTAFF/SYSTEMADMIN/INTERACTIONMANAGER được phép.
-    /// Khi confirm:
-    /// - feedback con được set ParentTicketId = parentFeedbackId
-    /// - feedback con IsMasterTicket = false
-    /// - feedback chính IsMasterTicket = true
-    /// - duplicate candidate chuyển Confirmed
+    /// Khi confirm, Feedback/Report vẫn được giữ nguyên; active link được chuyển sang
+    /// Incident canonical, Incident rỗng được đánh dấu Merged và candidate chuyển Confirmed.
+    /// ParentTicketId/IsMasterTicket vẫn được cập nhật tạm thời để tương thích API cũ.
     /// </remarks>
     [HttpPost("{duplicateCandidateId:guid}/confirm")]
     [ProducesResponseType(typeof(FeedbackDuplicateCandidateDto), StatusCodes.Status200OK)]
@@ -87,10 +86,10 @@ public class StaffFeedbackDuplicatesController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Staff từ chối case nghi trùng, không gộp ticket.</summary>
+    /// <summary>Từ chối đề xuất cùng sự vụ; mỗi Report tiếp tục thuộc Incident riêng.</summary>
     /// <remarks>
     /// Chỉ role SYSTEMSTAFF/SYSTEMADMIN/INTERACTIONMANAGER được phép.
-    /// Khi reject, hệ thống chỉ chuyển duplicate candidate sang Rejected và không set ParentTicketId.
+    /// Khi reject, candidate chuyển Rejected, không relink Report và không merge Incident.
     /// </remarks>
     [HttpPost("{duplicateCandidateId:guid}/reject")]
     [ProducesResponseType(typeof(FeedbackDuplicateCandidateDto), StatusCodes.Status200OK)]

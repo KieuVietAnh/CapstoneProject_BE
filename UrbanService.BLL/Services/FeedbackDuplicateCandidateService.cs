@@ -17,13 +17,16 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
 
     private readonly IUnitOfWork _uow;
     private readonly INotificationService _notificationService;
+    private readonly IIncidentService _incidentService;
 
     public FeedbackDuplicateCandidateService(
         IUnitOfWork uow,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IIncidentService incidentService)
     {
         _uow = uow;
         _notificationService = notificationService;
+        _incidentService = incidentService;
     }
 
     public async Task<FeedbackDuplicateSummaryDto> GetSummaryAsync()
@@ -94,6 +97,12 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
                 .Include(c => c.PotentialParentFeedback)
                 .FirstOrDefaultAsync(c => c.DuplicateCandidateId == duplicateCandidateId)
                 ?? throw new Exception("Không tìm thấy đề xuất phản ánh trùng.");
+
+            if (string.Equals(candidate.Status, ConfirmedStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                _uow.CommitTransaction();
+                return await GetCandidateDetailAsync(duplicateCandidateId);
+            }
 
             if (!string.Equals(candidate.Status, PendingStatus, StringComparison.OrdinalIgnoreCase))
             {
@@ -180,6 +189,13 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             candidate.ReviewedAt = reviewedAt;
             candidate.UpdatedAt = reviewedAt;
 
+            await _incidentService.RelinkConfirmedDuplicateAsync(
+                childFeedback,
+                parentFeedback,
+                staffUserId,
+                candidate.ConfidenceScore,
+                candidate.Reason);
+
             await _uow.SaveAsync();
             _uow.CommitTransaction();
         }
@@ -191,8 +207,8 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
 
         await _notificationService.SendAsync(
             childFeedback.UserId,
-            "Phản ánh bị đánh dấu trùng",
-            "Phản ánh của bạn đã bị đánh dấu trùng với một phản ánh khác.",
+            "Phản ánh đã được ghi nhận vào sự vụ hiện có",
+            "Phản ánh của bạn được xác nhận là thông tin bổ sung cho một sự vụ đã được ghi nhận. Nội dung phản ánh vẫn được lưu giữ.",
             NotificationType.TicketUpdated,
             $"/community/feed/{parentFeedback.FeedbackId}");
 
@@ -209,6 +225,12 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
                 .Include(c => c.Feedback)
                 .FirstOrDefaultAsync(c => c.DuplicateCandidateId == duplicateCandidateId)
                 ?? throw new Exception("Không tìm thấy đề xuất phản ánh trùng.");
+
+            if (string.Equals(candidate.Status, RejectedStatus, StringComparison.OrdinalIgnoreCase))
+            {
+                _uow.CommitTransaction();
+                return await GetCandidateDetailAsync(duplicateCandidateId);
+            }
 
             if (!string.Equals(candidate.Status, PendingStatus, StringComparison.OrdinalIgnoreCase))
             {
@@ -258,6 +280,9 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             .Include(f => f.FeedbackAttachments)
             .Include(f => f.FeedbackComments)
             .Include(f => f.FeedbackSupports)
+            .Include(f => f.IncidentReportLinks)
+                .ThenInclude(link => link.Incident)
+                    .ThenInclude(incident => incident.IncidentReportLinks)
             .Where(f => f.ParentTicketId == feedbackId)
             .OrderByDescending(f => f.CreatedAt)
             .ToListAsync();
@@ -308,6 +333,10 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
                 .ThenInclude(f => f.FeedbackComments)
             .Include(c => c.Feedback)
                 .ThenInclude(f => f.FeedbackSupports)
+            .Include(c => c.Feedback)
+                .ThenInclude(f => f.IncidentReportLinks)
+                    .ThenInclude(link => link.Incident)
+                        .ThenInclude(incident => incident.IncidentReportLinks)
             .Include(c => c.PotentialParentFeedback)
                 .ThenInclude(f => f.User)
             .Include(c => c.PotentialParentFeedback)
@@ -320,6 +349,10 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
                 .ThenInclude(f => f.FeedbackComments)
             .Include(c => c.PotentialParentFeedback)
                 .ThenInclude(f => f.FeedbackSupports)
+            .Include(c => c.PotentialParentFeedback)
+                .ThenInclude(f => f.IncidentReportLinks)
+                    .ThenInclude(link => link.Incident)
+                        .ThenInclude(incident => incident.IncidentReportLinks)
             .Include(c => c.ReviewedByUser);
     }
 
@@ -332,7 +365,10 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             .Include(f => f.Category)
             .Include(f => f.FeedbackAttachments)
             .Include(f => f.FeedbackComments)
-            .Include(f => f.FeedbackSupports);
+            .Include(f => f.FeedbackSupports)
+            .Include(f => f.IncidentReportLinks)
+                .ThenInclude(link => link.Incident)
+                    .ThenInclude(incident => incident.IncidentReportLinks);
     }
 
     private async Task EnsureFeedbackExistsAsync(Guid feedbackId)
@@ -349,11 +385,24 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
 
     private static FeedbackDuplicateCandidateDto MapCandidate(FeedbackDuplicateCandidate candidate)
     {
+        var currentIncidentId = candidate.Feedback.IncidentReportLinks
+            .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+            .Select(link => (Guid?)link.IncidentId)
+            .FirstOrDefault();
+        var suggestedIncidentId = candidate.PotentialParentFeedback.IncidentReportLinks
+            .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+            .Select(link => (Guid?)link.IncidentId)
+            .FirstOrDefault();
+
         return new FeedbackDuplicateCandidateDto
         {
             DuplicateCandidateId = candidate.DuplicateCandidateId,
             FeedbackId = candidate.FeedbackId,
             PotentialParentFeedbackId = candidate.PotentialParentFeedbackId,
+            IncidentId = currentIncidentId,
+            CurrentIncidentId = currentIncidentId,
+            SuggestedIncidentId = suggestedIncidentId,
+            AreInSameIncident = currentIncidentId.HasValue && currentIncidentId == suggestedIncidentId,
             Status = candidate.Status,
             ConfidenceScore = candidate.ConfidenceScore,
             Reason = candidate.Reason,
@@ -392,7 +441,19 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             DuplicateWarning = false,
             PotentialDuplicate = null,
             ParentTicketId = feedback.ParentTicketId,
-            IsMasterTicket = feedback.IsMasterTicket
+            IsMasterTicket = feedback.IsMasterTicket,
+            IncidentId = feedback.IncidentReportLinks
+                .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                .Select(link => (Guid?)link.IncidentId)
+                .FirstOrDefault(),
+            IncidentReportCount = feedback.IncidentReportLinks
+                .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                .Select(link => link.Incident.IncidentReportLinks.Count(item => item.LinkStatus == IncidentLinkStatus.Active))
+                .FirstOrDefault(),
+            IncidentLinkStatus = feedback.IncidentReportLinks
+                .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                .Select(link => link.LinkStatus)
+                .FirstOrDefault()
         };
     }
 }

@@ -58,6 +58,7 @@ services:
       Messenger__MaxImageBytes: ${MESSENGER_MAX_IMAGE_BYTES:-5242880}
 
       Zalo__AppId: ${ZALO_APP_ID}
+      Zalo__Enabled: ${ZALO_ENABLED:-false}
       Zalo__AppSecretKey: ${ZALO_APP_SECRET_KEY}
       Zalo__OaId: ${ZALO_OA_ID}
       Zalo__OaSecretKey: ${ZALO_OA_SECRET_KEY}

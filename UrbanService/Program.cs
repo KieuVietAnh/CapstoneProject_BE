@@ -33,6 +33,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<IFeedbackDuplicateCandidateService, FeedbackDuplicateCandidateService>();
+builder.Services.AddScoped<IIncidentService, IncidentService>();
 builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
@@ -60,7 +61,11 @@ builder.Services.AddHttpClient<IZaloService, ZaloService>(client =>
 });
 builder.Services.AddScoped<IZaloWebhookInbox, ZaloWebhookInbox>();
 builder.Services.AddSingleton<IZaloWebhookQueue, ZaloWebhookQueue>();
-builder.Services.AddHostedService<ZaloWebhookWorker>();
+if (builder.Configuration.GetValue("Zalo:Enabled", false) &&
+    builder.Configuration.GetValue("Zalo:WorkerEnabled", true))
+{
+    builder.Services.AddHostedService<ZaloWebhookWorker>();
+}
 builder.Services.AddScoped<
     ISlaDashboardService,
     SlaDashboardService>();
@@ -131,7 +136,10 @@ builder.Services.AddScoped<IAiFeedbackAnalysisService, AiFeedbackAnalysisService
 builder.Services.AddScoped<IAiFeedbackDuplicateService, AiFeedbackDuplicateService>();
 builder.Services.AddScoped<IAiChatService, AiChatService>();
 builder.Services.AddScoped<IAiFeedbackDraftService, AiFeedbackDraftService>();
-builder.Services.AddHostedService<AiFeedbackReviewWorker>();
+if (builder.Configuration.GetValue("AI:ReviewWorkerEnabled", true))
+{
+    builder.Services.AddHostedService<AiFeedbackReviewWorker>();
+}
 builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
 {
     client.BaseAddress = new Uri("https://api.brevo.com/v3/");

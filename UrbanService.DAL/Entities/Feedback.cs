@@ -84,6 +84,12 @@ public partial class Feedback
 
     public virtual ICollection<InteractionMessage> InteractionMessages { get; set; } = new List<InteractionMessage>();
 
+    public virtual ICollection<IncidentEvent> IncidentEvents { get; set; } = new List<IncidentEvent>();
+
+    public virtual ICollection<IncidentReportLink> IncidentReportLinks { get; set; } = new List<IncidentReportLink>();
+
+    public virtual ICollection<IncidentSubscription> IncidentSubscriptions { get; set; } = new List<IncidentSubscription>();
+
     public virtual ICollection<MessengerFeedbackConversation> MessengerFeedbackConversations { get; set; }
         = new List<MessengerFeedbackConversation>();
 

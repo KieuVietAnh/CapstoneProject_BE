@@ -160,6 +160,12 @@ public class FeedbackListItemDto
     public Guid? ParentTicketId { get; set; }
 
     public bool IsMasterTicket { get; set; }
+
+    public Guid? IncidentId { get; set; }
+
+    public int IncidentReportCount { get; set; }
+
+    public string? IncidentLinkStatus { get; set; }
 }
 
 public class FeedbackDetailDto : FeedbackListItemDto
