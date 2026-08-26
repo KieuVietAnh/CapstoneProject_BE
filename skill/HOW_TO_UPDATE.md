@@ -1,3 +1,9 @@
+> [!WARNING]
+> **Legacy/archive:** Không dùng file này làm workflow Codex chính. Native skill
+> `.agents/skills/urbanservice-change/SKILL.md` và
+> `references/knowledge-maintenance.md` quy định cách đề xuất/cập nhật knowledge;
+> chỉ xem quy trình dưới đây như evidence legacy và không ghi nếu chưa được duyệt.
+
 # How to Update skill/
 
 Chỉ cập nhật `skill/` khi user yêu cầu rõ hoặc đã duyệt đề xuất lưu knowledge.

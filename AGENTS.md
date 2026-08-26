@@ -5,6 +5,13 @@
 File này áp dụng cho toàn bộ repository `UrbanService`. Nếu một thư mục con có
 `AGENTS.md` riêng thì hướng dẫn ở thư mục con được ưu tiên trong phạm vi đó.
 
+## Codex repository skill
+
+Khi lập kế hoạch, sửa, review hoặc kiểm thử backend trong repository này, dùng
+`$urbanservice-change` tại `.agents/skills/urbanservice-change/SKILL.md`. `AGENTS.md`
+vẫn là hướng dẫn bắt buộc; skill chỉ làm entrypoint để trace theo lớp và đọc reference
+đúng domain, không sao chép lại toàn bộ quy tắc ở đây.
+
 ## Mục tiêu project
 
 UrbanService là backend cho nền tảng tiếp nhận và xử lý vấn đề đô thị. Hệ thống

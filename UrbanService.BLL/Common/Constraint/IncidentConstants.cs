@@ -55,10 +55,30 @@ public static class IncidentSeverity
 public static class IncidentStatus
 {
     public const string New = "New";
+    public const string Verified = "Verified";
+    public const string Assigned = "Assigned";
     public const string InProgress = "InProgress";
     public const string Resolved = "Resolved";
+    public const string SubmittedForApproval = "SubmittedForApproval";
+    public const string Approved = "Approved";
+    public const string Rejected = "Rejected";
+    public const string NeedRework = "NeedRework";
     public const string Closed = "Closed";
+    public const string Cancelled = "Cancelled";
     public const string Merged = "Merged";
 
-    public static readonly IReadOnlyCollection<string> ManagementAllowed = [New, InProgress, Resolved, Closed];
+    public static readonly IReadOnlyCollection<string> ManagementAllowed =
+    [
+        New,
+        Verified,
+        Assigned,
+        InProgress,
+        Resolved,
+        SubmittedForApproval,
+        Approved,
+        Rejected,
+        NeedRework,
+        Closed,
+        Cancelled
+    ];
 }

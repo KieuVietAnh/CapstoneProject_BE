@@ -1,3 +1,9 @@
+> [!WARNING]
+> **Legacy/archive:** Cây `skill/` được giữ lại làm evidence lịch sử và tài liệu tham
+> khảo. Codex phải bắt đầu từ native skill
+> `.agents/skills/urbanservice-change/SKILL.md` (`$urbanservice-change`) và xác minh
+> mọi baseline legacy với code/test/migration hiện tại trước khi dùng.
+
 # UrbanService — Skill Index
 
 Nguồn handoff ngắn gọn cho AI agent làm việc với UrbanService Backend. Luôn đọc

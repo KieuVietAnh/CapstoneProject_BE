@@ -887,7 +887,7 @@ public class FeedbackService : IFeedbackService
 
 
         FeedbackStatusHistory? statusHistory = null;
-
+        FeedbackStatusHistoryDto? projectedStatusHistory = null;
         string? oldStatus = null;
 
 
@@ -921,37 +921,47 @@ public class FeedbackService : IFeedbackService
 
 
 
-            statusHistory =
-                new FeedbackStatusHistory
-                {
-                    FeedbackId =
-                        feedbackId,
+            if (IsInternalFeedbackStatus(newStatus))
+            {
+                statusHistory =
+                    new FeedbackStatusHistory
+                    {
+                        FeedbackId =
+                            feedbackId,
 
-                    ChangedByUserId =
-                        currentUserId,
+                        ChangedByUserId =
+                            currentUserId,
 
-                    OldStatus =
-                        oldStatus,
+                        OldStatus =
+                            oldStatus,
 
-                    NewStatus =
-                        newStatus,
+                        NewStatus =
+                            newStatus,
 
-                    Note =
-                        request.StatusNote?.Trim(),
+                        Note =
+                            request.StatusNote?.Trim(),
 
-                    ChangedAt =
-                        DateTime.UtcNow
-                };
+                        ChangedAt =
+                            DateTime.UtcNow
+                    };
 
+                feedback.Status =
+                    newStatus;
 
-
-            feedback.Status =
-                newStatus;
-
-
-
-            feedback.FeedbackStatusHistories.Add(
-                statusHistory);
+                feedback.FeedbackStatusHistories.Add(
+                    statusHistory);
+            }
+            else
+            {
+                projectedStatusHistory = await _incidentService.UpdateStatusFromFeedbackAsync(
+                    feedbackId,
+                    new UpdateIncidentStatusRequest
+                    {
+                        Status = newStatus,
+                        Note = request.StatusNote
+                    },
+                    currentUserId);
+            }
         }
 
 
@@ -975,6 +985,16 @@ public class FeedbackService : IFeedbackService
             await SendStatusUpdatedNotificationAsync(
                 feedback,
                 statusHistory);
+        }
+
+        if (projectedStatusHistory != null)
+        {
+            await SynchronizeSlaByStatusAsync(
+                feedback.FeedbackId,
+                projectedStatusHistory.OldStatus ?? oldStatus ?? feedback.Status,
+                projectedStatusHistory.NewStatus,
+                currentUserId,
+                projectedStatusHistory.Note);
         }
 
 
@@ -1097,6 +1117,27 @@ public class FeedbackService : IFeedbackService
 
         await EnsureDuplicateMasterStatusInvariantAsync(feedback, newStatus);
         await EnsureDuplicateReviewCompletedBeforeWorkflowAsync(feedback, newStatus);
+
+        if (!IsInternalFeedbackStatus(newStatus))
+        {
+            var projectedHistory = await _incidentService.UpdateStatusFromFeedbackAsync(
+                feedbackId,
+                new UpdateIncidentStatusRequest
+                {
+                    Status = newStatus,
+                    Note = request.Note
+                },
+                currentUserId);
+
+            await SynchronizeSlaByStatusAsync(
+                feedbackId,
+                projectedHistory.OldStatus ?? feedback.Status,
+                projectedHistory.NewStatus,
+                currentUserId,
+                projectedHistory.Note);
+
+            return projectedHistory;
+        }
 
         var now = DateTime.UtcNow;
         var oldStatus = feedback.Status;
@@ -2058,27 +2099,25 @@ public class FeedbackService : IFeedbackService
                 "Feedback must be Submitted or AiReviewed.");
         }
 
-        var oldStatus = feedback.Status;
+        await EnsureDuplicateMasterStatusInvariantAsync(feedback, FeedbackStatus.Verified);
+        await EnsureDuplicateReviewCompletedBeforeWorkflowAsync(feedback, FeedbackStatus.Verified);
 
-        var history = await ChangeStatusAsync(
-            feedback,
-            FeedbackStatus.Verified,
-            staffUserId,
-            "Verified by staff");
+        var history = await _incidentService.UpdateStatusFromFeedbackAsync(
+            feedbackId,
+            new UpdateIncidentStatusRequest
+            {
+                Status = FeedbackStatus.Verified,
+                Note = "Verified by staff"
+            },
+            staffUserId);
 
-        await _uow.SaveAsync();
-
-        // SLA bắt đầu ngay sau khi feedback được staff xác minh.
+        // SLA legacy vẫn bắt đầu theo Feedback cho tới Slice SLA cutover.
         await SynchronizeSlaByStatusAsync(
             feedback.FeedbackId,
-            oldStatus,
-            feedback.Status,
+            history.OldStatus ?? feedback.Status,
+            history.NewStatus,
             staffUserId,
             history.Note);
-
-        await SendStatusUpdatedNotificationAsync(
-            feedback,
-            history);
     }
 
     public async Task<FeedbackProviderReportDto> AssignFeedbackAsync(

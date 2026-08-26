@@ -11,6 +11,10 @@ namespace UrbanService.BLL.Services;
 public sealed class IncidentService : IIncidentService
 {
     private const int MaxPageSize = 100;
+    private sealed record IncidentStatusUpdateResult(
+        IncidentDetailDto Detail,
+        IReadOnlyCollection<FeedbackStatusHistory> Histories);
+
     private readonly IUnitOfWork _uow;
     private readonly INotificationService? _notificationService;
 
@@ -185,6 +189,7 @@ public sealed class IncidentService : IIncidentService
 
         var parentLink = activeLinks.FirstOrDefault(link => link.FeedbackId == parentFeedback.FeedbackId);
         Guid targetIncidentId;
+        string targetIncidentStatus;
 
         if (parentLink == null)
         {
@@ -192,16 +197,25 @@ public sealed class IncidentService : IIncidentService
                 parentFeedback,
                 staffUserId,
                 DateTime.UtcNow);
+            targetIncidentStatus = IncidentStatus.New;
             await _uow.SaveAsync();
         }
         else
         {
             targetIncidentId = parentLink.IncidentId;
+            targetIncidentStatus = parentLink.Incident.Status;
         }
 
         var childLink = activeLinks.FirstOrDefault(link => link.FeedbackId == childFeedback.FeedbackId);
         if (childLink?.IncidentId == targetIncidentId)
         {
+            await ProjectFeedbackStatusAsync(
+                childFeedback,
+                targetIncidentStatus,
+                staffUserId,
+                "Synchronized with the canonical incident after duplicate confirmation.",
+                DateTime.UtcNow);
+            await _uow.SaveAsync();
             return targetIncidentId;
         }
 
@@ -279,6 +293,13 @@ public sealed class IncidentService : IIncidentService
             }),
             CreatedAt = now
         });
+
+        await ProjectFeedbackStatusAsync(
+            childFeedback,
+            targetIncidentStatus,
+            staffUserId,
+            "Synchronized with the canonical incident after duplicate confirmation.",
+            now);
 
         if (previousIncidentId.HasValue && previousIncidentId.Value != targetIncidentId)
         {
@@ -1095,27 +1116,141 @@ public sealed class IncidentService : IIncidentService
         Guid actorUserId,
         CancellationToken cancellationToken = default)
     {
-        var incident = await GetMutableIncidentAsync(incidentId, cancellationToken);
-        var status = NormalizeIncidentStatus(request.Status);
-        var oldStatus = incident.Status;
-        incident.Status = status;
-        incident.UpdatedAt = DateTime.UtcNow;
-        incident.ResolvedAt = status == IncidentStatus.Resolved ? incident.UpdatedAt : incident.ResolvedAt;
-        incident.ClosedAt = status == IncidentStatus.Closed ? incident.UpdatedAt : incident.ClosedAt;
-
-        await AddIncidentEventAsync(incidentId, IncidentEventType.StatusChanged, actorUserId, new
-        {
-            oldStatus,
-            newStatus = status,
-            note = NormalizeOptional(request.Note)
-        });
-        await _uow.SaveAsync();
-        await NotifyIncidentSubscribersAsync(
+        var result = await UpdateStatusCoreAsync(
             incidentId,
-            "Sự vụ đã cập nhật trạng thái",
-            $"Sự vụ \"{incident.Title}\" đã chuyển sang trạng thái {status}.",
+            request,
+            actorUserId,
             cancellationToken);
-        return await GetIncidentDetailAsync(incidentId, cancellationToken);
+        return result.Detail;
+    }
+
+    public async Task<FeedbackStatusHistoryDto> UpdateStatusFromFeedbackAsync(
+        Guid feedbackId,
+        UpdateIncidentStatusRequest request,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var incidentId = await _uow.GetRepository<IncidentReportLink>().Entities
+            .AsNoTracking()
+            .Where(link =>
+                link.FeedbackId == feedbackId &&
+                link.LinkStatus == IncidentLinkStatus.Active)
+            .Select(link => (Guid?)link.IncidentId)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new Exception("Feedback không có Incident đang hoạt động.");
+
+        var result = await UpdateStatusCoreAsync(
+            incidentId,
+            request,
+            actorUserId,
+            cancellationToken);
+        var history = result.Histories.SingleOrDefault(item => item.FeedbackId == feedbackId)
+            ?? throw new Exception("Trạng thái Feedback đã đồng bộ với Incident.");
+
+        return MapFeedbackStatusHistory(history);
+    }
+
+    private async Task<IncidentStatusUpdateResult> UpdateStatusCoreAsync(
+        Guid incidentId,
+        UpdateIncidentStatusRequest request,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var status = NormalizeIncidentStatus(request.Status);
+        var histories = new List<FeedbackStatusHistory>();
+        Incident incident;
+        var statusChanged = false;
+        _uow.BeginTransaction();
+        try
+        {
+            await _uow.AcquireTransactionAdvisoryLockAsync(ToAdvisoryLockKey(incidentId));
+            incident = await GetMutableIncidentAsync(incidentId, cancellationToken);
+            if (string.Equals(status, IncidentStatus.New, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(incident.Status, IncidentStatus.New, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception("Không thể đưa Incident quay lại trạng thái New.");
+            }
+
+            if (string.Equals(incident.Status, status, StringComparison.OrdinalIgnoreCase))
+            {
+                _uow.CommitTransaction();
+            }
+            else
+            {
+                statusChanged = true;
+                var now = DateTime.UtcNow;
+                var oldStatus = incident.Status;
+                var note = NormalizeOptional(request.Note);
+                var feedbackStatus = MapIncidentStatusToFeedbackStatus(status);
+                if (feedbackStatus != null)
+                {
+                    var activeLinks = await _uow.GetRepository<IncidentReportLink>().Entities
+                        .Include(link => link.Feedback)
+                        .Where(link =>
+                            link.IncidentId == incidentId &&
+                            link.LinkStatus == IncidentLinkStatus.Active)
+                        .ToListAsync(cancellationToken);
+
+                    foreach (var feedback in activeLinks
+                        .Select(link => link.Feedback)
+                        .DistinctBy(feedback => feedback.FeedbackId))
+                    {
+                        if (string.Equals(feedback.Status, feedbackStatus, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        histories.Add(new FeedbackStatusHistory
+                        {
+                            FeedbackId = feedback.FeedbackId,
+                            ChangedByUserId = actorUserId,
+                            OldStatus = feedback.Status,
+                            NewStatus = feedbackStatus,
+                            Note = note,
+                            ChangedAt = now
+                        });
+                        feedback.Status = feedbackStatus;
+                        feedback.UpdatedAt = now;
+                    }
+                }
+
+                if (histories.Count > 0)
+                {
+                    await _uow.GetRepository<FeedbackStatusHistory>().AddRangeAsync(histories);
+                }
+
+                incident.Status = status;
+                incident.UpdatedAt = now;
+                incident.ResolvedAt = status == IncidentStatus.Resolved ? now : incident.ResolvedAt;
+                incident.ClosedAt = status == IncidentStatus.Closed ? now : incident.ClosedAt;
+
+                await AddIncidentEventAsync(incidentId, IncidentEventType.StatusChanged, actorUserId, new
+                {
+                    oldStatus,
+                    newStatus = status,
+                    note
+                });
+                await _uow.SaveAsync();
+                _uow.CommitTransaction();
+            }
+        }
+        catch
+        {
+            _uow.RollBack();
+            throw;
+        }
+
+        if (statusChanged)
+        {
+            await NotifyIncidentSubscribersAsync(
+                incidentId,
+                "Sự vụ đã cập nhật trạng thái",
+                $"Sự vụ \"{incident.Title}\" đã chuyển sang trạng thái {status}.",
+                cancellationToken);
+        }
+        return new IncidentStatusUpdateResult(
+            await GetIncidentDetailAsync(incidentId, cancellationToken),
+            histories);
     }
 
     public async Task<IReadOnlyCollection<IncidentAssigneeCandidateDto>> GetAssigneeCandidatesAsync(
@@ -1448,6 +1583,65 @@ public sealed class IncidentService : IIncidentService
         var normalized = IncidentStatus.ManagementAllowed.FirstOrDefault(item =>
             string.Equals(item, status.Trim(), StringComparison.OrdinalIgnoreCase));
         return normalized ?? throw new Exception("Status Incident không hợp lệ.");
+    }
+
+    private static string? MapIncidentStatusToFeedbackStatus(string status)
+    {
+        return status switch
+        {
+            IncidentStatus.Verified => FeedbackStatus.Verified,
+            IncidentStatus.Assigned => FeedbackStatus.Assigned,
+            IncidentStatus.InProgress => FeedbackStatus.InProgress,
+            IncidentStatus.Resolved => FeedbackStatus.Resolved,
+            IncidentStatus.SubmittedForApproval => FeedbackStatus.SubmittedForApproval,
+            IncidentStatus.Approved => FeedbackStatus.Approved,
+            IncidentStatus.Rejected => FeedbackStatus.Rejected,
+            IncidentStatus.NeedRework => FeedbackStatus.NeedRework,
+            IncidentStatus.Closed => FeedbackStatus.Closed,
+            IncidentStatus.Cancelled => FeedbackStatus.Cancelled,
+            _ => null
+        };
+    }
+
+    private async Task ProjectFeedbackStatusAsync(
+        Feedback feedback,
+        string incidentStatus,
+        Guid actorUserId,
+        string note,
+        DateTime changedAt)
+    {
+        var projectedStatus = MapIncidentStatusToFeedbackStatus(incidentStatus);
+        if (projectedStatus == null ||
+            string.Equals(feedback.Status, projectedStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await _uow.GetRepository<FeedbackStatusHistory>().AddAsync(new FeedbackStatusHistory
+        {
+            FeedbackId = feedback.FeedbackId,
+            ChangedByUserId = actorUserId,
+            OldStatus = feedback.Status,
+            NewStatus = projectedStatus,
+            Note = note,
+            ChangedAt = changedAt
+        });
+        feedback.Status = projectedStatus;
+        feedback.UpdatedAt = changedAt;
+    }
+
+    private static FeedbackStatusHistoryDto MapFeedbackStatusHistory(FeedbackStatusHistory history)
+    {
+        return new FeedbackStatusHistoryDto
+        {
+            HistoryId = history.HistoryId,
+            FeedbackId = history.FeedbackId,
+            ChangedByUserId = history.ChangedByUserId,
+            OldStatus = history.OldStatus,
+            NewStatus = history.NewStatus,
+            Note = history.Note,
+            ChangedAt = history.ChangedAt
+        };
     }
 
     private static void ValidateLinkRequest(LinkIncidentReportRequest request)

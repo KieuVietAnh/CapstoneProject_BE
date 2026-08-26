@@ -91,6 +91,12 @@ public interface IIncidentService
         Guid actorUserId,
         CancellationToken cancellationToken = default);
 
+    Task<FeedbackStatusHistoryDto> UpdateStatusFromFeedbackAsync(
+        Guid feedbackId,
+        UpdateIncidentStatusRequest request,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default);
+
     Task<IncidentDetailDto> AssignAsync(
         Guid incidentId,
         AssignIncidentRequest request,

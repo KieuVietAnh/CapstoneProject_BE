@@ -1,0 +1,7 @@
+interface:
+  display_name: "UrbanService Change"
+  short_description: "Safe UrbanService backend change workflow"
+  default_prompt: "Use $urbanservice-change to trace and implement this UrbanService backend change safely."
+
+policy:
+  allow_implicit_invocation: true
