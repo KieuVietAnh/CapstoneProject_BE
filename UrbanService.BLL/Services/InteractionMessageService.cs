@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
@@ -27,11 +28,19 @@ public class InteractionMessageService : IInteractionMessageService
         var feedback = await GetFeedbackAsync(feedbackId);
 
         var isResidentOwner = feedback.UserId == currentUserId;
-        var canViewInternal = IsStaffOrManager(currentUser);
+        var canViewInternal = IsManagementActor(currentUser);
+
+        if (canViewInternal)
+        {
+            await ManagementAccessRules.EnsureFeedbackReadAccessAsync(
+                _uow,
+                feedbackId,
+                currentUserId);
+        }
 
         if (!isResidentOwner && !canViewInternal)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền xem trao đổi của ticket này.");
+            throw new ForbiddenAccessException("Bạn không có quyền xem trao đổi của ticket này.");
         }
 
         var showInternal = includeInternal && canViewInternal;
@@ -58,16 +67,24 @@ public class InteractionMessageService : IInteractionMessageService
         var feedback = await GetFeedbackAsync(feedbackId);
 
         var isResidentOwner = feedback.UserId == currentUserId;
-        var isStaffOrManager = IsStaffOrManager(currentUser);
+        var isManagementActor = IsWorkflowActor(currentUser);
 
-        if (!isResidentOwner && !isStaffOrManager)
+        if (isManagementActor)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền gửi trao đổi cho ticket này.");
+            await ManagementAccessRules.EnsureFeedbackReadAccessAsync(
+                _uow,
+                feedbackId,
+                currentUserId);
         }
 
-        if (request.IsInternal && !isStaffOrManager)
+        if (!isResidentOwner && !isManagementActor)
         {
-            throw new UnauthorizedAccessException("Chỉ staff/manager/system admin được gửi ghi chú nội bộ.");
+            throw new ForbiddenAccessException("Bạn không có quyền gửi trao đổi cho ticket này.");
+        }
+
+        if (request.IsInternal && !isManagementActor)
+        {
+            throw new ForbiddenAccessException("Chỉ Staff/Manager trong phạm vi phụ trách được gửi ghi chú nội bộ.");
         }
 
         var message = new InteractionMessage
@@ -97,10 +114,14 @@ public class InteractionMessageService : IInteractionMessageService
 
         if (!IsSystemActor(currentUser))
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền tạo system message.");
+            throw new ForbiddenAccessException("Bạn không có quyền tạo system message.");
         }
 
         _ = await GetFeedbackAsync(feedbackId);
+        await ManagementAccessRules.EnsureFeedbackReadAccessAsync(
+            _uow,
+            feedbackId,
+            currentUserId);
 
         var message = new InteractionMessage
         {
@@ -178,19 +199,24 @@ public class InteractionMessageService : IInteractionMessageService
         }
     }
 
-    private static bool IsStaffOrManager(User user)
+    private static bool IsManagementActor(User user)
     {
         var role = user.Role?.RoleName?.ToUpperInvariant();
         return role is UserRole.SYSTEMADMIN
             or UserRole.SYSTEMSTAFF
-            or UserRole.INTERACTIONMANAGER
-            or UserRole.SERVICEOPERATORSTAFF;
+            or UserRole.INTERACTIONMANAGER;
     }
 
     private static bool IsSystemActor(User user)
     {
         var role = user.Role?.RoleName?.ToUpperInvariant();
-        return role is UserRole.SYSTEMADMIN or UserRole.INTERACTIONMANAGER;
+        return role is UserRole.INTERACTIONMANAGER;
+    }
+
+    private static bool IsWorkflowActor(User user)
+    {
+        var role = user.Role?.RoleName?.ToUpperInvariant();
+        return role is UserRole.SYSTEMSTAFF or UserRole.INTERACTIONMANAGER;
     }
 
     private static string ResolveSenderType(User user)

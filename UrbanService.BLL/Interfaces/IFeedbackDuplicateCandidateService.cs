@@ -5,15 +5,19 @@ namespace UrbanService.BLL.Interfaces;
 
 public interface IFeedbackDuplicateCandidateService
 {
-    Task<FeedbackDuplicateSummaryDto> GetSummaryAsync();
+    Task<FeedbackDuplicateSummaryDto> GetSummaryAsync(Guid actorUserId);
 
-    Task<PagedResultDto<FeedbackDuplicateCandidateDto>> GetCandidatesAsync(FeedbackDuplicateQueryParameters query);
+    Task<PagedResultDto<FeedbackDuplicateCandidateDto>> GetCandidatesAsync(
+        FeedbackDuplicateQueryParameters query,
+        Guid actorUserId);
 
-    Task<FeedbackDuplicateCandidateDto> GetCandidateDetailAsync(Guid duplicateCandidateId);
+    Task<FeedbackDuplicateCandidateDto> GetCandidateDetailAsync(
+        Guid duplicateCandidateId,
+        Guid actorUserId);
 
-    Task<FeedbackDuplicateCandidateDto> ConfirmAsync(Guid duplicateCandidateId, Guid staffUserId);
+    Task<FeedbackDuplicateCandidateDto> ConfirmAsync(Guid duplicateCandidateId, Guid reviewerUserId);
 
-    Task<FeedbackDuplicateCandidateDto> RejectAsync(Guid duplicateCandidateId, Guid staffUserId);
+    Task<FeedbackDuplicateCandidateDto> RejectAsync(Guid duplicateCandidateId, Guid reviewerUserId);
 
     Task<IReadOnlyCollection<FeedbackListItemDto>> GetLinkedFeedbacksAsync(Guid feedbackId);
 

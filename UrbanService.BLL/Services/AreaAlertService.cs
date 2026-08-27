@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common;
+using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Data;
@@ -24,6 +25,7 @@ public class AreaAlertService : IAreaAlertService
     {
         ValidateAlertRequest(request.Title, request.Message, request.Severity, request.StartAt, request.EndAt);
 
+        await EnsureManagerAreaAsync(createdByUserId, request.AreaId);
         await EnsureAreaExistsAsync(request.AreaId);
         await EnsureCategoryExistsAsync(request.CategoryId);
         await EnsureHotspotExistsAsync(request.HotspotId);
@@ -70,6 +72,8 @@ public class AreaAlertService : IAreaAlertService
         {
             throw new KeyNotFoundException("Feedback not found.");
         }
+
+        await EnsureManagerAreaAsync(createdByUserId, feedback.AreaId);
 
         var latestAnalysis = feedback.AnalysisResults
             .OrderByDescending(a => a.CreatedAt)
@@ -330,6 +334,25 @@ public class AreaAlertService : IAreaAlertService
             ReceiveAlerts = subscription.ReceiveAlerts,
             CreatedAt = subscription.CreatedAt
         };
+    }
+
+    private async Task EnsureManagerAreaAsync(Guid managerUserId, int areaId)
+    {
+        var hasAccess = await _dbContext.ManagerAreaAssignments
+            .AsNoTracking()
+            .AnyAsync(assignment =>
+                assignment.ManagerUserId == managerUserId &&
+                assignment.IsActive &&
+                assignment.AreaId == areaId &&
+                assignment.Area.IsActive &&
+                assignment.ManagerUser.IsActive &&
+                assignment.ManagerUser.Role.RoleName == UserRole.INTERACTIONMANAGER);
+
+        if (!hasAccess)
+        {
+            throw new ForbiddenAccessException(
+                "Manager không phụ trách phường của cảnh báo này.");
+        }
     }
 
     private async Task EnsureAreaExistsAsync(int areaId)

@@ -49,6 +49,8 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<InteractionMessage> InteractionMessages { get; set; }
 
+    public virtual DbSet<ManagerAreaAssignment> ManagerAreaAssignments { get; set; }
+
     public virtual DbSet<Incident> Incidents { get; set; }
 
     public virtual DbSet<IncidentEvent> IncidentEvents { get; set; }
@@ -229,6 +231,56 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_staff_area_assignment_category");
+        });
+
+        modelBuilder.Entity<ManagerAreaAssignment>(entity =>
+        {
+            entity.HasKey(e => e.ManagerAreaAssignmentId)
+                .HasName("manager_area_assignments_pkey");
+            entity.ToTable("manager_area_assignments");
+
+            entity.Property(e => e.ManagerAreaAssignmentId)
+                .HasColumnName("manager_area_assignment_id");
+            entity.Property(e => e.ManagerUserId).HasColumnName("manager_user_id");
+            entity.Property(e => e.AreaId).HasColumnName("area_id");
+            entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
+            entity.Property(e => e.UpdatedByUserId).HasColumnName("updated_by_user_id");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasIndex(
+                    e => new { e.ManagerUserId, e.AreaId },
+                    "uq_manager_area_assignment_scope")
+                .IsUnique();
+
+            entity.HasOne(d => d.ManagerUser)
+                .WithMany(p => p.ManagerAreaAssignmentManagers)
+                .HasForeignKey(d => d.ManagerUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_manager_area_assignment_manager");
+
+            entity.HasOne(d => d.Area)
+                .WithMany(p => p.ManagerAreaAssignments)
+                .HasForeignKey(d => d.AreaId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_manager_area_assignment_area");
+
+            entity.HasOne(d => d.CreatedByUser)
+                .WithMany(p => p.ManagerAreaAssignmentCreatedByUsers)
+                .HasForeignKey(d => d.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_manager_area_assignment_created_by");
+
+            entity.HasOne(d => d.UpdatedByUser)
+                .WithMany(p => p.ManagerAreaAssignmentUpdatedByUsers)
+                .HasForeignKey(d => d.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_manager_area_assignment_updated_by");
         });
 
         modelBuilder.Entity<UrbanServiceCategory>(entity =>

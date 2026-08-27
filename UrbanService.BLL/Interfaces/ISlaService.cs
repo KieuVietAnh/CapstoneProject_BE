@@ -15,13 +15,8 @@ public interface ISlaService
     /// Lấy SLA hiện tại của feedback.
     /// </summary>
     Task<FeedbackSlaDto> GetCurrentByFeedbackIdAsync(
-        Guid feedbackId);
-
-    /// <summary>
-    /// Lấy chi tiết SLA theo ID.
-    /// </summary>
-    Task<FeedbackSlaDto> GetByIdAsync(
-        long feedbackSlaId);
+        Guid feedbackId,
+        Guid actorUserId);
 
     /// <summary>
     /// Đánh dấu feedback đã có phản hồi đầu tiên.
@@ -74,7 +69,9 @@ public interface ISlaService
     /// <summary>
     /// Kiểm tra và cập nhật trạng thái vi phạm của một SLA.
     /// </summary>
-    Task CheckViolationAsync(long feedbackSlaId);
+    Task CheckViolationAsync(
+        long feedbackSlaId,
+        Guid actorUserId);
 
     /// <summary>
     /// Kiểm tra tất cả SLA đang chạy.
@@ -83,9 +80,11 @@ public interface ISlaService
     Task<int> CheckAllRunningSlasAsync();
 
     Task<SlaStatusDto> GetStatusAsync(
-    Guid feedbackId);
+        Guid feedbackId,
+        Guid actorUserId);
 
 
     Task<List<SlaTimelineDto>> GetTimelineAsync(
-        Guid feedbackId);
+        Guid feedbackId,
+        Guid actorUserId);
 }

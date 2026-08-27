@@ -1,10 +1,14 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs.Feedback.Dashboard;
 using UrbanService.BLL.Interfaces;
 
 namespace UrbanService.Controllers;
 
 [ApiController]
+[Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF + "," + UserRole.INTERACTIONMANAGER)]
 [Route("api/feedbacks/dashboard")]
 public class FeedbackDashboardController
     : ControllerBase
@@ -37,7 +41,7 @@ public class FeedbackDashboardController
     {
         var result =
             await _feedbackDashboardService
-                .GetOverviewAsync();
+                .GetOverviewAsync(GetCurrentUserId());
 
         return Ok(result);
     }
@@ -58,7 +62,7 @@ public class FeedbackDashboardController
     {
         var result =
             await _feedbackDashboardService
-                .GetStatusDistributionAsync();
+                .GetStatusDistributionAsync(GetCurrentUserId());
 
         return Ok(result);
     }
@@ -79,7 +83,7 @@ public class FeedbackDashboardController
     {
         var result =
             await _feedbackDashboardService
-                .GetPriorityDistributionAsync();
+                .GetPriorityDistributionAsync(GetCurrentUserId());
 
         return Ok(result);
     }
@@ -103,7 +107,7 @@ public class FeedbackDashboardController
     {
         var result =
             await _feedbackDashboardService
-                .GetCategoryDistributionAsync();
+                .GetCategoryDistributionAsync(GetCurrentUserId());
 
         return Ok(result);
     }
@@ -126,7 +130,7 @@ public class FeedbackDashboardController
     {
         var result =
             await _feedbackDashboardService
-                .GetAreaDistributionAsync();
+                .GetAreaDistributionAsync(GetCurrentUserId());
 
         return Ok(result);
     }
@@ -151,7 +155,7 @@ public class FeedbackDashboardController
     {
         var result =
             await _feedbackDashboardService
-                .GetMonthlyTrendAsync(months);
+                .GetMonthlyTrendAsync(GetCurrentUserId(), months);
 
         return Ok(result);
     }
@@ -176,7 +180,7 @@ public class FeedbackDashboardController
     {
         var result =
             await _feedbackDashboardService
-                .GetUrgentOpenAsync(limit);
+                .GetUrgentOpenAsync(GetCurrentUserId(), limit);
 
         return Ok(result);
     }
@@ -199,8 +203,19 @@ public class FeedbackDashboardController
     {
         var result =
             await _feedbackDashboardService
-                .GetRecentAsync(limit);
+                .GetRecentAsync(GetCurrentUserId(), limit);
 
         return Ok(result);
+    }
+
+    private Guid GetCurrentUserId()
+    {
+        var rawUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(rawUserId, out var userId))
+        {
+            throw new UnauthorizedAccessException();
+        }
+
+        return userId;
     }
 }

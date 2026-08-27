@@ -68,6 +68,9 @@ namespace UrbanService.Middlewares
             if (ex is UnauthorizedAccessException)
                 return (401, "Unauthorized.");
 
+            if (ex is ForbiddenAccessException)
+                return (403, ex.Message);
+
             if (root is FileNotFoundException || root is DirectoryNotFoundException)
                 return (500, root.Message);
 

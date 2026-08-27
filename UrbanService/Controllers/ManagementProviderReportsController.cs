@@ -27,7 +27,7 @@ public class ManagementProviderReportsController : ControllerBase
 
     /// <summary>Cap nhat trang thai report gui Service Provider.</summary>
     [HttpPatch("{providerReportId:int}/status")]
-    [Authorize(Roles = UserRole.SYSTEMSTAFF + "," + UserRole.SYSTEMADMIN)]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
     [ProducesResponseType(typeof(FeedbackProviderReportDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -52,7 +52,9 @@ public class ManagementProviderReportsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetContactLogs(int providerReportId)
     {
-        var result = await _feedbackService.GetProviderContactLogsAsync(providerReportId);
+        var result = await _feedbackService.GetProviderContactLogsAsync(
+            providerReportId,
+            GetCurrentUserId());
         return Ok(result);
     }
 
@@ -83,7 +85,9 @@ public class ManagementProviderReportsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetCompletionDocuments(int providerReportId)
     {
-        var result = await _feedbackService.GetCompletionDocumentsAsync(providerReportId);
+        var result = await _feedbackService.GetCompletionDocumentsAsync(
+            providerReportId,
+            GetCurrentUserId());
         return Ok(result);
     }
 
@@ -99,6 +103,9 @@ public class ManagementProviderReportsController : ControllerBase
         int providerReportId,
         [FromForm] CompletionDocumentUploadRequest form)
     {
+        await _feedbackService.EnsureProviderReportOperationAccessAsync(
+            providerReportId,
+            GetCurrentUserId());
         var documents = await UploadFilesAsync(form.Files, "urban-service/completion-documents");
         var result = await _feedbackService.AddCompletionDocumentsAsync(
             providerReportId,
@@ -125,7 +132,8 @@ public class ManagementProviderReportsController : ControllerBase
     {
         await _feedbackService
             .ClearCompletionDocumentsAsync(
-                providerReportId);
+                providerReportId,
+                GetCurrentUserId());
 
         return Ok(new
         {

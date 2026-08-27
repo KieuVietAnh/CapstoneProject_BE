@@ -25,15 +25,12 @@ public class FeedbackDashboardService
     }
 
     public async Task<FeedbackDashboardOverviewDto>
-        GetOverviewAsync()
+        GetOverviewAsync(Guid actorUserId)
     {
         var now = DateTime.UtcNow;
         var startOfToday = now.Date;
 
-        var query = _unitOfWork
-            .GetRepository<Feedback>()
-            .Entities
-            .AsNoTracking();
+        var query = await GetScopedFeedbacksAsync(actorUserId);
 
         var totalFeedback =
             await query.CountAsync();
@@ -104,12 +101,9 @@ public class FeedbackDashboardService
     }
 
     public async Task<List<FeedbackStatusDistributionDto>>
-        GetStatusDistributionAsync()
+        GetStatusDistributionAsync(Guid actorUserId)
     {
-        var query = _unitOfWork
-            .GetRepository<Feedback>()
-            .Entities
-            .AsNoTracking();
+        var query = await GetScopedFeedbacksAsync(actorUserId);
 
         var total =
             await query.CountAsync();
@@ -147,12 +141,9 @@ public class FeedbackDashboardService
     }
 
     public async Task<List<FeedbackPriorityDistributionDto>>
-        GetPriorityDistributionAsync()
+        GetPriorityDistributionAsync(Guid actorUserId)
     {
-        var query = _unitOfWork
-            .GetRepository<Feedback>()
-            .Entities
-            .AsNoTracking();
+        var query = await GetScopedFeedbacksAsync(actorUserId);
 
         var total =
             await query.CountAsync();
@@ -207,12 +198,9 @@ public class FeedbackDashboardService
     }
 
     public async Task<List<FeedbackCategoryDistributionDto>>
-        GetCategoryDistributionAsync()
+        GetCategoryDistributionAsync(Guid actorUserId)
     {
-        var query = _unitOfWork
-            .GetRepository<Feedback>()
-            .Entities
-            .AsNoTracking();
+        var query = await GetScopedFeedbacksAsync(actorUserId);
 
         var total =
             await query.CountAsync();
@@ -261,12 +249,9 @@ public class FeedbackDashboardService
     }
 
     public async Task<List<FeedbackAreaDistributionDto>>
-        GetAreaDistributionAsync()
+        GetAreaDistributionAsync(Guid actorUserId)
     {
-        var query = _unitOfWork
-            .GetRepository<Feedback>()
-            .Entities
-            .AsNoTracking();
+        var query = await GetScopedFeedbacksAsync(actorUserId);
 
         var total =
             await query.CountAsync();
@@ -332,6 +317,7 @@ public class FeedbackDashboardService
 
     public async Task<List<FeedbackMonthlyTrendDto>>
         GetMonthlyTrendAsync(
+            Guid actorUserId,
             int months = DefaultMonths)
     {
         months = Math.Clamp(
@@ -355,10 +341,8 @@ public class FeedbackDashboardService
             currentMonth.AddMonths(
                 -(months - 1));
 
-        var feedbacks = await _unitOfWork
-            .GetRepository<Feedback>()
-            .Entities
-            .AsNoTracking()
+        var scopedFeedbacks = await GetScopedFeedbacksAsync(actorUserId);
+        var feedbacks = await scopedFeedbacks
             .Where(x =>
                 x.CreatedAt >= fromMonth &&
                 x.CreatedAt <= now)
@@ -488,6 +472,7 @@ public class FeedbackDashboardService
 
     public async Task<List<UrgentOpenFeedbackDto>>
         GetUrgentOpenAsync(
+            Guid actorUserId,
             int limit = DefaultLimit)
     {
         limit = Math.Clamp(
@@ -498,10 +483,8 @@ public class FeedbackDashboardService
         var now =
             DateTime.UtcNow;
 
-        var data = await _unitOfWork
-            .GetRepository<Feedback>()
-            .Entities
-            .AsNoTracking()
+        var scopedFeedbacks = await GetScopedFeedbacksAsync(actorUserId);
+        var data = await scopedFeedbacks
             .Where(x =>
                 x.Priority == "Urgent" &&
                 x.Status != FeedbackStatus.Resolved &&
@@ -590,6 +573,7 @@ public class FeedbackDashboardService
 
     public async Task<List<RecentFeedbackDto>>
         GetRecentAsync(
+            Guid actorUserId,
             int limit = DefaultLimit)
     {
         limit = Math.Clamp(
@@ -597,10 +581,8 @@ public class FeedbackDashboardService
             1,
             MaxLimit);
 
-        return await _unitOfWork
-            .GetRepository<Feedback>()
-            .Entities
-            .AsNoTracking()
+        var scopedFeedbacks = await GetScopedFeedbacksAsync(actorUserId);
+        return await scopedFeedbacks
             .OrderByDescending(x =>
                 x.CreatedAt)
             .Take(limit)
@@ -643,5 +625,15 @@ public class FeedbackDashboardService
                         x.UpdatedAt
                 })
             .ToListAsync();
+    }
+
+    private async Task<IQueryable<Feedback>> GetScopedFeedbacksAsync(Guid actorUserId)
+    {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _unitOfWork,
+            actorUserId);
+        return ManagementAccessRules.ApplyFeedbackReadScope(
+            _unitOfWork.GetRepository<Feedback>().Entities.AsNoTracking(),
+            actor);
     }
 }

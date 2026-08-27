@@ -48,8 +48,10 @@ public class FeedbackService : IFeedbackService
     }
 
     public async Task ClearCompletionDocumentsAsync(
-    int providerReportId)
+        int providerReportId,
+        Guid currentUserId)
     {
+        await EnsureProviderReportOperationAccessAsync(providerReportId, currentUserId);
         var report = await _uow
             .GetRepository<FeedbackProviderReport>()
             .Entities
@@ -104,6 +106,29 @@ public class FeedbackService : IFeedbackService
         }
 
         await _uow.SaveAsync();
+    }
+
+    public async Task EnsureManagementFeedbackReadAccessAsync(
+        Guid feedbackId,
+        Guid currentUserId)
+    {
+        await ManagementAccessRules.EnsureFeedbackReadAccessAsync(
+            _uow,
+            feedbackId,
+            currentUserId);
+    }
+
+    public async Task EnsureProviderReportOperationAccessAsync(
+        int providerReportId,
+        Guid currentUserId)
+    {
+        var feedbackId = await ManagementAccessRules.GetProviderReportFeedbackIdAsync(
+            _uow,
+            providerReportId);
+        await ManagementAccessRules.EnsureStaffFeedbackOperationAsync(
+            _uow,
+            feedbackId,
+            currentUserId);
     }
 
     public async Task<FeedbackDetailDto> CreateAsync(
@@ -409,16 +434,20 @@ public class FeedbackService : IFeedbackService
         };
     }
 
-    public async Task<PagedResultDto<FeedbackListItemDto>> GetAllFeedbacksAsync(FeedbackQueryParameters query)
+    public async Task<PagedResultDto<FeedbackListItemDto>> GetAllFeedbacksAsync(
+        Guid currentUserId,
+        FeedbackQueryParameters query)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(_uow, currentUserId);
         var pageNumber = query.PageNumber < 1 ? 1 : query.PageNumber;
         var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
         var search = query.Search?.Trim().ToLower();
         var status = query.Status?.Trim().ToLower();
         var submissionChannel = query.SubmissionChannel?.Trim().ToLower();
 
-        var feedbacks = _uow.GetRepository<Feedback>().Entities
-            .AsNoTracking();
+        var feedbacks = ManagementAccessRules.ApplyFeedbackReadScope(
+            _uow.GetRepository<Feedback>().Entities.AsNoTracking(),
+            actor);
 
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -504,15 +533,19 @@ public class FeedbackService : IFeedbackService
         };
     }
 
-    public async Task<PagedResultDto<FeedbackWithAnalysisResultDto>> GetAiReviewedFeedbacksAsync(FeedbackQueryParameters query)
+    public async Task<PagedResultDto<FeedbackWithAnalysisResultDto>> GetAiReviewedFeedbacksAsync(
+        Guid currentUserId,
+        FeedbackQueryParameters query)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(_uow, currentUserId);
         var pageNumber = query.PageNumber < 1 ? 1 : query.PageNumber;
         var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
         var search = query.Search?.Trim().ToLower();
         var submissionChannel = query.SubmissionChannel?.Trim().ToLower();
 
-        var feedbacks = _uow.GetRepository<Feedback>().Entities
-            .AsNoTracking()
+        var feedbacks = ManagementAccessRules.ApplyFeedbackReadScope(
+                _uow.GetRepository<Feedback>().Entities.AsNoTracking(),
+                actor)
             .Where(f => f.Status.ToLower() == FeedbackStatus.AiReviewed.ToLower());
 
         if (!string.IsNullOrWhiteSpace(submissionChannel))
@@ -643,6 +676,7 @@ public class FeedbackService : IFeedbackService
 
     public async Task<FeedbackDetailDto> GetFeedbackDetailAsync(Guid currentUserId, Guid feedbackId)
     {
+        await EnsureManagementFeedbackReadAccessAsync(feedbackId, currentUserId);
         var feedback = await GetFeedbackWithDetailsAsync(feedbackId, asNoTracking: true);
         var detail = MapDetail(feedback, currentUserId);
         await PopulateDuplicateInfoAsync(detail);
@@ -706,6 +740,22 @@ public class FeedbackService : IFeedbackService
     Guid feedbackId,
     StaffFeedbackUpdateRequest request)
     {
+        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _uow,
+            feedbackId,
+            currentUserId);
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            throw new Exception(
+                "Không cập nhật trạng thái qua API chỉnh sửa phản ánh. Hãy dùng thao tác duyệt chuyên biệt.");
+        }
+
+        if (request.AreaId.HasValue)
+        {
+            var actor = await ManagementAccessRules.GetActorScopeAsync(_uow, currentUserId);
+            ManagementAccessRules.EnsureManagerArea(actor, request.AreaId.Value);
+        }
+
         var feedback = await GetFeedbackWithDetailsAsync(
             feedbackId,
             asNoTracking: false);
@@ -1093,6 +1143,10 @@ public class FeedbackService : IFeedbackService
         Guid feedbackId,
         UpdateFeedbackStatusRequest request)
     {
+        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _uow,
+            feedbackId,
+            currentUserId);
         if (string.IsNullOrWhiteSpace(request.Status))
         {
             throw new Exception(
@@ -1105,6 +1159,15 @@ public class FeedbackService : IFeedbackService
 
         var newStatus = FeedbackStatus.Normalize(
             request.Status);
+
+        if (newStatus != FeedbackStatus.Rejected &&
+            newStatus != FeedbackStatus.Cancelled)
+        {
+            throw new Exception(
+                "Endpoint trạng thái chung chỉ dùng để từ chối hoặc hủy phản ánh. " +
+                "Xác nhận phản ánh phải đi qua endpoint verify để kiểm tra trùng và khởi tạo SLA. " +
+                "Các trạng thái xử lý phải đi qua luồng phân công, bên thứ ba và phê duyệt.");
+        }
 
         if (string.Equals(
                 feedback.Status,
@@ -2086,8 +2149,12 @@ public class FeedbackService : IFeedbackService
 
     public async Task VerifyFeedbackAsync(
     Guid feedbackId,
-    Guid staffUserId)
+    Guid managerUserId)
     {
+        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _uow,
+            feedbackId,
+            managerUserId);
         var feedback = await GetFeedbackWithDetailsAsync(
             feedbackId,
             false);
@@ -2107,22 +2174,26 @@ public class FeedbackService : IFeedbackService
             new UpdateIncidentStatusRequest
             {
                 Status = FeedbackStatus.Verified,
-                Note = "Verified by staff"
+                Note = "Manager đã xác nhận phản ánh"
             },
-            staffUserId);
+            managerUserId);
 
         // SLA legacy vẫn bắt đầu theo Feedback cho tới Slice SLA cutover.
         await SynchronizeSlaByStatusAsync(
             feedback.FeedbackId,
             history.OldStatus ?? feedback.Status,
             history.NewStatus,
-            staffUserId,
+            managerUserId,
             history.Note);
     }
 
     public async Task<FeedbackProviderReportDto> AssignFeedbackAsync(
     AssignFeedbackRequest request)
     {
+        var incident = await ManagementAccessRules.EnsureStaffFeedbackOperationAsync(
+            _uow,
+            request.FeedbackId,
+            request.StaffUserId);
         _uow.BeginTransaction();
 
         try
@@ -2132,15 +2203,22 @@ public class FeedbackService : IFeedbackService
                     request.FeedbackId,
                     false);
 
-            if (feedback.Status != FeedbackStatus.Verified)
+            if (feedback.Status != FeedbackStatus.Assigned ||
+                incident.Status != IncidentStatus.Assigned)
                 throw new Exception(
-                    "Feedback must be Verified.");
+                    "Sự vụ phải ở trạng thái Assigned trước khi làm việc với bên thứ ba.");
 
             var coordinatorExists = await _uow
-                .GetRepository<ServiceProviderCoordinator>()
+                .GetRepository<CoordinatorCoverage>()
                 .Entities
                 .AsNoTracking()
-                .AnyAsync(c => c.CoordinatorId == request.CoordinatorId && c.IsActive);
+                .AnyAsync(coverage =>
+                    coverage.CoordinatorId == request.CoordinatorId &&
+                    coverage.AreaId == incident.AreaId &&
+                    incident.CategoryId.HasValue &&
+                    coverage.CategoryId == incident.CategoryId.Value &&
+                    coverage.IsActive &&
+                    coverage.Coordinator.IsActive);
 
             if (!coordinatorExists)
                 throw new Exception("Coordinator khong ton tai hoac da bi khoa.");
@@ -2171,15 +2249,9 @@ public class FeedbackService : IFeedbackService
                 .GetRepository<FeedbackProviderReport>()
                 .AddAsync(report);
 
-            var history = await ChangeStatusAsync(
-                feedback,
-                FeedbackStatus.Assigned,
-                request.StaffUserId);
-
             await _uow.SaveAsync();
 
             _uow.CommitTransaction();
-            await SendStatusUpdatedNotificationAsync(feedback, history);
 
             return await GetProviderReportDtoAsync(report.ProviderReportId);
         }
@@ -2190,8 +2262,14 @@ public class FeedbackService : IFeedbackService
         }
     }
 
-    public async Task<IReadOnlyCollection<ProviderCandidateDto>> GetProviderCandidatesAsync(Guid feedbackId)
+    public async Task<IReadOnlyCollection<ProviderCandidateDto>> GetProviderCandidatesAsync(
+        Guid feedbackId,
+        Guid currentUserId)
     {
+        var incident = await ManagementAccessRules.EnsureStaffFeedbackOperationAsync(
+            _uow,
+            feedbackId,
+            currentUserId);
         var feedback = await _uow.GetRepository<Feedback>().Entities
             .AsNoTracking()
             .FirstOrDefaultAsync(f => f.FeedbackId == feedbackId)
@@ -2202,8 +2280,9 @@ public class FeedbackService : IFeedbackService
             .Include(c => c.Coordinator)
                 .ThenInclude(c => c.ProviderContracts)
             .Where(c =>
-                c.AreaId == feedback.AreaId &&
-                c.CategoryId == feedback.CategoryId &&
+                c.AreaId == incident.AreaId &&
+                incident.CategoryId.HasValue &&
+                c.CategoryId == incident.CategoryId.Value &&
                 c.IsActive &&
                 c.Coordinator.IsActive)
             .OrderByDescending(c => c.IsPrimary)
@@ -2216,11 +2295,13 @@ public class FeedbackService : IFeedbackService
             {
                 var contract = coverage.Coordinator.ProviderContracts
                     .Where(contract =>
-                        (contract.AreaId == null || contract.AreaId == feedback.AreaId) &&
-                        (contract.CategoryId == null || contract.CategoryId == feedback.CategoryId))
+                        (contract.AreaId == null || contract.AreaId == incident.AreaId) &&
+                        (contract.CategoryId == null || contract.CategoryId == incident.CategoryId))
                     .OrderByDescending(contract =>
                         string.Equals(contract.Status, "Active", StringComparison.OrdinalIgnoreCase))
-                    .ThenByDescending(contract => contract.AreaId == feedback.AreaId && contract.CategoryId == feedback.CategoryId)
+                    .ThenByDescending(contract =>
+                        contract.AreaId == incident.AreaId &&
+                        contract.CategoryId == incident.CategoryId)
                     .ThenByDescending(contract => contract.CreatedAt)
                     .FirstOrDefault();
 
@@ -2244,8 +2325,11 @@ public class FeedbackService : IFeedbackService
             .ToList();
     }
 
-    public async Task<IReadOnlyCollection<FeedbackProviderReportDto>> GetProviderReportsAsync(Guid feedbackId)
+    public async Task<IReadOnlyCollection<FeedbackProviderReportDto>> GetProviderReportsAsync(
+        Guid feedbackId,
+        Guid currentUserId)
     {
+        await EnsureManagementFeedbackReadAccessAsync(feedbackId, currentUserId);
         await EnsureFeedbackExistsAsync(feedbackId);
 
         var reports = await _uow.GetRepository<FeedbackProviderReport>().Entities
@@ -2268,6 +2352,7 @@ public class FeedbackService : IFeedbackService
         Guid currentUserId,
         UpdateProviderReportStatusRequest request)
     {
+        await EnsureProviderReportOperationAccessAsync(providerReportId, currentUserId);
         if (string.IsNullOrWhiteSpace(request.Status))
         {
             throw new Exception("Status la bat buoc.");
@@ -2277,8 +2362,22 @@ public class FeedbackService : IFeedbackService
             .Include(r => r.Feedback)
             .FirstOrDefaultAsync(r => r.ProviderReportId == providerReportId)
             ?? throw new Exception("Provider report khong ton tai.");
+        if (report.ReportStatus != "Reported" && report.ReportStatus != "InProgress")
+        {
+            throw new Exception("Provider Report không còn ở trạng thái cho phép cập nhật.");
+        }
 
         var newStatus = NormalizeProviderReportStatus(request.Status);
+        var allowedTransition =
+            (report.ReportStatus == "Reported" &&
+                (newStatus == "InProgress" || newStatus == "Failed" || newStatus == "Cancelled")) ||
+            (report.ReportStatus == "InProgress" &&
+                (newStatus == "Failed" || newStatus == "Cancelled")) ||
+            report.ReportStatus == newStatus;
+        if (!allowedTransition)
+        {
+            throw new Exception("Chuyển trạng thái Provider Report không hợp lệ.");
+        }
         report.ReportStatus = newStatus;
         report.UpdatedAt = DateTime.UtcNow;
 
@@ -2287,15 +2386,18 @@ public class FeedbackService : IFeedbackService
             report.ReportNote = request.Note.Trim();
         }
 
-        FeedbackStatusHistory? statusHistory = null;
+        FeedbackStatusHistoryDto? statusHistory = null;
         if (newStatus == "InProgress" &&
     report.Feedback.Status == FeedbackStatus.Assigned)
         {
-            statusHistory = await ChangeStatusAsync(
-                report.Feedback,
-                FeedbackStatus.InProgress,
-                currentUserId,
-                request.Note);
+            statusHistory = await _incidentService.UpdateStatusFromFeedbackAsync(
+                report.FeedbackId,
+                new UpdateIncidentStatusRequest
+                {
+                    Status = IncidentStatus.InProgress,
+                    Note = request.Note
+                },
+                currentUserId);
         }
 
         await _uow.SaveAsync();
@@ -2309,9 +2411,6 @@ public class FeedbackService : IFeedbackService
                 currentUserId,
                 statusHistory.Note);
 
-            await SendStatusUpdatedNotificationAsync(
-                report.Feedback,
-                statusHistory);
         }
 
         await SendFeedbackNotificationAsync(
@@ -2327,6 +2426,7 @@ public class FeedbackService : IFeedbackService
         Guid currentUserId,
         ProviderContactLogCreateRequest request)
     {
+        await EnsureProviderReportOperationAccessAsync(providerReportId, currentUserId);
         if (string.IsNullOrWhiteSpace(request.ContactMethod))
         {
             throw new Exception("ContactMethod la bat buoc.");
@@ -2351,7 +2451,7 @@ public class FeedbackService : IFeedbackService
 
         await _uow.GetRepository<ProviderContactLog>().AddAsync(log);
 
-        FeedbackStatusHistory? statusHistory = null;
+        FeedbackStatusHistoryDto? statusHistory = null;
         var isSuccessfulContact = IsSuccessfulCoordinatorContact(log.ContactResult);
 
         if (string.Equals(report.ReportStatus, "Reported", StringComparison.OrdinalIgnoreCase) &&
@@ -2362,11 +2462,14 @@ public class FeedbackService : IFeedbackService
 
             if (report.Feedback.Status == FeedbackStatus.Assigned)
             {
-                statusHistory = await ChangeStatusAsync(
-                    report.Feedback,
-                    FeedbackStatus.InProgress,
-                    currentUserId,
-                    "Liên hệ coordinator thành công, bắt đầu xử lý.");
+                statusHistory = await _incidentService.UpdateStatusFromFeedbackAsync(
+                    report.FeedbackId,
+                    new UpdateIncidentStatusRequest
+                    {
+                        Status = IncidentStatus.InProgress,
+                        Note = "Liên hệ coordinator thành công, bắt đầu xử lý."
+                    },
+                    currentUserId);
             }
         }
 
@@ -2381,9 +2484,6 @@ public class FeedbackService : IFeedbackService
                 currentUserId,
                 statusHistory.Note);
 
-            await SendStatusUpdatedNotificationAsync(
-                report.Feedback,
-                statusHistory);
         }
         await SendFeedbackNotificationAsync(
             report.Feedback,
@@ -2431,8 +2531,14 @@ public class FeedbackService : IFeedbackService
             normalized.Contains("success");
     }
 
-    public async Task<IReadOnlyCollection<ProviderContactLogDto>> GetProviderContactLogsAsync(int providerReportId)
+    public async Task<IReadOnlyCollection<ProviderContactLogDto>> GetProviderContactLogsAsync(
+        int providerReportId,
+        Guid currentUserId)
     {
+        var feedbackId = await ManagementAccessRules.GetProviderReportFeedbackIdAsync(
+            _uow,
+            providerReportId);
+        await EnsureManagementFeedbackReadAccessAsync(feedbackId, currentUserId);
         await EnsureProviderReportExistsAsync(providerReportId);
 
         var logs = await _uow.GetRepository<ProviderContactLog>().Entities
@@ -2454,11 +2560,22 @@ public class FeedbackService : IFeedbackService
         IReadOnlyCollection<UploadedFeedbackAttachmentDto> documents,
         string? description)
     {
+        await EnsureProviderReportOperationAccessAsync(providerReportId, currentUserId);
         var report = await _uow.GetRepository<FeedbackProviderReport>().Entities
-            .AsNoTracking()
             .Include(r => r.Feedback)
             .FirstOrDefaultAsync(r => r.ProviderReportId == providerReportId)
             ?? throw new Exception("Provider report khong ton tai.");
+        if (report.ReportStatus != "Reported" && report.ReportStatus != "InProgress")
+        {
+            throw new Exception("Chỉ được ghi nhận liên hệ khi Provider Report đang xử lý.");
+        }
+        var canUpload = report.ReportStatus == "InProgress" &&
+            (report.Feedback.Status == FeedbackStatus.InProgress ||
+             report.Feedback.Status == FeedbackStatus.NeedRework);
+        if (!canUpload)
+        {
+            throw new Exception("Chỉ được tải minh chứng khi sự vụ đang xử lý hoặc làm lại.");
+        }
 
         var now = DateTime.UtcNow;
         foreach (var document in documents)
@@ -2482,10 +2599,22 @@ public class FeedbackService : IFeedbackService
             "Đã có tài liệu hoàn thành mới",
             $"Phản ánh \"{report.Feedback.Title}\" đã được cập nhật tài liệu hoàn thành.");
 
-        return await GetCompletionDocumentsAsync(providerReportId);
+        return await GetCompletionDocumentsCoreAsync(providerReportId);
     }
 
-    public async Task<IReadOnlyCollection<CompletionDocumentDto>> GetCompletionDocumentsAsync(int providerReportId)
+    public async Task<IReadOnlyCollection<CompletionDocumentDto>> GetCompletionDocumentsAsync(
+        int providerReportId,
+        Guid currentUserId)
+    {
+        var feedbackId = await ManagementAccessRules.GetProviderReportFeedbackIdAsync(
+            _uow,
+            providerReportId);
+        await EnsureManagementFeedbackReadAccessAsync(feedbackId, currentUserId);
+        return await GetCompletionDocumentsCoreAsync(providerReportId);
+    }
+
+    private async Task<IReadOnlyCollection<CompletionDocumentDto>> GetCompletionDocumentsCoreAsync(
+        int providerReportId)
     {
         await EnsureProviderReportExistsAsync(providerReportId);
 
@@ -2502,7 +2631,16 @@ public class FeedbackService : IFeedbackService
             .ToList();
     }
 
-    public async Task<IReadOnlyCollection<FeedbackResolutionDto>> GetFeedbackResolutionsAsync(Guid feedbackId)
+    public async Task<IReadOnlyCollection<FeedbackResolutionDto>> GetFeedbackResolutionsAsync(
+        Guid feedbackId,
+        Guid currentUserId)
+    {
+        await EnsureManagementFeedbackReadAccessAsync(feedbackId, currentUserId);
+        return await GetFeedbackResolutionsAsync(feedbackId);
+    }
+
+    public async Task<IReadOnlyCollection<FeedbackResolutionDto>> GetFeedbackResolutionsAsync(
+        Guid feedbackId)
     {
         await EnsureFeedbackExistsAsync(feedbackId);
 
@@ -2510,7 +2648,7 @@ public class FeedbackService : IFeedbackService
     .AsNoTracking()
     .Include(r => r.CreatedByStaffUser)
     .Include(r => r.ProviderReport)
-        .ThenInclude(r => r.CompletionDocuments)
+        .ThenInclude(r => r!.CompletionDocuments)
     .Where(r => r.FeedbackId == feedbackId)
     .OrderByDescending(r => r.ResolvedAt)
     .ToListAsync();
@@ -2520,8 +2658,17 @@ public class FeedbackService : IFeedbackService
             .ToList();
     }
 
-    public async Task<FeedbackResolutionDto> GetResolutionAsync(int resolutionId)
+    public async Task<FeedbackResolutionDto> GetResolutionAsync(
+        int resolutionId,
+        Guid currentUserId)
     {
+        var feedbackId = await _uow.GetRepository<FeedbackResolution>().Entities
+            .AsNoTracking()
+            .Where(resolution => resolution.ResolutionId == resolutionId)
+            .Select(resolution => (Guid?)resolution.FeedbackId)
+            .SingleOrDefaultAsync()
+            ?? throw new Exception("Khong tim thay resolution.");
+        await EnsureManagementFeedbackReadAccessAsync(feedbackId, currentUserId);
         var resolution = await _uow.GetRepository<FeedbackResolution>().Entities
             .AsNoTracking()
             .Include(r => r.CreatedByStaffUser)
@@ -2533,8 +2680,13 @@ public class FeedbackService : IFeedbackService
 
     public async Task NotifyProviderResultAsync(
         Guid feedbackId,
+        Guid currentUserId,
         NotifyProviderResultRequest request)
     {
+        await ManagementAccessRules.EnsureStaffFeedbackOperationAsync(
+            _uow,
+            feedbackId,
+            currentUserId);
         if (string.IsNullOrWhiteSpace(request.Title))
         {
             throw new Exception("Title la bat buoc.");
@@ -2577,6 +2729,11 @@ public class FeedbackService : IFeedbackService
                 "ActionTaken là bắt buộc.");
         }
 
+        var incident = await ManagementAccessRules.EnsureStaffFeedbackOperationAsync(
+            _uow,
+            request.FeedbackId,
+            request.StaffUserId);
+
         var feedback =
             await GetFeedbackWithDetailsAsync(
                 request.FeedbackId,
@@ -2586,12 +2743,20 @@ public class FeedbackService : IFeedbackService
             string.Equals(
                 feedback.Status,
                 FeedbackStatus.NeedRework,
+                StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(
+                incident.Status,
+                IncidentStatus.NeedRework,
                 StringComparison.OrdinalIgnoreCase);
 
         var isFirstSubmit =
             string.Equals(
                 feedback.Status,
                 FeedbackStatus.InProgress,
+                StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(
+                incident.Status,
+                IncidentStatus.InProgress,
                 StringComparison.OrdinalIgnoreCase);
 
         if (!isFirstSubmit &&
@@ -2819,20 +2984,16 @@ public class FeedbackService : IFeedbackService
             }
         }
 
-        var history =
-            await ChangeStatusAsync(
-                feedback,
-                FeedbackStatus.SubmittedForApproval,
-                request.StaffUserId,
-                isRework
+        await _incidentService.UpdateStatusFromFeedbackAsync(
+            feedback.FeedbackId,
+            new UpdateIncidentStatusRequest
+            {
+                Status = IncidentStatus.SubmittedForApproval,
+                Note = isRework
                     ? "Staff đã cập nhật và gửi lại kết quả sau yêu cầu làm lại."
-                    : "Staff đã gửi kết quả xử lý để chờ quản lý phê duyệt.");
-
-        await _uow.SaveAsync();
-
-        await SendStatusUpdatedNotificationAsync(
-            feedback,
-            history);
+                    : "Staff đã gửi kết quả xử lý để chờ Manager phê duyệt."
+            },
+            request.StaffUserId);
     }
 
     public async Task ApproveResolutionAsync(
@@ -2840,6 +3001,10 @@ public class FeedbackService : IFeedbackService
     Guid managerId,
     string? note)
     {
+        var incident = await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _uow,
+            feedbackId,
+            managerId);
         var feedback = await GetFeedbackWithDetailsAsync(
             feedbackId,
             false);
@@ -2853,7 +3018,8 @@ public class FeedbackService : IFeedbackService
             ?? throw new Exception(
                 "Không tìm thấy resolution để phê duyệt.");
 
-        if (feedback.Status != FeedbackStatus.SubmittedForApproval)
+        if (feedback.Status != FeedbackStatus.SubmittedForApproval ||
+            incident.Status != IncidentStatus.SubmittedForApproval)
         {
             throw new Exception("Feedback must be SubmittedForApproval before approval.");
         }
@@ -2869,13 +3035,14 @@ public class FeedbackService : IFeedbackService
         feedback.ApprovedAt =
             DateTime.UtcNow;
 
-        var history = await ChangeStatusAsync(
-            feedback,
-            FeedbackStatus.Approved,
-            managerId,
-            note);
-
-        await _uow.SaveAsync();
+        var history = await _incidentService.UpdateStatusFromFeedbackAsync(
+            feedbackId,
+            new UpdateIncidentStatusRequest
+            {
+                Status = IncidentStatus.Approved,
+                Note = note
+            },
+            managerId);
 
         // Approved là thời điểm manager xác nhận việc xử lý đã hoàn tất.
         // SLA resolution được hoàn thành tại đây, không chờ citizen review.
@@ -2886,9 +3053,6 @@ public class FeedbackService : IFeedbackService
             managerId,
             note);
 
-        await SendStatusUpdatedNotificationAsync(
-            feedback,
-            history);
     }
 
 
@@ -2903,6 +3067,11 @@ public class FeedbackService : IFeedbackService
                 "Lý do yêu cầu làm lại là bắt buộc.");
         }
 
+        var incident = await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _uow,
+            feedbackId,
+            managerId);
+
         var feedback =
             await GetFeedbackWithDetailsAsync(
                 feedbackId,
@@ -2911,6 +3080,10 @@ public class FeedbackService : IFeedbackService
         if (!string.Equals(
                 feedback.Status,
                 FeedbackStatus.SubmittedForApproval,
+                StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(
+                incident.Status,
+                IncidentStatus.SubmittedForApproval,
                 StringComparison.OrdinalIgnoreCase))
         {
             throw new Exception(
@@ -2991,21 +3164,14 @@ public class FeedbackService : IFeedbackService
         /*
          * Manager reason được lưu ở history.
          */
-        var history =
-            await ChangeStatusAsync(
-                feedback,
-                FeedbackStatus.NeedRework,
-                managerId,
-                reason.Trim());
-
-        await _uow.SaveAsync();
-
-        /*
-         * Không complete SLA.
-         */
-        await SendStatusUpdatedNotificationAsync(
-            feedback,
-            history);
+        await _incidentService.UpdateStatusFromFeedbackAsync(
+            feedbackId,
+            new UpdateIncidentStatusRequest
+            {
+                Status = IncidentStatus.NeedRework,
+                Note = reason.Trim()
+            },
+            managerId);
     }
 
     public async Task<FeedbackResolutionReviewDto> CitizenReviewAsync(

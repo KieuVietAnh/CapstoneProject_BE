@@ -28,7 +28,7 @@ public class ManagementFeedbacksController : ControllerBase
         _feedbackDuplicateCandidateService = feedbackDuplicateCandidateService;
     }
 
-    /// <summary>Xem danh sách tất cả feedback trong hệ thống.</summary>
+    /// <summary>Xem feedback theo phạm vi quản lý hoặc Incident được phân công.</summary>
     /// <remarks>
     /// Role được phép: `SYSTEMADMIN`, `SYSTEMSTAFF`, `INTERACTIONMANAGER`.
     /// Hỗ trợ phân trang và lọc theo `status`, `categoryId`, `search`.
@@ -39,7 +39,7 @@ public class ManagementFeedbacksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetAllFeedbacks([FromQuery] FeedbackQueryParameters query)
     {
-        var result = await _feedbackService.GetAllFeedbacksAsync(query);
+        var result = await _feedbackService.GetAllFeedbacksAsync(GetCurrentUserId(), query);
         return Ok(result);
     }
 
@@ -51,7 +51,7 @@ public class ManagementFeedbacksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetAiReviewedFeedbacks([FromQuery] FeedbackQueryParameters query)
     {
-        var result = await _feedbackService.GetAiReviewedFeedbacksAsync(query);
+        var result = await _feedbackService.GetAiReviewedFeedbacksAsync(GetCurrentUserId(), query);
         return Ok(result);
     }
 
@@ -90,6 +90,9 @@ public class ManagementFeedbacksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetLinkedFeedbacks(Guid feedbackId)
     {
+        await _feedbackService.EnsureManagementFeedbackReadAccessAsync(
+            feedbackId,
+            GetCurrentUserId());
         var result = await _feedbackDuplicateCandidateService.GetLinkedFeedbacksAsync(feedbackId);
         return Ok(result);
     }
@@ -102,19 +105,25 @@ public class ManagementFeedbacksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetRelatedFeedbacks(Guid feedbackId)
     {
+        await _feedbackService.EnsureManagementFeedbackReadAccessAsync(
+            feedbackId,
+            GetCurrentUserId());
         var result = await _feedbackDuplicateCandidateService.GetRelatedFeedbacksAsync(feedbackId);
         return Ok(result);
     }
 
     /// <summary>Lay danh sach Service Provider phu hop voi area/category cua feedback.</summary>
     [HttpGet("{feedbackId:guid}/provider-candidates")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
     [ProducesResponseType(typeof(IReadOnlyCollection<ProviderCandidateDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetProviderCandidates(Guid feedbackId)
     {
-        var result = await _feedbackService.GetProviderCandidatesAsync(feedbackId);
+        var result = await _feedbackService.GetProviderCandidatesAsync(
+            feedbackId,
+            GetCurrentUserId());
         return Ok(result);
     }
 
@@ -126,7 +135,9 @@ public class ManagementFeedbacksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetProviderReports(Guid feedbackId)
     {
-        var result = await _feedbackService.GetProviderReportsAsync(feedbackId);
+        var result = await _feedbackService.GetProviderReportsAsync(
+            feedbackId,
+            GetCurrentUserId());
         return Ok(result);
     }
 
@@ -138,7 +149,9 @@ public class ManagementFeedbacksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetFeedbackResolutions(Guid feedbackId)
     {
-        var result = await _feedbackService.GetFeedbackResolutionsAsync(feedbackId);
+        var result = await _feedbackService.GetFeedbackResolutionsAsync(
+            feedbackId,
+            GetCurrentUserId());
         return Ok(result);
     }
 
@@ -150,14 +163,16 @@ public class ManagementFeedbacksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetResolution(int resolutionId)
     {
-        var result = await _feedbackService.GetResolutionAsync(resolutionId);
+        var result = await _feedbackService.GetResolutionAsync(
+            resolutionId,
+            GetCurrentUserId());
         return Ok(result);
     }
 
     /// <summary>Tao canh bao khu vuc tu feedback nghiem trong.</summary>
-    /// <remarks>Role duoc phep: SYSTEMSTAFF, INTERACTIONMANAGER.</remarks>
+    /// <remarks>Chỉ Manager phụ trách phường của phản ánh được phép tạo.</remarks>
     [HttpPost("{feedbackId:guid}/area-alert")]
-    [Authorize(Roles = UserRole.SYSTEMSTAFF + "," + UserRole.INTERACTIONMANAGER)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(UrbanService.BLL.Dtos.UserAreaAlertDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -166,6 +181,9 @@ public class ManagementFeedbacksController : ControllerBase
         Guid feedbackId,
         [FromBody] CreateAreaAlertFromFeedbackRequest request)
     {
+        await _feedbackService.EnsureManagementFeedbackReadAccessAsync(
+            feedbackId,
+            GetCurrentUserId());
         var result = await _areaAlertService.CreateAlertFromFeedbackAsync(
             GetCurrentUserId(),
             feedbackId,
@@ -176,7 +194,7 @@ public class ManagementFeedbacksController : ControllerBase
 
     /// <summary>Gui notification thu cong cho nguoi dan ve ket qua/provider status cua feedback.</summary>
     [HttpPost("{feedbackId:guid}/notify-provider-result")]
-    [Authorize(Roles = UserRole.SYSTEMSTAFF + "," + UserRole.SYSTEMADMIN)]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -185,7 +203,10 @@ public class ManagementFeedbacksController : ControllerBase
         Guid feedbackId,
         [FromBody] NotifyProviderResultRequest request)
     {
-        await _feedbackService.NotifyProviderResultAsync(feedbackId, request);
+        await _feedbackService.NotifyProviderResultAsync(
+            feedbackId,
+            GetCurrentUserId(),
+            request);
 
         return Ok(new
         {
@@ -193,14 +214,13 @@ public class ManagementFeedbacksController : ControllerBase
         });
     }
 
-    /// <summary>Staff chỉnh sửa feedback của người dân.</summary>
+    /// <summary>Manager chỉnh sửa dữ liệu phân loại của phản ánh trong phường phụ trách.</summary>
     /// <remarks>
-    /// Chỉ role `SYSTEMSTAFF` được phép sử dụng. Có thể sửa category, priority,
-    /// nội dung và status. Nếu `status` thay đổi, người tạo feedback sẽ nhận
-    /// notification và event SignalR `NotificationReceived`.
+    /// Chỉ Manager phụ trách phường được sửa category, priority và nội dung.
+    /// Trạng thái không được thay đổi qua request này; phải dùng endpoint workflow riêng.
     /// </remarks>
     [HttpPut("{feedbackId:guid}")]
-    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(FeedbackDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -211,19 +231,18 @@ public class ManagementFeedbacksController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Staff hoặc Admin cập nhật trạng thái feedback.</summary>
+    /// <summary>Manager cập nhật trạng thái kiểm duyệt feedback.</summary>
     /// <remarks>
-    /// Role được phép: `SYSTEMSTAFF`, `SYSTEMADMIN`.
+    /// Chỉ Manager phụ trách phường được phép từ chối hoặc hủy phản ánh.
     ///
     /// Sau khi cập nhật thành công, hệ thống lưu notification và gửi realtime
     /// event `NotificationReceived` qua SignalR tới người tạo feedback.
     ///
-    /// Status hợp lệ: `Submitted`, `AiReviewed`, `Verified`, `Assigned`, `InProgress`, `Resolved`,
-    /// `SubmittedForApproval`, `Approved`, `Rejected`, `NeedRework`, `Closed`,
-    /// `Cancelled`.
+    /// Status hợp lệ tại endpoint này: `Rejected`, `Cancelled`.
+    /// Xác nhận dùng endpoint `verify`; trạng thái xử lý đi qua Incident/provider/approval.
     /// </remarks>
     [HttpPatch("{feedbackId:guid}/status")]
-    [Authorize(Roles = UserRole.SYSTEMSTAFF + "," + UserRole.SYSTEMADMIN)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(FeedbackStatusHistoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -238,10 +257,10 @@ public class ManagementFeedbacksController : ControllerBase
     }
 
     /// <summary>
-    /// Staff verify feedback
+    /// Manager verify feedback
     /// </summary>
     [HttpPut("{feedbackId:guid}/verify")]
-    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     public async Task<IActionResult> VerifyFeedback(
         Guid feedbackId)
     {
@@ -273,7 +292,7 @@ public class ManagementFeedbacksController : ControllerBase
     }
 
     /// <summary>
-    /// Operator gửi kết quả xử lý
+    /// Staff gửi kết quả xử lý
     /// </summary>
     [HttpPost("submit-resolution")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]

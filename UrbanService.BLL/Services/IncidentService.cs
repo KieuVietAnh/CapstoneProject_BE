@@ -346,8 +346,13 @@ public sealed class IncidentService : IIncidentService
 
     public async Task<PagedResultDto<IncidentListItemDto>> GetIncidentsAsync(
         IncidentQueryParameters query,
+        Guid actorUserId,
         CancellationToken cancellationToken = default)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
         var pageNumber = query.PageNumber < 1 ? 1 : query.PageNumber;
         var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
         var status = NormalizeOptional(query.Status)?.ToLower();
@@ -355,7 +360,9 @@ public sealed class IncidentService : IIncidentService
         var severity = NormalizeOptional(query.Severity)?.ToLower();
         var search = NormalizeOptional(query.Search)?.ToLower();
 
-        var incidents = _uow.GetRepository<Incident>().Entities.AsNoTracking();
+        var incidents = ManagementAccessRules.ApplyIncidentReadScope(
+            _uow.GetRepository<Incident>().Entities.AsNoTracking(),
+            actor);
 
         if (!query.IncludeMerged)
         {
@@ -440,6 +447,28 @@ public sealed class IncidentService : IIncidentService
     }
 
     public async Task<IncidentDetailDto> GetIncidentDetailAsync(
+        Guid incidentId,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
+        var canRead = await ManagementAccessRules.ApplyIncidentReadScope(
+                _uow.GetRepository<Incident>().Entities.AsNoTracking(),
+                actor)
+            .AnyAsync(incident => incident.IncidentId == incidentId, cancellationToken);
+        if (!canRead)
+        {
+            throw new UrbanService.BLL.Common.ForbiddenAccessException(
+                "Bạn không có quyền xem sự vụ này.");
+        }
+
+        return await GetIncidentDetailCoreAsync(incidentId, cancellationToken);
+    }
+
+    private async Task<IncidentDetailDto> GetIncidentDetailCoreAsync(
         Guid incidentId,
         CancellationToken cancellationToken = default)
     {
@@ -546,6 +575,11 @@ public sealed class IncidentService : IIncidentService
         Guid actorUserId,
         CancellationToken cancellationToken = default)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
+        await EnsureManagerIncidentAccessAsync(actor, incidentId, cancellationToken);
         ValidateLinkRequest(request);
         _uow.BeginTransaction();
 
@@ -565,6 +599,7 @@ public sealed class IncidentService : IIncidentService
             var feedback = await _uow.GetRepository<Feedback>().Entities
                 .FirstOrDefaultAsync(item => item.FeedbackId == request.FeedbackId, cancellationToken)
                 ?? throw new Exception("Không tìm thấy Feedback.");
+            ManagementAccessRules.EnsureManagerArea(actor, feedback.AreaId);
 
             var linkRepository = _uow.GetRepository<IncidentReportLink>();
             var activeLink = await linkRepository.Entities
@@ -578,7 +613,7 @@ public sealed class IncidentService : IIncidentService
                 if (activeLink.IncidentId == incidentId)
                 {
                     _uow.CommitTransaction();
-                    return await GetIncidentDetailAsync(incidentId, cancellationToken);
+                    return await GetIncidentDetailCoreAsync(incidentId, cancellationToken);
                 }
 
                 throw new Exception("Feedback đang thuộc một Incident khác; hãy unlink trước khi liên kết lại.");
@@ -638,7 +673,7 @@ public sealed class IncidentService : IIncidentService
             throw;
         }
 
-        return await GetIncidentDetailAsync(incidentId, cancellationToken);
+        return await GetIncidentDetailCoreAsync(incidentId, cancellationToken);
     }
 
     public async Task UnlinkReportAsync(
@@ -647,6 +682,11 @@ public sealed class IncidentService : IIncidentService
         Guid actorUserId,
         CancellationToken cancellationToken = default)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
+        await EnsureManagerIncidentAccessAsync(actor, incidentId, cancellationToken);
         _uow.BeginTransaction();
 
         try
@@ -930,9 +970,22 @@ public sealed class IncidentService : IIncidentService
         Guid incidentId,
         int pageNumber,
         int pageSize,
+        Guid actorUserId,
         CancellationToken cancellationToken = default)
     {
-        await EnsureIncidentExistsAsync(incidentId, cancellationToken);
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
+        var canRead = await ManagementAccessRules.ApplyIncidentReadScope(
+                _uow.GetRepository<Incident>().Entities.AsNoTracking(),
+                actor)
+            .AnyAsync(incident => incident.IncidentId == incidentId, cancellationToken);
+        if (!canRead)
+        {
+            throw new UrbanService.BLL.Common.ForbiddenAccessException(
+                "Bạn không có quyền xem dòng thời gian của sự vụ này.");
+        }
         pageNumber = Math.Max(1, pageNumber);
         pageSize = pageSize < 1 ? 20 : Math.Min(pageSize, MaxPageSize);
         var query = _uow.GetRepository<IncidentEvent>().Entities.AsNoTracking()
@@ -1072,9 +1125,15 @@ public sealed class IncidentService : IIncidentService
         Guid actorUserId,
         CancellationToken cancellationToken = default)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
+        await EnsureManagerIncidentAccessAsync(actor, incidentId, cancellationToken);
         var incident = await GetMutableIncidentAsync(incidentId, cancellationToken);
         if (request.AreaId.HasValue)
         {
+            ManagementAccessRules.EnsureManagerArea(actor, request.AreaId.Value);
             var areaExists = await _uow.GetRepository<OperatingArea>().Entities.AsNoTracking()
                 .AnyAsync(item => item.AreaId == request.AreaId.Value && item.IsActive, cancellationToken);
             if (!areaExists) throw new Exception("Khu vực không tồn tại hoặc đã bị khóa.");
@@ -1107,7 +1166,7 @@ public sealed class IncidentService : IIncidentService
             incident.Severity
         });
         await _uow.SaveAsync();
-        return await GetIncidentDetailAsync(incidentId, cancellationToken);
+        return await GetIncidentDetailCoreAsync(incidentId, cancellationToken);
     }
 
     public async Task<IncidentDetailDto> UpdateStatusAsync(
@@ -1116,6 +1175,21 @@ public sealed class IncidentService : IIncidentService
         Guid actorUserId,
         CancellationToken cancellationToken = default)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
+        await EnsureManagerIncidentAccessAsync(actor, incidentId, cancellationToken);
+        var requestedStatus = NormalizeIncidentStatus(request.Status);
+        if (requestedStatus != IncidentStatus.Rejected &&
+            requestedStatus != IncidentStatus.Cancelled)
+        {
+            throw new Exception(
+                "Endpoint trạng thái chung chỉ dùng để từ chối hoặc hủy sự vụ. " +
+                "Xác nhận phản ánh phải đi qua endpoint verify để kiểm tra trùng và khởi tạo SLA. " +
+                "Các trạng thái xử lý phải đi qua luồng phân công, bên thứ ba và phê duyệt.");
+        }
+
         var result = await UpdateStatusCoreAsync(
             incidentId,
             request,
@@ -1249,14 +1323,20 @@ public sealed class IncidentService : IIncidentService
                 cancellationToken);
         }
         return new IncidentStatusUpdateResult(
-            await GetIncidentDetailAsync(incidentId, cancellationToken),
+            await GetIncidentDetailCoreAsync(incidentId, cancellationToken),
             histories);
     }
 
     public async Task<IReadOnlyCollection<IncidentAssigneeCandidateDto>> GetAssigneeCandidatesAsync(
         Guid incidentId,
+        Guid actorUserId,
         CancellationToken cancellationToken = default)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
+        await EnsureManagerIncidentAccessAsync(actor, incidentId, cancellationToken);
         var incident = await _uow.GetRepository<Incident>().Entities.AsNoTracking()
             .FirstOrDefaultAsync(item => item.IncidentId == incidentId, cancellationToken)
             ?? throw new Exception("Không tìm thấy Incident.");
@@ -1294,8 +1374,20 @@ public sealed class IncidentService : IIncidentService
         Guid actorUserId,
         CancellationToken cancellationToken = default)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
+        await EnsureManagerIncidentAccessAsync(actor, incidentId, cancellationToken);
         if (request.StaffUserId == Guid.Empty) throw new Exception("StaffUserId không hợp lệ.");
         var incident = await GetMutableIncidentAsync(incidentId, cancellationToken);
+        if (incident.Status != IncidentStatus.Verified &&
+            incident.Status != IncidentStatus.Assigned &&
+            incident.Status != IncidentStatus.InProgress &&
+            incident.Status != IncidentStatus.NeedRework)
+        {
+            throw new Exception("Incident phải được xác nhận trước khi phân công Staff.");
+        }
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var eligible = await _uow.GetRepository<StaffAreaAssignment>().Entities.AsNoTracking()
             .AnyAsync(assignment =>
@@ -1314,9 +1406,37 @@ public sealed class IncidentService : IIncidentService
 
         var oldAssignee = incident.AssignedStaffUserId;
         incident.AssignedStaffUserId = request.StaffUserId;
-        incident.UpdatedAt = DateTime.UtcNow;
-        if (string.Equals(incident.Status, IncidentStatus.New, StringComparison.OrdinalIgnoreCase))
-            incident.Status = IncidentStatus.InProgress;
+        var now = DateTime.UtcNow;
+        incident.UpdatedAt = now;
+        if (string.Equals(incident.Status, IncidentStatus.Verified, StringComparison.OrdinalIgnoreCase))
+        {
+            var oldStatus = incident.Status;
+            incident.Status = IncidentStatus.Assigned;
+            var activeLinks = await _uow.GetRepository<IncidentReportLink>().Entities
+                .Include(link => link.Feedback)
+                .Where(link =>
+                    link.IncidentId == incidentId &&
+                    link.LinkStatus == IncidentLinkStatus.Active)
+                .ToListAsync(cancellationToken);
+            foreach (var feedback in activeLinks
+                .Select(link => link.Feedback)
+                .DistinctBy(feedback => feedback.FeedbackId))
+            {
+                await ProjectFeedbackStatusAsync(
+                    feedback,
+                    IncidentStatus.Assigned,
+                    actorUserId,
+                    "Manager đã phân công Staff phụ trách sự vụ.",
+                    now);
+            }
+
+            await AddIncidentEventAsync(incidentId, IncidentEventType.StatusChanged, actorUserId, new
+            {
+                oldStatus,
+                newStatus = IncidentStatus.Assigned,
+                note = "Manager assigned staff"
+            });
+        }
 
         await AddIncidentEventAsync(incidentId, IncidentEventType.AssigneeChanged, actorUserId, new
         {
@@ -1339,7 +1459,7 @@ public sealed class IncidentService : IIncidentService
                 incidentId.ToString());
         }
 
-        return await GetIncidentDetailAsync(incidentId, cancellationToken);
+        return await GetIncidentDetailCoreAsync(incidentId, cancellationToken);
     }
 
     public async Task<IncidentDetailDto> MergeAsync(
@@ -1350,6 +1470,13 @@ public sealed class IncidentService : IIncidentService
     {
         if (request.TargetIncidentId == Guid.Empty || request.TargetIncidentId == sourceIncidentId)
             throw new Exception("TargetIncidentId không hợp lệ.");
+
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
+        await EnsureManagerIncidentAccessAsync(actor, sourceIncidentId, cancellationToken);
+        await EnsureManagerIncidentAccessAsync(actor, request.TargetIncidentId, cancellationToken);
 
         _uow.BeginTransaction();
         try
@@ -1456,7 +1583,7 @@ public sealed class IncidentService : IIncidentService
             "Sự vụ đã được hợp nhất",
             "Sự vụ bạn theo dõi đã được hợp nhất với một sự vụ liên quan.",
             cancellationToken);
-        return await GetIncidentDetailAsync(request.TargetIncidentId, cancellationToken);
+        return await GetIncidentDetailCoreAsync(request.TargetIncidentId, cancellationToken);
     }
 
     private async Task EnsureSubscriptionAsync(
@@ -1504,6 +1631,21 @@ public sealed class IncidentService : IIncidentService
         }
 
         return incident;
+    }
+
+    private async Task EnsureManagerIncidentAccessAsync(
+        ManagementActorScope actor,
+        Guid incidentId,
+        CancellationToken cancellationToken)
+    {
+        ManagementAccessRules.EnsureManagerRole(actor);
+        var areaId = await _uow.GetRepository<Incident>().Entities
+            .AsNoTracking()
+            .Where(incident => incident.IncidentId == incidentId)
+            .Select(incident => (int?)incident.AreaId)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new Exception("Không tìm thấy Incident.");
+        ManagementAccessRules.EnsureManagerArea(actor, areaId);
     }
 
     private async Task EnsureIncidentExistsAsync(Guid incidentId, CancellationToken cancellationToken)

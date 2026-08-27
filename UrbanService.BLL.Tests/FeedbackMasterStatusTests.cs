@@ -33,10 +33,12 @@ public class FeedbackMasterStatusTests
             status: FeedbackStatus.AiReviewed,
             parentTicketId: master.FeedbackId);
         context.Feedbacks.AddRange([master, child]);
+        context.TrackActiveIncident(master);
+        context.TrackActiveIncident(child);
         var service = CreateService(context);
 
         await Assert.ThrowsAsync<Exception>(() => service.UpdateStatusByStaffOrAdminAsync(
-            Guid.NewGuid(),
+            context.ManagerUserId,
             master.FeedbackId,
             new UpdateFeedbackStatusRequest { Status = invalidStatus }));
 
@@ -64,7 +66,7 @@ public class FeedbackMasterStatusTests
         var service = CreateService(context);
 
         await Assert.ThrowsAsync<Exception>(() => service.UpdateStatusByStaffOrAdminAsync(
-            Guid.NewGuid(),
+            context.ManagerUserId,
             possibleDuplicate.FeedbackId,
             new UpdateFeedbackStatusRequest { Status = FeedbackStatus.Verified }));
 
@@ -89,10 +91,12 @@ public class FeedbackMasterStatusTests
             status: FeedbackStatus.AiReviewed,
             parentTicketId: master.FeedbackId);
         context.Feedbacks.AddRange([master, duplicate]);
+        context.TrackActiveIncident(master);
+        context.TrackActiveIncident(duplicate);
         var service = CreateService(context);
 
         await Assert.ThrowsAsync<Exception>(() => service.UpdateStatusByStaffOrAdminAsync(
-            Guid.NewGuid(),
+            context.ManagerUserId,
             duplicate.FeedbackId,
             new UpdateFeedbackStatusRequest { Status = FeedbackStatus.Verified }));
 
@@ -100,7 +104,7 @@ public class FeedbackMasterStatusTests
     }
 
     [Fact]
-    public async Task UpdateStatus_ForwardsOperationalStatusToCanonicalIncidentWorkflow()
+    public async Task UpdateStatus_RejectsOperationalStatusToPreventWorkflowBypass()
     {
         var context = new DuplicateTestContext();
         var feedback = DuplicateTestContext.Feedback(
@@ -109,37 +113,22 @@ public class FeedbackMasterStatusTests
             isMaster: true,
             status: FeedbackStatus.Verified);
         context.Feedbacks.Add(feedback);
-        var actorUserId = Guid.NewGuid();
+        context.TrackActiveIncident(feedback);
+        var actorUserId = context.ManagerUserId;
         var incidentService = Substitute.For<IIncidentService>();
-        incidentService.UpdateStatusFromFeedbackAsync(
-                feedback.FeedbackId,
-                Arg.Is<UpdateIncidentStatusRequest>(request =>
-                    request.Status == FeedbackStatus.Assigned &&
-                    request.Note == "Assigned by staff"),
-                actorUserId,
-                Arg.Any<CancellationToken>())
-            .Returns(new FeedbackStatusHistoryDto
-            {
-                FeedbackId = feedback.FeedbackId,
-                ChangedByUserId = actorUserId,
-                OldStatus = FeedbackStatus.Verified,
-                NewStatus = FeedbackStatus.Assigned,
-                Note = "Assigned by staff",
-                ChangedAt = DateTime.UtcNow
-            });
         var service = CreateService(context, incidentService);
 
-        var result = await service.UpdateStatusByStaffOrAdminAsync(
+        await Assert.ThrowsAsync<Exception>(() => service.UpdateStatusByStaffOrAdminAsync(
             actorUserId,
             feedback.FeedbackId,
             new UpdateFeedbackStatusRequest
             {
                 Status = FeedbackStatus.Assigned,
-                Note = "Assigned by staff"
-            });
+                Note = "Assigned by manager"
+            }));
 
-        Assert.Equal(FeedbackStatus.Assigned, result.NewStatus);
-        await incidentService.Received(1).UpdateStatusFromFeedbackAsync(
+        Assert.Equal(FeedbackStatus.Verified, feedback.Status);
+        await incidentService.DidNotReceive().UpdateStatusFromFeedbackAsync(
             feedback.FeedbackId,
             Arg.Any<UpdateIncidentStatusRequest>(),
             actorUserId,
@@ -157,7 +146,8 @@ public class FeedbackMasterStatusTests
             isMaster: true,
             status: FeedbackStatus.AiReviewed);
         context.Feedbacks.Add(feedback);
-        var actorUserId = Guid.NewGuid();
+        context.TrackActiveIncident(feedback);
+        var actorUserId = context.ManagerUserId;
         var incidentService = Substitute.For<IIncidentService>();
         incidentService.UpdateStatusFromFeedbackAsync(
                 feedback.FeedbackId,

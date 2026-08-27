@@ -86,7 +86,7 @@ public class ManagementProviderContractsController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF)]
+    [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(ProviderContractDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateContract([FromBody] ProviderContractCreateRequest request)
@@ -118,7 +118,7 @@ public class ManagementProviderContractsController : ControllerBase
     }
 
     [HttpPut("{contractId:int}")]
-    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF)]
+    [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(ProviderContractDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UpdateContract(
@@ -193,7 +193,7 @@ public class ManagementProviderContractsController : ControllerBase
     }
 
     [HttpPost("{contractId:int}/attachments")]
-    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF)]
+    [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(IReadOnlyCollection<ProviderContractAttachmentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
