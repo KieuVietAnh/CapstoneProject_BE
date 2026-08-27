@@ -9,7 +9,7 @@ using UrbanService.BLL.Interfaces;
 namespace UrbanService.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRole.SYSTEMSTAFF)]
+[Authorize(Roles = UserRole.INTERACTIONMANAGER)]
 [Route("api/management/area-alerts")]
 public class ManagementAreaAlertsController : ControllerBase
 {
@@ -20,7 +20,7 @@ public class ManagementAreaAlertsController : ControllerBase
         _areaAlertService = areaAlertService;
     }
 
-    /// <summary>Staff tạo cảnh báo khu vực thủ công.</summary>
+    /// <summary>Manager tạo cảnh báo thủ công trong phường phụ trách.</summary>
     [HttpPost]
     [ProducesResponseType(typeof(UserAreaAlertDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]

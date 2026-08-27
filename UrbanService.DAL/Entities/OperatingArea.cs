@@ -47,6 +47,8 @@ public partial class OperatingArea
 
     public virtual ICollection<Incident> Incidents { get; set; } = new List<Incident>();
 
+    public virtual ICollection<ManagerAreaAssignment> ManagerAreaAssignments { get; set; } = new List<ManagerAreaAssignment>();
+
     public virtual ICollection<MessengerFeedbackConversation> MessengerFeedbackConversations { get; set; }
         = new List<MessengerFeedbackConversation>();
 

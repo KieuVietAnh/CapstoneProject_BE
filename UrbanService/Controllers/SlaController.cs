@@ -24,9 +24,7 @@ public class SlaController : ControllerBase
     /// Manager/Admin bắt đầu SLA cho feedback sau khi xác minh.
     /// </summary>
     [HttpPost("feedback/{feedbackId:guid}/start")]
-    [Authorize(Roles =
-        UserRole.SYSTEMADMIN + "," +
-        UserRole.INTERACTIONMANAGER)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -55,7 +53,8 @@ public class SlaController : ControllerBase
     {
         var result =
             await _slaService.GetCurrentByFeedbackIdAsync(
-                feedbackId);
+                feedbackId,
+                GetCurrentUserId());
 
         return Ok(result);
     }
@@ -66,10 +65,7 @@ public class SlaController : ControllerBase
     /// Nhân viên ghi nhận phản hồi đầu tiên.
     /// </summary>
     [HttpPatch("feedback/{feedbackId:guid}/responded")]
-    [Authorize(Roles =
-        UserRole.SYSTEMADMIN + "," +
-        UserRole.SYSTEMSTAFF + "," +
-        UserRole.SERVICEOPERATORSTAFF)]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
     [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> MarkResponded(
         Guid feedbackId,
@@ -90,9 +86,7 @@ public class SlaController : ControllerBase
     /// Manager/Admin tạm dừng SLA.
     /// </summary>
     [HttpPost("feedback/{feedbackId:guid}/pause")]
-    [Authorize(Roles =
-        UserRole.SYSTEMADMIN + "," +
-        UserRole.INTERACTIONMANAGER)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Pause(
         Guid feedbackId,
@@ -113,9 +107,7 @@ public class SlaController : ControllerBase
     /// Manager/Admin tiếp tục SLA.
     /// </summary>
     [HttpPost("feedback/{feedbackId:guid}/resume")]
-    [Authorize(Roles =
-        UserRole.SYSTEMADMIN + "," +
-        UserRole.INTERACTIONMANAGER)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Resume(
         Guid feedbackId,
@@ -136,11 +128,7 @@ public class SlaController : ControllerBase
     /// Hoàn thành SLA sau khi xử lý xong.
     /// </summary>
     [HttpPost("feedback/{feedbackId:guid}/complete")]
-    [Authorize(Roles =
-        UserRole.SYSTEMADMIN + "," +
-        UserRole.INTERACTIONMANAGER + "," +
-        UserRole.SYSTEMSTAFF + "," +
-        UserRole.SERVICEOPERATORSTAFF)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Complete(
         Guid feedbackId,
@@ -161,9 +149,7 @@ public class SlaController : ControllerBase
     /// Manager/Admin tính lại SLA khi thay đổi Category/Priority.
     /// </summary>
     [HttpPost("feedback/{feedbackId:guid}/recalculate")]
-    [Authorize(Roles =
-        UserRole.SYSTEMADMIN + "," +
-        UserRole.INTERACTIONMANAGER)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Recalculate(
         Guid feedbackId,
@@ -184,9 +170,7 @@ public class SlaController : ControllerBase
     /// Hủy SLA.
     /// </summary>
     [HttpPost("feedback/{feedbackId:guid}/cancel")]
-    [Authorize(Roles =
-        UserRole.SYSTEMADMIN + "," +
-        UserRole.INTERACTIONMANAGER)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Cancel(
         Guid feedbackId,
@@ -207,14 +191,13 @@ public class SlaController : ControllerBase
     /// Kiểm tra vi phạm SLA thủ công.
     /// </summary>
     [HttpPost("{feedbackSlaId:long}/check")]
-    [Authorize(Roles =
-        UserRole.SYSTEMADMIN + "," +
-        UserRole.INTERACTIONMANAGER)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     public async Task<IActionResult> CheckViolation(
         long feedbackSlaId)
     {
         await _slaService.CheckViolationAsync(
-            feedbackSlaId);
+            feedbackSlaId,
+            GetCurrentUserId());
 
         return Ok();
     }
@@ -232,7 +215,8 @@ public class SlaController : ControllerBase
     {
         var result =
             await _slaService.GetStatusAsync(
-                feedbackId);
+                feedbackId,
+                GetCurrentUserId());
 
         return Ok(result);
     }
@@ -250,7 +234,8 @@ public class SlaController : ControllerBase
     {
         var result =
             await _slaService.GetTimelineAsync(
-                feedbackId);
+                feedbackId,
+                GetCurrentUserId());
 
         return Ok(result);
     }

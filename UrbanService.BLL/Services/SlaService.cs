@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Common.Helpers;
 using UrbanService.BLL.DTOs.SLA;
@@ -40,8 +41,11 @@ public class SlaService : ISlaService
 
 
     public async Task<List<SlaTimelineDto>> GetTimelineAsync(
-    Guid feedbackId)
+        Guid feedbackId,
+        Guid actorUserId)
     {
+        await EnsureFeedbackReadAccessAsync(feedbackId, actorUserId);
+
         var sla = await _unitOfWork
             .GetRepository<FeedbackSla>()
             .Entities
@@ -106,8 +110,11 @@ public class SlaService : ISlaService
     }
 
     public async Task<SlaStatusDto> GetStatusAsync(
-    Guid feedbackId)
+        Guid feedbackId,
+        Guid actorUserId)
     {
+        await EnsureFeedbackReadAccessAsync(feedbackId, actorUserId);
+
         var sla = await _unitOfWork
             .GetRepository<FeedbackSla>()
             .Entities
@@ -384,7 +391,15 @@ public class SlaService : ISlaService
         ValidateFeedbackId(feedbackId);
         ValidateUserId(startedByUserId);
 
-        await EnsureUserExistsAsync(startedByUserId);
+        var incident = await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _unitOfWork,
+            feedbackId,
+            startedByUserId);
+        if (incident.Status != IncidentStatus.Verified)
+        {
+            throw new InvalidOperationException(
+                "Chỉ được bắt đầu SLA khi sự vụ đã được xác minh.");
+        }
 
         var feedback = await _unitOfWork
             .GetRepository<Feedback>()
@@ -540,9 +555,12 @@ public class SlaService : ISlaService
     }
 
     public async Task<FeedbackSlaDto>
-        GetCurrentByFeedbackIdAsync(Guid feedbackId)
+        GetCurrentByFeedbackIdAsync(
+            Guid feedbackId,
+            Guid actorUserId)
     {
         ValidateFeedbackId(feedbackId);
+        await EnsureFeedbackReadAccessAsync(feedbackId, actorUserId);
 
         var feedbackSlaId = await _unitOfWork
             .GetRepository<FeedbackSla>()
@@ -564,7 +582,7 @@ public class SlaService : ISlaService
             feedbackSlaId.Value);
     }
 
-    public async Task<FeedbackSlaDto> GetByIdAsync(
+    private async Task<FeedbackSlaDto> GetByIdAsync(
         long feedbackSlaId)
     {
         ValidateFeedbackSlaId(feedbackSlaId);
@@ -606,7 +624,15 @@ public class SlaService : ISlaService
         ValidateFeedbackId(feedbackId);
         ValidateUserId(triggeredByUserId);
 
-        await EnsureUserExistsAsync(triggeredByUserId);
+        var incident = await ManagementAccessRules.EnsureStaffFeedbackOperationAsync(
+            _unitOfWork,
+            feedbackId,
+            triggeredByUserId);
+        if (incident.Status != IncidentStatus.InProgress)
+        {
+            throw new InvalidOperationException(
+                "Chỉ ghi nhận phản hồi SLA khi sự vụ đang được xử lý.");
+        }
 
         var entity =
             await GetCurrentEntityAsync(feedbackId);
@@ -683,7 +709,10 @@ public class SlaService : ISlaService
         ValidateUserId(pausedByUserId);
         ValidatePauseReason(request.ReasonCode);
 
-        await EnsureUserExistsAsync(pausedByUserId);
+        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _unitOfWork,
+            feedbackId,
+            pausedByUserId);
 
         var entity =
             await GetCurrentEntityAsync(feedbackId);
@@ -775,7 +804,10 @@ public class SlaService : ISlaService
         ValidateFeedbackId(feedbackId);
         ValidateUserId(resumedByUserId);
 
-        await EnsureUserExistsAsync(resumedByUserId);
+        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _unitOfWork,
+            feedbackId,
+            resumedByUserId);
 
         var entity =
             await GetCurrentEntityAsync(feedbackId);
@@ -908,7 +940,15 @@ public class SlaService : ISlaService
         ValidateFeedbackId(feedbackId);
         ValidateUserId(completedByUserId);
 
-        await EnsureUserExistsAsync(completedByUserId);
+        var incident = await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _unitOfWork,
+            feedbackId,
+            completedByUserId);
+        if (incident.Status != IncidentStatus.Approved)
+        {
+            throw new InvalidOperationException(
+                "Chỉ hoàn thành SLA sau khi Manager đã duyệt kết quả sự vụ.");
+        }
 
         var entity =
             await GetCurrentEntityAsync(feedbackId);
@@ -997,7 +1037,15 @@ public class SlaService : ISlaService
         ValidateFeedbackId(feedbackId);
         ValidateUserId(cancelledByUserId);
 
-        await EnsureUserExistsAsync(cancelledByUserId);
+        var incident = await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _unitOfWork,
+            feedbackId,
+            cancelledByUserId);
+        if (incident.Status != IncidentStatus.Cancelled)
+        {
+            throw new InvalidOperationException(
+                "Chỉ hủy SLA sau khi sự vụ đã được hủy.");
+        }
 
         var entity =
             await GetCurrentEntityAsync(feedbackId);
@@ -1051,7 +1099,9 @@ public class SlaService : ISlaService
         ValidateFeedbackId(feedbackId);
         ValidateUserId(recalculatedByUserId);
 
-        await EnsureUserExistsAsync(
+        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _unitOfWork,
+            feedbackId,
             recalculatedByUserId);
 
 
@@ -1278,9 +1328,23 @@ public class SlaService : ISlaService
     }
 
     public async Task CheckViolationAsync(
-        long feedbackSlaId)
+        long feedbackSlaId,
+        Guid actorUserId)
     {
         ValidateFeedbackSlaId(feedbackSlaId);
+
+        var feedbackId = await _unitOfWork
+            .GetRepository<FeedbackSla>()
+            .Entities
+            .AsNoTracking()
+            .Where(sla => sla.FeedbackSlaId == feedbackSlaId)
+            .Select(sla => (Guid?)sla.FeedbackId)
+            .SingleOrDefaultAsync()
+            ?? throw new KeyNotFoundException("Không tìm thấy SLA.");
+        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _unitOfWork,
+            feedbackId,
+            actorUserId);
 
         var entity = await _unitOfWork
             .GetRepository<FeedbackSla>()
@@ -2759,6 +2823,47 @@ public class SlaService : ISlaService
         }
 
         return entity;
+    }
+
+    private async Task EnsureFeedbackReadAccessAsync(
+        Guid feedbackId,
+        Guid actorUserId)
+    {
+        ValidateFeedbackId(feedbackId);
+        ValidateUserId(actorUserId);
+
+        var actorRole = await _unitOfWork
+            .GetRepository<User>()
+            .Entities
+            .AsNoTracking()
+            .Where(user => user.UserId == actorUserId && user.IsActive)
+            .Select(user => user.Role.RoleName)
+            .SingleOrDefaultAsync()
+            ?? throw new UnauthorizedAccessException(
+                "Không tìm thấy người dùng hoặc tài khoản đã bị khóa.");
+
+        if (actorRole == UserRole.SERVICEUSER)
+        {
+            var isOwner = await _unitOfWork
+                .GetRepository<Feedback>()
+                .Entities
+                .AsNoTracking()
+                .AnyAsync(feedback =>
+                    feedback.FeedbackId == feedbackId &&
+                    feedback.UserId == actorUserId);
+            if (!isOwner)
+            {
+                throw new ForbiddenAccessException(
+                    "Bạn không có quyền xem SLA của phản ánh này.");
+            }
+
+            return;
+        }
+
+        await ManagementAccessRules.EnsureFeedbackReadAccessAsync(
+            _unitOfWork,
+            feedbackId,
+            actorUserId);
     }
 
     private async Task AddEventAsync(

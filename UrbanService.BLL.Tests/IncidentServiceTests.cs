@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Authorization;
 using NSubstitute;
+using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Services;
+using UrbanService.Controllers;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
 using Xunit;
@@ -142,7 +145,7 @@ public sealed class IncidentServiceTests
     }
 
     [Fact]
-    public async Task UpdateStatus_ProjectsStatusToAllActiveReports()
+    public async Task UpdateStatusFromFeedback_ProjectsStatusToAllActiveReports()
     {
         var context = new IncidentTestContext();
         var service = new IncidentService(context.UnitOfWork);
@@ -162,8 +165,8 @@ public sealed class IncidentServiceTests
         ]);
         var actorUserId = Guid.NewGuid();
 
-        var result = await service.UpdateStatusAsync(
-            incident.IncidentId,
+        var result = await service.UpdateStatusFromFeedbackAsync(
+            primary.FeedbackId,
             new UrbanService.BLL.Dtos.UpdateIncidentStatusRequest
             {
                 Status = IncidentStatus.Assigned,
@@ -171,7 +174,9 @@ public sealed class IncidentServiceTests
             },
             actorUserId);
 
-        Assert.Equal(IncidentStatus.Assigned, result.Status);
+        Assert.Equal(primary.FeedbackId, result.FeedbackId);
+        Assert.Equal(FeedbackStatus.Assigned, result.NewStatus);
+        Assert.Equal(IncidentStatus.Assigned, incident.Status);
         Assert.Equal(FeedbackStatus.Assigned, primary.Status);
         Assert.Equal(FeedbackStatus.Assigned, corroborating.Status);
         Assert.Equal(2, context.StatusHistories.Count);
@@ -185,7 +190,7 @@ public sealed class IncidentServiceTests
     }
 
     [Fact]
-    public async Task UpdateStatus_DoesNotProjectStatusToUnlinkedReport()
+    public async Task UpdateStatusFromFeedback_DoesNotProjectStatusToUnlinkedReport()
     {
         var context = new IncidentTestContext();
         var service = new IncidentService(context.UnitOfWork);
@@ -212,8 +217,8 @@ public sealed class IncidentServiceTests
         oldLink.UnlinkedAt = now;
         context.Links.Add(oldLink);
 
-        await service.UpdateStatusAsync(
-            incident.IncidentId,
+        await service.UpdateStatusFromFeedbackAsync(
+            active.FeedbackId,
             new UrbanService.BLL.Dtos.UpdateIncidentStatusRequest
             {
                 Status = IncidentStatus.InProgress
@@ -262,7 +267,7 @@ public sealed class IncidentServiceTests
     }
 
     [Fact]
-    public async Task UpdateStatus_RejectsRollbackToNew()
+    public async Task UpdateStatusFromFeedback_RejectsRollbackToNew()
     {
         var context = new IncidentTestContext();
         var service = new IncidentService(context.UnitOfWork);
@@ -279,8 +284,8 @@ public sealed class IncidentServiceTests
             IncidentLinkRole.Primary,
             now));
 
-        await Assert.ThrowsAsync<Exception>(() => service.UpdateStatusAsync(
-            incident.IncidentId,
+        await Assert.ThrowsAsync<Exception>(() => service.UpdateStatusFromFeedbackAsync(
+            feedback.FeedbackId,
             new UrbanService.BLL.Dtos.UpdateIncidentStatusRequest
             {
                 Status = IncidentStatus.New
@@ -294,6 +299,113 @@ public sealed class IncidentServiceTests
     }
 
     [Fact]
+    public async Task UpdateStatus_DirectVerify_IsRejectedToPreventFeedbackWorkflowBypass()
+    {
+        var context = new IncidentTestContext();
+        var service = new IncidentService(context.UnitOfWork);
+        var now = DateTime.UtcNow;
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        feedback.Status = FeedbackStatus.AiReviewed;
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        incident.Status = IncidentStatus.New;
+        context.Incidents.Add(incident);
+        context.Feedbacks.Add(feedback);
+        context.Links.Add(IncidentTestContext.Link(
+            incident,
+            feedback,
+            IncidentLinkRole.Primary,
+            now));
+        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Ward manager");
+        context.AddManagerAreaAssignment(manager, incident.Area);
+
+        await Assert.ThrowsAsync<Exception>(() => service.UpdateStatusAsync(
+            incident.IncidentId,
+            new UrbanService.BLL.Dtos.UpdateIncidentStatusRequest
+            {
+                Status = IncidentStatus.Verified,
+                Note = "Manager verified report"
+            },
+            manager.UserId));
+
+        Assert.Equal(IncidentStatus.New, incident.Status);
+        Assert.Equal(FeedbackStatus.AiReviewed, feedback.Status);
+        Assert.Empty(context.StatusHistories);
+    }
+
+    [Fact]
+    public async Task GetIncidents_StaffSeesOnlyIncidentsAssignedToSelf()
+    {
+        var context = new IncidentTestContext();
+        var service = new IncidentService(context.UnitOfWork);
+        var now = DateTime.UtcNow;
+        var staff = context.AddActor(UserRole.SYSTEMSTAFF, "Assigned staff");
+        var assignedFeedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        var assignedIncident = IncidentTestContext.Incident(Guid.NewGuid(), assignedFeedback, now);
+        assignedIncident.AssignedStaffUserId = staff.UserId;
+        var otherFeedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now.AddMinutes(1));
+        var otherIncident = IncidentTestContext.Incident(Guid.NewGuid(), otherFeedback, now.AddMinutes(1));
+        otherIncident.AssignedStaffUserId = Guid.NewGuid();
+        context.Incidents.AddRange([assignedIncident, otherIncident]);
+
+        var result = await service.GetIncidentsAsync(
+            new UrbanService.BLL.Dtos.IncidentQueryParameters(),
+            staff.UserId);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(assignedIncident.IncidentId, item.IncidentId);
+        Assert.Equal(1, result.TotalItems);
+    }
+
+    [Fact]
+    public async Task GetIncidentDetail_StaffCanReadAssignedIncidentAndIsDeniedUnassignedIncident()
+    {
+        var context = new IncidentTestContext();
+        var service = new IncidentService(context.UnitOfWork);
+        var now = DateTime.UtcNow;
+        var staff = context.AddActor(UserRole.SYSTEMSTAFF, "Assigned staff");
+        var assignedFeedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        var assignedIncident = IncidentTestContext.Incident(Guid.NewGuid(), assignedFeedback, now);
+        assignedIncident.AssignedStaffUserId = staff.UserId;
+        var otherFeedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now.AddMinutes(1));
+        var otherIncident = IncidentTestContext.Incident(Guid.NewGuid(), otherFeedback, now.AddMinutes(1));
+        otherIncident.AssignedStaffUserId = Guid.NewGuid();
+        context.Incidents.AddRange([assignedIncident, otherIncident]);
+
+        var detail = await service.GetIncidentDetailAsync(
+            assignedIncident.IncidentId,
+            staff.UserId);
+
+        Assert.Equal(assignedIncident.IncidentId, detail.IncidentId);
+        await Assert.ThrowsAsync<ForbiddenAccessException>(() => service.GetIncidentDetailAsync(
+            otherIncident.IncidentId,
+            staff.UserId));
+    }
+
+    [Fact]
+    public async Task GetIncidents_ManagerSeesOnlyIncidentsInCoveredAreas()
+    {
+        var context = new IncidentTestContext();
+        var service = new IncidentService(context.UnitOfWork);
+        var now = DateTime.UtcNow;
+        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Ward manager");
+        var coveredFeedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        var coveredIncident = IncidentTestContext.Incident(Guid.NewGuid(), coveredFeedback, now);
+        var outsideFeedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now.AddMinutes(1));
+        outsideFeedback.AreaId = 2;
+        var outsideIncident = IncidentTestContext.Incident(Guid.NewGuid(), outsideFeedback, now.AddMinutes(1));
+        context.Incidents.AddRange([coveredIncident, outsideIncident]);
+        context.AddManagerAreaAssignment(manager, coveredIncident.Area);
+
+        var result = await service.GetIncidentsAsync(
+            new UrbanService.BLL.Dtos.IncidentQueryParameters(),
+            manager.UserId);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(coveredIncident.IncidentId, item.IncidentId);
+        Assert.Equal(coveredIncident.AreaId, item.AreaId);
+    }
+
+    [Fact]
     public async Task GetAssigneeCandidates_ReturnsOnlyActiveStaffForIncidentScope()
     {
         var context = new IncidentTestContext();
@@ -302,6 +414,8 @@ public sealed class IncidentServiceTests
         var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
         var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
         context.Incidents.Add(incident);
+        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Ward manager");
+        context.AddManagerAreaAssignment(manager, incident.Area);
 
         var eligibleStaff = IncidentTestContext.Staff(Guid.NewGuid(), "Eligible staff");
         var wrongAreaStaff = IncidentTestContext.Staff(Guid.NewGuid(), "Wrong area staff");
@@ -323,7 +437,9 @@ public sealed class IncidentServiceTests
             IncidentTestContext.Assignment(inactiveStaff, incident.Area, incident.CategoryId)
         ]);
 
-        var result = await service.GetAssigneeCandidatesAsync(incident.IncidentId);
+        var result = await service.GetAssigneeCandidatesAsync(
+            incident.IncidentId,
+            manager.UserId);
 
         var candidate = Assert.Single(result);
         Assert.Equal(eligibleStaff.UserId, candidate.UserId);
@@ -332,18 +448,28 @@ public sealed class IncidentServiceTests
     }
 
     [Fact]
-    public async Task Assign_SavesStaffAndAuditEvent_WhenStaffMatchesIncidentScope()
+    public async Task Assign_ManagerSetsStaffAndProjectsAssignedStatusToAllActiveReports()
     {
         var context = new IncidentTestContext();
         var service = new IncidentService(context.UnitOfWork);
         var now = DateTime.UtcNow;
         var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        var corroborating = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now.AddMinutes(1));
+        feedback.Status = FeedbackStatus.Verified;
+        corroborating.Status = FeedbackStatus.Verified;
         var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
-        incident.Status = IncidentStatus.New;
+        incident.Status = IncidentStatus.Verified;
         context.Incidents.Add(incident);
+        context.Feedbacks.AddRange([feedback, corroborating]);
+        context.Links.AddRange(
+        [
+            IncidentTestContext.Link(incident, feedback, IncidentLinkRole.Primary, now),
+            IncidentTestContext.Link(incident, corroborating, IncidentLinkRole.Corroborating, now.AddMinutes(1))
+        ]);
         var staff = IncidentTestContext.Staff(Guid.NewGuid(), "Assigned staff");
         context.Assignments.Add(IncidentTestContext.Assignment(staff, incident.Area, incident.CategoryId));
-        var actorUserId = Guid.NewGuid();
+        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Ward manager");
+        context.AddManagerAreaAssignment(manager, incident.Area);
 
         var result = await service.AssignAsync(
             incident.IncidentId,
@@ -352,16 +478,26 @@ public sealed class IncidentServiceTests
                 StaffUserId = staff.UserId,
                 Reason = "Phụ trách đúng phường và danh mục"
             },
-            actorUserId);
+            manager.UserId);
 
         Assert.Equal(staff.UserId, incident.AssignedStaffUserId);
         Assert.Equal(staff.UserId, result.AssignedStaffUserId);
+        Assert.Equal(IncidentStatus.Assigned, incident.Status);
+        Assert.Equal(FeedbackStatus.Assigned, feedback.Status);
+        Assert.Equal(FeedbackStatus.Assigned, corroborating.Status);
+        Assert.Equal(2, context.StatusHistories.Count(history =>
+            history.NewStatus == FeedbackStatus.Assigned &&
+            history.ChangedByUserId == manager.UserId));
         Assert.Contains(context.Events, incidentEvent =>
             incidentEvent.IncidentId == incident.IncidentId &&
             incidentEvent.EventType == IncidentEventType.AssigneeChanged &&
-            incidentEvent.ActorUserId == actorUserId &&
+            incidentEvent.ActorUserId == manager.UserId &&
             incidentEvent.PayloadJson != null &&
             incidentEvent.PayloadJson.Contains(staff.UserId.ToString(), StringComparison.Ordinal));
+        Assert.Contains(context.Events, incidentEvent =>
+            incidentEvent.IncidentId == incident.IncidentId &&
+            incidentEvent.EventType == IncidentEventType.StatusChanged &&
+            incidentEvent.ActorUserId == manager.UserId);
         await context.UnitOfWork.Received(1).SaveAsync();
     }
 
@@ -373,14 +509,17 @@ public sealed class IncidentServiceTests
         var now = DateTime.UtcNow;
         var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
         var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        incident.Status = IncidentStatus.Verified;
         context.Incidents.Add(incident);
         var staff = IncidentTestContext.Staff(Guid.NewGuid(), "Wrong category staff");
         context.Assignments.Add(IncidentTestContext.Assignment(staff, incident.Area, incident.CategoryId + 1));
+        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Ward manager");
+        context.AddManagerAreaAssignment(manager, incident.Area);
 
         var exception = await Assert.ThrowsAsync<Exception>(() => service.AssignAsync(
             incident.IncidentId,
             new UrbanService.BLL.Dtos.AssignIncidentRequest { StaffUserId = staff.UserId },
-            Guid.NewGuid()));
+            manager.UserId));
 
         Assert.Contains("khu vực và danh mục", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Null(incident.AssignedStaffUserId);
@@ -398,6 +537,8 @@ public sealed class IncidentServiceTests
         var remainingReport = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
         var incident = IncidentTestContext.Incident(Guid.NewGuid(), primaryReport, now.AddMinutes(-5));
         context.Incidents.Add(incident);
+        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Ward manager");
+        context.AddManagerAreaAssignment(manager, incident.Area);
         var primaryLink = IncidentTestContext.Link(incident, primaryReport, IncidentLinkRole.Primary, now.AddMinutes(-5));
         var remainingLink = IncidentTestContext.Link(incident, remainingReport, IncidentLinkRole.Corroborating, now);
         context.Links.AddRange([primaryLink, remainingLink]);
@@ -415,7 +556,7 @@ public sealed class IncidentServiceTests
         await service.UnlinkReportAsync(
             incident.IncidentId,
             primaryReport.FeedbackId,
-            Guid.NewGuid());
+            manager.UserId);
 
         Assert.Equal(IncidentLinkStatus.Unlinked, primaryLink.LinkStatus);
         Assert.NotNull(primaryLink.UnlinkedAt);
@@ -425,6 +566,30 @@ public sealed class IncidentServiceTests
             item.EventType == IncidentEventType.ReportUnlinked &&
             item.FeedbackId == primaryReport.FeedbackId);
         context.UnitOfWork.Received(1).CommitTransaction();
+    }
+
+    [Fact]
+    public void ManagementIncidentMutations_RequireInteractionManagerRole()
+    {
+        var managerOnlyActions = new[]
+        {
+            nameof(ManagementIncidentsController.LinkReport),
+            nameof(ManagementIncidentsController.UnlinkReport),
+            nameof(ManagementIncidentsController.UpdateIncident),
+            nameof(ManagementIncidentsController.UpdateStatus),
+            nameof(ManagementIncidentsController.GetAssigneeCandidates),
+            nameof(ManagementIncidentsController.Assign),
+            nameof(ManagementIncidentsController.Merge)
+        };
+
+        foreach (var actionName in managerOnlyActions)
+        {
+            var action = typeof(ManagementIncidentsController).GetMethod(actionName)!;
+            var authorize = Assert.Single(action
+                .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: false)
+                .Cast<AuthorizeAttribute>());
+            Assert.Equal(UserRole.INTERACTIONMANAGER, authorize.Roles);
+        }
     }
 
     private sealed class IncidentTestContext
@@ -438,6 +603,8 @@ public sealed class IncidentServiceTests
             ConfigureRepository(FeedbackRepository, Feedbacks);
             ConfigureRepository(StatusHistoryRepository, StatusHistories);
             ConfigureRepository(AssignmentRepository, Assignments);
+            ConfigureRepository(UserRepository, Users);
+            ConfigureRepository(ManagerAreaAssignmentRepository, ManagerAreaAssignments);
 
             UnitOfWork.GetRepository<Incident>().Returns(IncidentRepository);
             UnitOfWork.GetRepository<IncidentReportLink>().Returns(LinkRepository);
@@ -446,6 +613,8 @@ public sealed class IncidentServiceTests
             UnitOfWork.GetRepository<Feedback>().Returns(FeedbackRepository);
             UnitOfWork.GetRepository<FeedbackStatusHistory>().Returns(StatusHistoryRepository);
             UnitOfWork.GetRepository<StaffAreaAssignment>().Returns(AssignmentRepository);
+            UnitOfWork.GetRepository<User>().Returns(UserRepository);
+            UnitOfWork.GetRepository<ManagerAreaAssignment>().Returns(ManagerAreaAssignmentRepository);
             UnitOfWork.SaveAsync().Returns(Task.CompletedTask);
             UnitOfWork.AcquireTransactionAdvisoryLockAsync(Arg.Any<long>()).Returns(Task.CompletedTask);
         }
@@ -458,6 +627,8 @@ public sealed class IncidentServiceTests
         public IGenericRepository<Feedback> FeedbackRepository { get; } = Substitute.For<IGenericRepository<Feedback>>();
         public IGenericRepository<FeedbackStatusHistory> StatusHistoryRepository { get; } = Substitute.For<IGenericRepository<FeedbackStatusHistory>>();
         public IGenericRepository<StaffAreaAssignment> AssignmentRepository { get; } = Substitute.For<IGenericRepository<StaffAreaAssignment>>();
+        public IGenericRepository<User> UserRepository { get; } = Substitute.For<IGenericRepository<User>>();
+        public IGenericRepository<ManagerAreaAssignment> ManagerAreaAssignmentRepository { get; } = Substitute.For<IGenericRepository<ManagerAreaAssignment>>();
 
         public List<Incident> Incidents { get; } = [];
         public List<IncidentReportLink> Links { get; } = [];
@@ -466,6 +637,44 @@ public sealed class IncidentServiceTests
         public List<Feedback> Feedbacks { get; } = [];
         public List<FeedbackStatusHistory> StatusHistories { get; } = [];
         public List<StaffAreaAssignment> Assignments { get; } = [];
+        public List<User> Users { get; } = [];
+        public List<ManagerAreaAssignment> ManagerAreaAssignments { get; } = [];
+
+        public User AddActor(string roleName, string fullName)
+        {
+            var user = new User
+            {
+                UserId = Guid.NewGuid(),
+                FullName = fullName,
+                Email = $"{Guid.NewGuid()}@example.test",
+                IsActive = true,
+                Role = new Role
+                {
+                    RoleId = Random.Shared.Next(1, int.MaxValue),
+                    RoleName = roleName
+                }
+            };
+            Users.Add(user);
+            return user;
+        }
+
+        public ManagerAreaAssignment AddManagerAreaAssignment(User manager, OperatingArea area)
+        {
+            var assignment = new ManagerAreaAssignment
+            {
+                ManagerAreaAssignmentId = Random.Shared.Next(1, int.MaxValue),
+                ManagerUserId = manager.UserId,
+                ManagerUser = manager,
+                AreaId = area.AreaId,
+                Area = area,
+                CreatedByUserId = manager.UserId,
+                CreatedByUser = manager,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            ManagerAreaAssignments.Add(assignment);
+            return assignment;
+        }
 
         public static Feedback Feedback(Guid feedbackId, Guid userId, DateTime createdAt)
         {

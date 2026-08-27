@@ -34,20 +34,20 @@ public class FeedbackDuplicateCandidateServiceTests
             context.UnitOfWork,
             notificationService,
             incidentService);
-        var staffUserId = Guid.NewGuid();
+        var managerUserId = context.ManagerUserId;
 
-        await service.ConfirmAsync(candidate.DuplicateCandidateId, staffUserId);
+        await service.ConfirmAsync(candidate.DuplicateCandidateId, managerUserId);
 
         Assert.Equal(a.FeedbackId, b.ParentTicketId);
         Assert.False(b.IsMasterTicket);
         Assert.True(a.IsMasterTicket);
         Assert.Equal("Confirmed", candidate.Status);
-        Assert.Equal(staffUserId, candidate.ReviewedByUserId);
+        Assert.Equal(managerUserId, candidate.ReviewedByUserId);
         context.UnitOfWork.Received(1).CommitTransaction();
         await incidentService.Received(1).RelinkConfirmedDuplicateAsync(
             b,
             a,
-            staffUserId,
+            managerUserId,
             candidate.ConfidenceScore,
             candidate.Reason,
             Arg.Any<CancellationToken>());
@@ -74,7 +74,9 @@ public class FeedbackDuplicateCandidateServiceTests
         var candidate = context.Candidate(report, parent);
         var service = CreateService(context);
 
-        var result = await service.GetCandidateDetailAsync(candidate.DuplicateCandidateId);
+        var result = await service.GetCandidateDetailAsync(
+            candidate.DuplicateCandidateId,
+            context.ManagerUserId);
 
         Assert.Equal(currentIncidentId, result.IncidentId);
         Assert.Equal(currentIncidentId, result.CurrentIncidentId);
@@ -107,13 +109,13 @@ public class FeedbackDuplicateCandidateServiceTests
         var selected = context.Candidate(b, a);
         var competing = context.Candidate(b, d);
         var service = CreateService(context);
-        var staffUserId = Guid.NewGuid();
+        var managerUserId = context.ManagerUserId;
 
-        await service.ConfirmAsync(selected.DuplicateCandidateId, staffUserId);
+        await service.ConfirmAsync(selected.DuplicateCandidateId, managerUserId);
 
         Assert.Equal("Confirmed", selected.Status);
         Assert.Equal("Rejected", competing.Status);
-        Assert.Equal(staffUserId, competing.ReviewedByUserId);
+        Assert.Equal(managerUserId, competing.ReviewedByUserId);
         Assert.Equal(a.FeedbackId, b.ParentTicketId);
     }
 
@@ -137,7 +139,9 @@ public class FeedbackDuplicateCandidateServiceTests
             notificationService,
             incidentService);
 
-        var result = await service.ConfirmAsync(candidate.DuplicateCandidateId, Guid.NewGuid());
+        var result = await service.ConfirmAsync(
+            candidate.DuplicateCandidateId,
+            context.ManagerUserId);
 
         Assert.Equal("Confirmed", result.Status);
         await incidentService.DidNotReceiveWithAnyArgs().RelinkConfirmedDuplicateAsync(
@@ -163,7 +167,7 @@ public class FeedbackDuplicateCandidateServiceTests
         var service = CreateService(context);
 
         await Assert.ThrowsAsync<Exception>(
-            () => service.ConfirmAsync(candidate.DuplicateCandidateId, Guid.NewGuid()));
+            () => service.ConfirmAsync(candidate.DuplicateCandidateId, context.ManagerUserId));
 
         Assert.Null(b.ParentTicketId);
         Assert.Equal("Pending", candidate.Status);
@@ -185,7 +189,7 @@ public class FeedbackDuplicateCandidateServiceTests
         var candidate = context.Candidate(b, a);
         var service = CreateService(context);
 
-        await service.ConfirmAsync(candidate.DuplicateCandidateId, Guid.NewGuid());
+        await service.ConfirmAsync(candidate.DuplicateCandidateId, context.ManagerUserId);
 
         Assert.Equal(a.FeedbackId, b.ParentTicketId);
         Assert.Equal("Confirmed", candidate.Status);
@@ -207,7 +211,9 @@ public class FeedbackDuplicateCandidateServiceTests
         var service = CreateService(context);
 
         await Assert.ThrowsAsync<Exception>(
-            () => service.ConfirmAsync(invalidCandidate.DuplicateCandidateId, Guid.NewGuid()));
+            () => service.ConfirmAsync(
+                invalidCandidate.DuplicateCandidateId,
+                context.ManagerUserId));
 
         Assert.Null(c.ParentTicketId);
         Assert.Equal("Pending", invalidCandidate.Status);
@@ -233,7 +239,7 @@ public class FeedbackDuplicateCandidateServiceTests
         var service = CreateService(context);
 
         await Assert.ThrowsAsync<Exception>(
-            () => service.ConfirmAsync(candidate.DuplicateCandidateId, Guid.NewGuid()));
+            () => service.ConfirmAsync(candidate.DuplicateCandidateId, context.ManagerUserId));
 
         Assert.Null(b.ParentTicketId);
         Assert.Equal("Pending", candidate.Status);
@@ -253,7 +259,7 @@ public class FeedbackDuplicateCandidateServiceTests
         var service = CreateService(context);
 
         await Assert.ThrowsAsync<Exception>(
-            () => service.ConfirmAsync(selected.DuplicateCandidateId, Guid.NewGuid()));
+            () => service.ConfirmAsync(selected.DuplicateCandidateId, context.ManagerUserId));
 
         Assert.Null(b.ParentTicketId);
         Assert.Equal("Pending", selected.Status);
@@ -270,7 +276,7 @@ public class FeedbackDuplicateCandidateServiceTests
         var candidate = context.Candidate(b, a);
         var service = CreateService(context);
 
-        await service.RejectAsync(candidate.DuplicateCandidateId, Guid.NewGuid());
+        await service.RejectAsync(candidate.DuplicateCandidateId, context.ManagerUserId);
 
         Assert.Equal("Rejected", candidate.Status);
         Assert.True(b.IsMasterTicket);
@@ -290,7 +296,7 @@ public class FeedbackDuplicateCandidateServiceTests
         context.Candidate(b, d);
         var service = CreateService(context);
 
-        await service.RejectAsync(rejected.DuplicateCandidateId, Guid.NewGuid());
+        await service.RejectAsync(rejected.DuplicateCandidateId, context.ManagerUserId);
 
         Assert.Equal("Rejected", rejected.Status);
         Assert.False(b.IsMasterTicket);
@@ -308,7 +314,9 @@ public class FeedbackDuplicateCandidateServiceTests
         var candidate = context.Candidate(report, parent, status: "Rejected");
         var service = CreateService(context);
 
-        var result = await service.RejectAsync(candidate.DuplicateCandidateId, Guid.NewGuid());
+        var result = await service.RejectAsync(
+            candidate.DuplicateCandidateId,
+            context.ManagerUserId);
 
         Assert.Equal("Rejected", result.Status);
         Assert.True(report.IsMasterTicket);

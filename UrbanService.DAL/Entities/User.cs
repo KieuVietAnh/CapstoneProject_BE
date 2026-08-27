@@ -61,6 +61,12 @@ public partial class User
 
     public virtual ICollection<InteractionMessage> InteractionMessages { get; set; } = new List<InteractionMessage>();
 
+    public virtual ICollection<ManagerAreaAssignment> ManagerAreaAssignmentManagers { get; set; } = new List<ManagerAreaAssignment>();
+
+    public virtual ICollection<ManagerAreaAssignment> ManagerAreaAssignmentCreatedByUsers { get; set; } = new List<ManagerAreaAssignment>();
+
+    public virtual ICollection<ManagerAreaAssignment> ManagerAreaAssignmentUpdatedByUsers { get; set; } = new List<ManagerAreaAssignment>();
+
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
 
     public virtual ICollection<ProviderContactLog> ProviderContactLogs { get; set; } = new List<ProviderContactLog>();

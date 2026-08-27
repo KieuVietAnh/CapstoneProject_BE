@@ -19,9 +19,13 @@ public interface IFeedbackService
 
     Task<FeedbackDetailDto> GetResidentFeedFeedbackDetailAsync(Guid currentUserId, Guid feedbackId);
 
-    Task<PagedResultDto<FeedbackListItemDto>> GetAllFeedbacksAsync(FeedbackQueryParameters query);
+    Task<PagedResultDto<FeedbackListItemDto>> GetAllFeedbacksAsync(
+        Guid currentUserId,
+        FeedbackQueryParameters query);
 
-    Task<PagedResultDto<FeedbackWithAnalysisResultDto>> GetAiReviewedFeedbacksAsync(FeedbackQueryParameters query);
+    Task<PagedResultDto<FeedbackWithAnalysisResultDto>> GetAiReviewedFeedbacksAsync(
+        Guid currentUserId,
+        FeedbackQueryParameters query);
 
     Task<FeedbackDetailDto> GetFeedbackDetailAsync(Guid currentUserId, Guid feedbackId);
 
@@ -58,9 +62,13 @@ public interface IFeedbackService
     Task<FeedbackProviderReportDto> AssignFeedbackAsync(
         AssignFeedbackRequest request);
 
-    Task<IReadOnlyCollection<ProviderCandidateDto>> GetProviderCandidatesAsync(Guid feedbackId);
+    Task<IReadOnlyCollection<ProviderCandidateDto>> GetProviderCandidatesAsync(
+        Guid feedbackId,
+        Guid currentUserId);
 
-    Task<IReadOnlyCollection<FeedbackProviderReportDto>> GetProviderReportsAsync(Guid feedbackId);
+    Task<IReadOnlyCollection<FeedbackProviderReportDto>> GetProviderReportsAsync(
+        Guid feedbackId,
+        Guid currentUserId);
 
     Task<FeedbackProviderReportDto> UpdateProviderReportStatusAsync(
         int providerReportId,
@@ -72,7 +80,9 @@ public interface IFeedbackService
         Guid currentUserId,
         ProviderContactLogCreateRequest request);
 
-    Task<IReadOnlyCollection<ProviderContactLogDto>> GetProviderContactLogsAsync(int providerReportId);
+    Task<IReadOnlyCollection<ProviderContactLogDto>> GetProviderContactLogsAsync(
+        int providerReportId,
+        Guid currentUserId);
 
     Task<IReadOnlyCollection<CompletionDocumentDto>> AddCompletionDocumentsAsync(
         int providerReportId,
@@ -80,14 +90,23 @@ public interface IFeedbackService
         IReadOnlyCollection<UploadedFeedbackAttachmentDto> documents,
         string? description);
 
-    Task<IReadOnlyCollection<CompletionDocumentDto>> GetCompletionDocumentsAsync(int providerReportId);
+    Task<IReadOnlyCollection<CompletionDocumentDto>> GetCompletionDocumentsAsync(
+        int providerReportId,
+        Guid currentUserId);
+
+    Task<IReadOnlyCollection<FeedbackResolutionDto>> GetFeedbackResolutionsAsync(
+        Guid feedbackId,
+        Guid currentUserId);
 
     Task<IReadOnlyCollection<FeedbackResolutionDto>> GetFeedbackResolutionsAsync(Guid feedbackId);
 
-    Task<FeedbackResolutionDto> GetResolutionAsync(int resolutionId);
+    Task<FeedbackResolutionDto> GetResolutionAsync(
+        int resolutionId,
+        Guid currentUserId);
 
     Task NotifyProviderResultAsync(
         Guid feedbackId,
+        Guid currentUserId,
         NotifyProviderResultRequest request);
 
     Task SubmitResolutionAsync(
@@ -107,5 +126,14 @@ public interface IFeedbackService
         CitizenReviewRequest request);
 
     Task ClearCompletionDocumentsAsync(
-    int providerReportId);
+        int providerReportId,
+        Guid currentUserId);
+
+    Task EnsureManagementFeedbackReadAccessAsync(
+        Guid feedbackId,
+        Guid currentUserId);
+
+    Task EnsureProviderReportOperationAccessAsync(
+        int providerReportId,
+        Guid currentUserId);
 }

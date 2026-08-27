@@ -10,7 +10,7 @@ using UrbanService.BLL.Interfaces;
 namespace UrbanService.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRole.SYSTEMSTAFF + "," + UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
+[Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
 [Route("api/staff/feedback-duplicates")]
 [Route("api/management/incident-match-candidates")]
 public class StaffFeedbackDuplicatesController : ControllerBase
@@ -24,8 +24,7 @@ public class StaffFeedbackDuplicatesController : ControllerBase
 
     /// <summary>Lấy số lượng đề xuất các Report có thể cùng thuộc một Incident.</summary>
     /// <remarks>
-    /// Role được phép: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER.
-    /// FE dùng để hiển thị badge/card pending count trên staff dashboard.
+    /// Manager xem theo các phường phụ trách; Admin chỉ xem để kiểm tra/audit.
     /// </remarks>
     [HttpGet("summary")]
     [ProducesResponseType(typeof(FeedbackDuplicateSummaryDto), StatusCodes.Status200OK)]
@@ -33,13 +32,13 @@ public class StaffFeedbackDuplicatesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetSummary()
     {
-        var result = await _duplicateCandidateService.GetSummaryAsync();
+        var result = await _duplicateCandidateService.GetSummaryAsync(GetCurrentUserId());
         return Ok(result);
     }
 
     /// <summary>Lấy danh sách đề xuất các Report có thể cùng thuộc một Incident.</summary>
     /// <remarks>
-    /// Role được phép: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER.
+    /// Manager xem theo các phường phụ trách; Admin chỉ xem để kiểm tra/audit.
     /// Hỗ trợ filter theo status, ví dụ Pending/Confirmed/Rejected, và phân trang.
     /// </remarks>
     [HttpGet]
@@ -48,13 +47,13 @@ public class StaffFeedbackDuplicatesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetCandidates([FromQuery] FeedbackDuplicateQueryParameters query)
     {
-        var result = await _duplicateCandidateService.GetCandidatesAsync(query);
+        var result = await _duplicateCandidateService.GetCandidatesAsync(query, GetCurrentUserId());
         return Ok(result);
     }
 
     /// <summary>So sánh Report mới với Report đại diện của Incident được đề xuất.</summary>
     /// <remarks>
-    /// Role được phép: SYSTEMSTAFF, SYSTEMADMIN, INTERACTIONMANAGER.
+    /// Manager xem theo các phường phụ trách; Admin chỉ xem để kiểm tra/audit.
     /// FE dùng response này để render màn compare feedback mới và potential parent feedback.
     /// </remarks>
     [HttpGet("{duplicateCandidateId:guid}")]
@@ -64,18 +63,21 @@ public class StaffFeedbackDuplicatesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetCandidateDetail(Guid duplicateCandidateId)
     {
-        var result = await _duplicateCandidateService.GetCandidateDetailAsync(duplicateCandidateId);
+        var result = await _duplicateCandidateService.GetCandidateDetailAsync(
+            duplicateCandidateId,
+            GetCurrentUserId());
         return Ok(result);
     }
 
     /// <summary>Xác nhận hai Report cùng sự vụ và chuyển Report vào Incident canonical.</summary>
     /// <remarks>
-    /// Chỉ role SYSTEMSTAFF/SYSTEMADMIN/INTERACTIONMANAGER được phép.
+    /// Chỉ Manager phụ trách phường của cả hai Incident được phép xác nhận.
     /// Khi confirm, Feedback/Report vẫn được giữ nguyên; active link được chuyển sang
     /// Incident canonical, Incident rỗng được đánh dấu Merged và candidate chuyển Confirmed.
     /// ParentTicketId/IsMasterTicket vẫn được cập nhật tạm thời để tương thích API cũ.
     /// </remarks>
     [HttpPost("{duplicateCandidateId:guid}/confirm")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(FeedbackDuplicateCandidateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -88,10 +90,11 @@ public class StaffFeedbackDuplicatesController : ControllerBase
 
     /// <summary>Từ chối đề xuất cùng sự vụ; mỗi Report tiếp tục thuộc Incident riêng.</summary>
     /// <remarks>
-    /// Chỉ role SYSTEMSTAFF/SYSTEMADMIN/INTERACTIONMANAGER được phép.
+    /// Chỉ Manager phụ trách phường của Incident được phép từ chối.
     /// Khi reject, candidate chuyển Rejected, không relink Report và không merge Incident.
     /// </remarks>
     [HttpPost("{duplicateCandidateId:guid}/reject")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(FeedbackDuplicateCandidateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

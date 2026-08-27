@@ -39,12 +39,14 @@ public class SlaDashboardService : ISlaDashboardService
     ///   đã loại thời gian pause.
     /// </summary>
     public async Task<SlaDashboardOverviewDto>
-        GetOverviewAsync()
+        GetOverviewAsync(Guid actorUserId)
     {
-        var slaQuery = _unitOfWork
-            .GetRepository<FeedbackSla>()
-            .Entities
-            .AsNoTracking();
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _unitOfWork,
+            actorUserId);
+        var slaQuery = ApplySlaReadScope(
+            _unitOfWork.GetRepository<FeedbackSla>().Entities.AsNoTracking(),
+            actor);
 
         var total = await slaQuery.CountAsync();
 
@@ -64,10 +66,9 @@ public class SlaDashboardService : ISlaDashboardService
          * Một SLA có thể có cả ResponseWarning và ResolutionWarning,
          * vì vậy phải Distinct theo FeedbackSlaId.
          */
-        var warning = await _unitOfWork
-            .GetRepository<SlaEvent>()
-            .Entities
-            .AsNoTracking()
+        var warning = await ApplySlaEventReadScope(
+                _unitOfWork.GetRepository<SlaEvent>().Entities.AsNoTracking(),
+                actor)
             .Where(x =>
                 (
                     x.EventType == SlaEventType.ResponseWarning ||
@@ -147,8 +148,11 @@ public class SlaDashboardService : ISlaDashboardService
     /// với SuccessRate trong Overview.
     /// </summary>
     public async Task<SlaComplianceDto>
-        GetComplianceAsync()
+        GetComplianceAsync(Guid actorUserId)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _unitOfWork,
+            actorUserId);
         var nowUtc =
             SlaDateTimeHelper.UtcNow;
 
@@ -189,17 +193,20 @@ public class SlaDashboardService : ISlaDashboardService
             TodayRate =
                 await CalculateRateAsync(
                     startOfTodayUtc,
-                    nowUtc),
+                    nowUtc,
+                    actor),
 
             ThisWeekRate =
                 await CalculateRateAsync(
                     startOfWeekUtc,
-                    nowUtc),
+                    nowUtc,
+                    actor),
 
             ThisMonthRate =
                 await CalculateRateAsync(
                     startOfMonthUtc,
-                    nowUtc)
+                    nowUtc,
+                    actor)
         };
     }
 
@@ -210,12 +217,12 @@ public class SlaDashboardService : ISlaDashboardService
     private async Task<decimal>
         CalculateRateAsync(
             DateTime from,
-            DateTime to)
+            DateTime to,
+            ManagementActorScope actor)
     {
-        var data = await _unitOfWork
-            .GetRepository<FeedbackSla>()
-            .Entities
-            .AsNoTracking()
+        var data = await ApplySlaReadScope(
+                _unitOfWork.GetRepository<FeedbackSla>().Entities.AsNoTracking(),
+                actor)
             .Where(x =>
                 x.CreatedAt >= from &&
                 x.CreatedAt <= to)
@@ -248,12 +255,14 @@ public class SlaDashboardService : ISlaDashboardService
     /// (Met hoặc Breached); Pending không nằm trong mẫu số.
     /// </summary>
     public async Task<SlaPerformanceDto>
-        GetPerformanceAsync()
+        GetPerformanceAsync(Guid actorUserId)
     {
-        var data = await _unitOfWork
-            .GetRepository<FeedbackSla>()
-            .Entities
-            .AsNoTracking()
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _unitOfWork,
+            actorUserId);
+        var data = await ApplySlaReadScope(
+                _unitOfWork.GetRepository<FeedbackSla>().Entities.AsNoTracking(),
+                actor)
             .Where(x =>
                 x.Status == SlaStatus.Completed)
             .ToListAsync();
@@ -371,15 +380,17 @@ public class SlaDashboardService : ISlaDashboardService
     /// Đây là số SỰ KIỆN, không phải số SLA duy nhất.
     /// </summary>
     public async Task<List<SlaViolationChartDto>>
-        GetViolationChartAsync()
+        GetViolationChartAsync(Guid actorUserId)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _unitOfWork,
+            actorUserId);
         var from =
             SlaDateTimeHelper.UtcNow.Date.AddDays(-30);
 
-        return await _unitOfWork
-            .GetRepository<SlaEvent>()
-            .Entities
-            .AsNoTracking()
+        return await ApplySlaEventReadScope(
+                _unitOfWork.GetRepository<SlaEvent>().Entities.AsNoTracking(),
+                actor)
             .Where(x =>
                 x.CreatedAt >= from
                 &&
@@ -410,8 +421,12 @@ public class SlaDashboardService : ISlaDashboardService
     /// </summary>
     public async Task<List<SlaNearBreachDto>>
         GetNearBreachAsync(
+            Guid actorUserId,
             int limit = DefaultLimit)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _unitOfWork,
+            actorUserId);
         limit = Math.Clamp(
             limit,
             1,
@@ -426,10 +441,9 @@ public class SlaDashboardService : ISlaDashboardService
                 1,
                 99);
 
-        var slas = await _unitOfWork
-            .GetRepository<FeedbackSla>()
-            .Entities
-            .AsNoTracking()
+        var slas = await ApplySlaReadScope(
+                _unitOfWork.GetRepository<FeedbackSla>().Entities.AsNoTracking(),
+                actor)
             .Include(x =>
                 x.Feedback)
             .Where(x =>
@@ -531,8 +545,12 @@ public class SlaDashboardService : ISlaDashboardService
     /// </summary>
     public async Task<List<RecentSlaBreachDto>>
         GetRecentBreachesAsync(
+            Guid actorUserId,
             int limit = DefaultLimit)
     {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _unitOfWork,
+            actorUserId);
         limit = Math.Clamp(
             limit,
             1,
@@ -541,10 +559,9 @@ public class SlaDashboardService : ISlaDashboardService
         var from =
             SlaDateTimeHelper.UtcNow.AddDays(-7);
 
-        var events = await _unitOfWork
-            .GetRepository<SlaEvent>()
-            .Entities
-            .AsNoTracking()
+        var events = await ApplySlaEventReadScope(
+                _unitOfWork.GetRepository<SlaEvent>().Entities.AsNoTracking(),
+                actor)
             .Where(x =>
                 x.CreatedAt >= from
                 &&
@@ -621,5 +638,47 @@ public class SlaDashboardService : ISlaDashboardService
                 };
             })
             .ToList();
+    }
+
+    private static IQueryable<FeedbackSla> ApplySlaReadScope(
+        IQueryable<FeedbackSla> slas,
+        ManagementActorScope actor)
+    {
+        return actor.RoleName switch
+        {
+            UserRole.SYSTEMADMIN => slas,
+            UserRole.SYSTEMSTAFF => slas.Where(sla =>
+                sla.Feedback.IncidentReportLinks.Any(link =>
+                    link.LinkStatus == IncidentLinkStatus.Active &&
+                    link.Incident.MergedIntoIncidentId == null &&
+                    link.Incident.AssignedStaffUserId == actor.UserId)),
+            UserRole.INTERACTIONMANAGER => slas.Where(sla =>
+                sla.Feedback.IncidentReportLinks.Any(link =>
+                    link.LinkStatus == IncidentLinkStatus.Active &&
+                    link.Incident.MergedIntoIncidentId == null &&
+                    actor.ManagerAreaIds.Contains(link.Incident.AreaId))),
+            _ => slas.Where(_ => false)
+        };
+    }
+
+    private static IQueryable<SlaEvent> ApplySlaEventReadScope(
+        IQueryable<SlaEvent> events,
+        ManagementActorScope actor)
+    {
+        return actor.RoleName switch
+        {
+            UserRole.SYSTEMADMIN => events,
+            UserRole.SYSTEMSTAFF => events.Where(slaEvent =>
+                slaEvent.FeedbackSla.Feedback.IncidentReportLinks.Any(link =>
+                    link.LinkStatus == IncidentLinkStatus.Active &&
+                    link.Incident.MergedIntoIncidentId == null &&
+                    link.Incident.AssignedStaffUserId == actor.UserId)),
+            UserRole.INTERACTIONMANAGER => events.Where(slaEvent =>
+                slaEvent.FeedbackSla.Feedback.IncidentReportLinks.Any(link =>
+                    link.LinkStatus == IncidentLinkStatus.Active &&
+                    link.Incident.MergedIntoIncidentId == null &&
+                    actor.ManagerAreaIds.Contains(link.Incident.AreaId))),
+            _ => events.Where(_ => false)
+        };
     }
 }

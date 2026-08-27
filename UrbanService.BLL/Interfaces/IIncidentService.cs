@@ -27,10 +27,12 @@ public interface IIncidentService
 
     Task<PagedResultDto<IncidentListItemDto>> GetIncidentsAsync(
         IncidentQueryParameters query,
+        Guid actorUserId,
         CancellationToken cancellationToken = default);
 
     Task<IncidentDetailDto> GetIncidentDetailAsync(
         Guid incidentId,
+        Guid actorUserId,
         CancellationToken cancellationToken = default);
 
     Task<IncidentDetailDto> LinkReportAsync(
@@ -68,6 +70,7 @@ public interface IIncidentService
         Guid incidentId,
         int pageNumber,
         int pageSize,
+        Guid actorUserId,
         CancellationToken cancellationToken = default);
 
     Task<PagedResultDto<IncidentListItemDto>> GetMyIncidentsAsync(
@@ -105,6 +108,7 @@ public interface IIncidentService
 
     Task<IReadOnlyCollection<IncidentAssigneeCandidateDto>> GetAssigneeCandidatesAsync(
         Guid incidentId,
+        Guid actorUserId,
         CancellationToken cancellationToken = default);
 
     Task<IncidentDetailDto> MergeAsync(

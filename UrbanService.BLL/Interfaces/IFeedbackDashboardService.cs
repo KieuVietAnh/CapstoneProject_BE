@@ -5,29 +5,32 @@ namespace UrbanService.BLL.Interfaces;
 public interface IFeedbackDashboardService
 {
     Task<FeedbackDashboardOverviewDto>
-        GetOverviewAsync();
+        GetOverviewAsync(Guid actorUserId);
 
     Task<List<FeedbackStatusDistributionDto>>
-        GetStatusDistributionAsync();
+        GetStatusDistributionAsync(Guid actorUserId);
 
     Task<List<FeedbackPriorityDistributionDto>>
-        GetPriorityDistributionAsync();
+        GetPriorityDistributionAsync(Guid actorUserId);
 
     Task<List<FeedbackCategoryDistributionDto>>
-        GetCategoryDistributionAsync();
+        GetCategoryDistributionAsync(Guid actorUserId);
 
     Task<List<FeedbackAreaDistributionDto>>
-        GetAreaDistributionAsync();
+        GetAreaDistributionAsync(Guid actorUserId);
 
     Task<List<FeedbackMonthlyTrendDto>>
         GetMonthlyTrendAsync(
+            Guid actorUserId,
             int months = 12);
 
     Task<List<UrgentOpenFeedbackDto>>
         GetUrgentOpenAsync(
+            Guid actorUserId,
             int limit = 10);
 
     Task<List<RecentFeedbackDto>>
         GetRecentAsync(
+            Guid actorUserId,
             int limit = 10);
 }

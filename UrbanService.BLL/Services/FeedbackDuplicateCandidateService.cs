@@ -29,9 +29,12 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
         _incidentService = incidentService;
     }
 
-    public async Task<FeedbackDuplicateSummaryDto> GetSummaryAsync()
+    public async Task<FeedbackDuplicateSummaryDto> GetSummaryAsync(Guid actorUserId)
     {
-        var candidates = _uow.GetRepository<FeedbackDuplicateCandidate>().Entities.AsNoTracking();
+        var actor = await GetDuplicateReadActorAsync(actorUserId);
+        var candidates = ApplyCandidateReadScope(
+            _uow.GetRepository<FeedbackDuplicateCandidate>().Entities.AsNoTracking(),
+            actor);
 
         return new FeedbackDuplicateSummaryDto
         {
@@ -42,13 +45,16 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
         };
     }
 
-    public async Task<PagedResultDto<FeedbackDuplicateCandidateDto>> GetCandidatesAsync(FeedbackDuplicateQueryParameters query)
+    public async Task<PagedResultDto<FeedbackDuplicateCandidateDto>> GetCandidatesAsync(
+        FeedbackDuplicateQueryParameters query,
+        Guid actorUserId)
     {
+        var actor = await GetDuplicateReadActorAsync(actorUserId);
         var pageNumber = query.Page < 1 ? 1 : query.Page;
         var pageSize = query.PageSize < 1 ? 10 : Math.Min(query.PageSize, MaxPageSize);
         var status = query.Status?.Trim();
 
-        var candidates = BaseCandidateQuery();
+        var candidates = ApplyCandidateReadScope(BaseCandidateQuery(), actor);
 
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -72,17 +78,43 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
         };
     }
 
-    public async Task<FeedbackDuplicateCandidateDto> GetCandidateDetailAsync(Guid duplicateCandidateId)
+    public async Task<FeedbackDuplicateCandidateDto> GetCandidateDetailAsync(
+        Guid duplicateCandidateId,
+        Guid actorUserId)
     {
-        var candidate = await BaseCandidateQuery()
+        var actor = await GetDuplicateReadActorAsync(actorUserId);
+        var candidate = await ApplyCandidateReadScope(BaseCandidateQuery(), actor)
             .FirstOrDefaultAsync(c => c.DuplicateCandidateId == duplicateCandidateId)
-            ?? throw new Exception("Không tìm thấy duplicate candidate.");
+            ?? throw new UrbanService.BLL.Common.ForbiddenAccessException(
+                "Bạn không có quyền xem đề xuất trùng này.");
 
         return MapCandidate(candidate);
     }
 
-    public async Task<FeedbackDuplicateCandidateDto> ConfirmAsync(Guid duplicateCandidateId, Guid staffUserId)
+    public async Task<FeedbackDuplicateCandidateDto> ConfirmAsync(
+        Guid duplicateCandidateId,
+        Guid reviewerUserId)
     {
+        var candidateScope = await _uow.GetRepository<FeedbackDuplicateCandidate>().Entities
+            .AsNoTracking()
+            .Where(candidate => candidate.DuplicateCandidateId == duplicateCandidateId)
+            .Select(candidate => new
+            {
+                candidate.FeedbackId,
+                candidate.PotentialParentFeedbackId
+            })
+            .SingleOrDefaultAsync()
+            ?? throw new Exception("Không tìm thấy đề xuất phản ánh trùng.");
+        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _uow,
+            candidateScope.FeedbackId,
+            reviewerUserId,
+            requirePrimary: false);
+        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _uow,
+            candidateScope.PotentialParentFeedbackId,
+            reviewerUserId,
+            requirePrimary: false);
         Feedback childFeedback;
         Feedback parentFeedback;
         Guid? confirmedIncidentId = null;
@@ -102,7 +134,7 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             if (string.Equals(candidate.Status, ConfirmedStatus, StringComparison.OrdinalIgnoreCase))
             {
                 _uow.CommitTransaction();
-                return await GetCandidateDetailAsync(duplicateCandidateId);
+                return await GetCandidateDetailCoreAsync(duplicateCandidateId);
             }
 
             if (!string.Equals(candidate.Status, PendingStatus, StringComparison.OrdinalIgnoreCase))
@@ -173,7 +205,7 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             foreach (var competingCandidate in competingCandidates)
             {
                 competingCandidate.Status = RejectedStatus;
-                competingCandidate.ReviewedByUserId = staffUserId;
+                competingCandidate.ReviewedByUserId = reviewerUserId;
                 competingCandidate.ReviewedAt = reviewedAt;
                 competingCandidate.UpdatedAt = reviewedAt;
             }
@@ -186,14 +218,14 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             parentFeedback.UpdatedAt = reviewedAt;
 
             candidate.Status = ConfirmedStatus;
-            candidate.ReviewedByUserId = staffUserId;
+            candidate.ReviewedByUserId = reviewerUserId;
             candidate.ReviewedAt = reviewedAt;
             candidate.UpdatedAt = reviewedAt;
 
             var linkedIncidentId = await _incidentService.RelinkConfirmedDuplicateAsync(
                 childFeedback,
                 parentFeedback,
-                staffUserId,
+                reviewerUserId,
                 candidate.ConfidenceScore,
                 candidate.Reason);
             confirmedIncidentId = linkedIncidentId == Guid.Empty ? null : linkedIncidentId;
@@ -231,11 +263,24 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
                 $"/community/feed/{parentFeedback.FeedbackId}");
         }
 
-        return await GetCandidateDetailAsync(duplicateCandidateId);
+        return await GetCandidateDetailCoreAsync(duplicateCandidateId);
     }
 
-    public async Task<FeedbackDuplicateCandidateDto> RejectAsync(Guid duplicateCandidateId, Guid staffUserId)
+    public async Task<FeedbackDuplicateCandidateDto> RejectAsync(
+        Guid duplicateCandidateId,
+        Guid reviewerUserId)
     {
+        var feedbackId = await _uow.GetRepository<FeedbackDuplicateCandidate>().Entities
+            .AsNoTracking()
+            .Where(candidate => candidate.DuplicateCandidateId == duplicateCandidateId)
+            .Select(candidate => (Guid?)candidate.FeedbackId)
+            .SingleOrDefaultAsync()
+            ?? throw new Exception("Không tìm thấy đề xuất phản ánh trùng.");
+        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            _uow,
+            feedbackId,
+            reviewerUserId,
+            requirePrimary: false);
         _uow.BeginTransaction();
         try
         {
@@ -248,7 +293,7 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             if (string.Equals(candidate.Status, RejectedStatus, StringComparison.OrdinalIgnoreCase))
             {
                 _uow.CommitTransaction();
-                return await GetCandidateDetailAsync(duplicateCandidateId);
+                return await GetCandidateDetailCoreAsync(duplicateCandidateId);
             }
 
             if (!string.Equals(candidate.Status, PendingStatus, StringComparison.OrdinalIgnoreCase))
@@ -259,7 +304,7 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             var reviewedAt = DateTime.UtcNow;
 
             candidate.Status = RejectedStatus;
-            candidate.ReviewedByUserId = staffUserId;
+            candidate.ReviewedByUserId = reviewerUserId;
             candidate.ReviewedAt = reviewedAt;
             candidate.UpdatedAt = reviewedAt;
 
@@ -284,7 +329,7 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             throw;
         }
 
-        return await GetCandidateDetailAsync(duplicateCandidateId);
+        return await GetCandidateDetailCoreAsync(duplicateCandidateId);
     }
 
     public async Task<IReadOnlyCollection<FeedbackListItemDto>> GetLinkedFeedbacksAsync(Guid feedbackId)
@@ -334,6 +379,44 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             MasterFeedback = MapFeedbackListItem(masterFeedback),
             LinkedFeedbacks = linkedFeedbacks.Select(MapFeedbackListItem).ToList()
         };
+    }
+
+    private async Task<ManagementActorScope> GetDuplicateReadActorAsync(Guid actorUserId)
+    {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(_uow, actorUserId);
+        if (actor.RoleName != UserRole.SYSTEMADMIN &&
+            actor.RoleName != UserRole.INTERACTIONMANAGER)
+        {
+            throw new UrbanService.BLL.Common.ForbiddenAccessException(
+                "Staff không có quyền truy cập hàng đợi duyệt phản ánh trùng.");
+        }
+
+        return actor;
+    }
+
+    private static IQueryable<FeedbackDuplicateCandidate> ApplyCandidateReadScope(
+        IQueryable<FeedbackDuplicateCandidate> candidates,
+        ManagementActorScope actor)
+    {
+        if (actor.RoleName == UserRole.SYSTEMADMIN)
+        {
+            return candidates;
+        }
+
+        return candidates.Where(candidate =>
+            candidate.Feedback.IncidentReportLinks.Any(link =>
+                link.LinkStatus == IncidentLinkStatus.Active &&
+                link.Incident.MergedIntoIncidentId == null &&
+                actor.ManagerAreaIds.Contains(link.Incident.AreaId)));
+    }
+
+    private async Task<FeedbackDuplicateCandidateDto> GetCandidateDetailCoreAsync(
+        Guid duplicateCandidateId)
+    {
+        var candidate = await BaseCandidateQuery()
+            .FirstOrDefaultAsync(item => item.DuplicateCandidateId == duplicateCandidateId)
+            ?? throw new Exception("Không tìm thấy duplicate candidate.");
+        return MapCandidate(candidate);
     }
 
     private IQueryable<FeedbackDuplicateCandidate> BaseCandidateQuery()

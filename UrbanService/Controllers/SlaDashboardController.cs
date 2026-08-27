@@ -1,10 +1,14 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using UrbanService.BLL.DTOs.SLA.Dashboard;
 using UrbanService.BLL.Interfaces;
+using UrbanService.BLL.Common.Constraint;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace UrbanService.Controllers;
 
 [ApiController]
+[Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF + "," + UserRole.INTERACTIONMANAGER)]
 [Route("api/slas/dashboard")]
 public class SlaDashboardController : ControllerBase
 {
@@ -39,7 +43,7 @@ public class SlaDashboardController : ControllerBase
     public async Task<IActionResult> Overview()
     {
         var result =
-            await _slaDashboardService.GetOverviewAsync();
+            await _slaDashboardService.GetOverviewAsync(GetCurrentUserId());
 
         return Ok(result);
     }
@@ -62,7 +66,7 @@ public class SlaDashboardController : ControllerBase
     public async Task<IActionResult> Compliance()
     {
         var result =
-            await _slaDashboardService.GetComplianceAsync();
+            await _slaDashboardService.GetComplianceAsync(GetCurrentUserId());
 
         return Ok(result);
     }
@@ -86,7 +90,7 @@ public class SlaDashboardController : ControllerBase
     public async Task<IActionResult> Performance()
     {
         var result =
-            await _slaDashboardService.GetPerformanceAsync();
+            await _slaDashboardService.GetPerformanceAsync(GetCurrentUserId());
 
         return Ok(result);
     }
@@ -111,7 +115,7 @@ public class SlaDashboardController : ControllerBase
     {
         var result =
             await _slaDashboardService
-            .GetViolationChartAsync();
+            .GetViolationChartAsync(GetCurrentUserId());
 
         return Ok(result);
     }
@@ -138,7 +142,7 @@ public class SlaDashboardController : ControllerBase
     {
         var result =
             await _slaDashboardService
-            .GetNearBreachAsync(limit);
+            .GetNearBreachAsync(GetCurrentUserId(), limit);
 
         return Ok(result);
     }
@@ -171,8 +175,19 @@ public class SlaDashboardController : ControllerBase
     {
         var result =
             await _slaDashboardService
-            .GetRecentBreachesAsync(limit);
+            .GetRecentBreachesAsync(GetCurrentUserId(), limit);
 
         return Ok(result);
+    }
+
+    private Guid GetCurrentUserId()
+    {
+        var rawUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(rawUserId, out var userId))
+        {
+            throw new UnauthorizedAccessException();
+        }
+
+        return userId;
     }
 }

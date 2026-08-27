@@ -67,7 +67,7 @@ public class InteractionMessagesController : ControllerBase
     /// Chỉ SystemAdmin/InteractionManager được tạo system message. Mặc định là ghi chú nội bộ.
     /// </remarks>
     [HttpPost("system")]
-    [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(InteractionMessageDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

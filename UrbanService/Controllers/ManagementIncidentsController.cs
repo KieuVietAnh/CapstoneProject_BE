@@ -25,7 +25,10 @@ public sealed class ManagementIncidentsController : ControllerBase
     [ProducesResponseType(typeof(PagedResultDto<IncidentListItemDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetIncidents([FromQuery] IncidentQueryParameters query)
     {
-        return Ok(await _incidentService.GetIncidentsAsync(query, HttpContext.RequestAborted));
+        return Ok(await _incidentService.GetIncidentsAsync(
+            query,
+            GetCurrentUserId(),
+            HttpContext.RequestAborted));
     }
 
     /// <summary>Lấy chi tiết Incident, các Report, subscriber và event timeline.</summary>
@@ -34,11 +37,15 @@ public sealed class ManagementIncidentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetIncident(Guid incidentId)
     {
-        return Ok(await _incidentService.GetIncidentDetailAsync(incidentId, HttpContext.RequestAborted));
+        return Ok(await _incidentService.GetIncidentDetailAsync(
+            incidentId,
+            GetCurrentUserId(),
+            HttpContext.RequestAborted));
     }
 
     /// <summary>Liên kết một Feedback/Report chưa có active link vào Incident.</summary>
     [HttpPost("{incidentId:guid}/reports")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(IncidentDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> LinkReport(Guid incidentId, [FromBody] LinkIncidentReportRequest request)
@@ -52,6 +59,7 @@ public sealed class ManagementIncidentsController : ControllerBase
 
     /// <summary>Soft-unlink một Feedback/Report khỏi Incident và giữ audit history.</summary>
     [HttpDelete("{incidentId:guid}/reports/{feedbackId:guid}")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UnlinkReport(Guid incidentId, Guid feedbackId)
@@ -66,6 +74,7 @@ public sealed class ManagementIncidentsController : ControllerBase
 
     /// <summary>Cập nhật dữ liệu điều phối của Incident, gồm Severity.</summary>
     [HttpPatch("{incidentId:guid}")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(IncidentDetailDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateIncident(Guid incidentId, [FromBody] UpdateIncidentRequest request)
         => Ok(await _incidentService.UpdateIncidentAsync(
@@ -76,6 +85,7 @@ public sealed class ManagementIncidentsController : ControllerBase
 
     /// <summary>Chuyển trạng thái xử lý ở cấp Incident.</summary>
     [HttpPatch("{incidentId:guid}/status")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(IncidentDetailDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateStatus(Guid incidentId, [FromBody] UpdateIncidentStatusRequest request)
         => Ok(await _incidentService.UpdateStatusAsync(
@@ -86,12 +96,17 @@ public sealed class ManagementIncidentsController : ControllerBase
 
     /// <summary>Lấy Staff phù hợp khu vực và danh mục của Incident.</summary>
     [HttpGet("{incidentId:guid}/assignee-candidates")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(IReadOnlyCollection<IncidentAssigneeCandidateDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAssigneeCandidates(Guid incidentId)
-        => Ok(await _incidentService.GetAssigneeCandidatesAsync(incidentId, HttpContext.RequestAborted));
+        => Ok(await _incidentService.GetAssigneeCandidatesAsync(
+            incidentId,
+            GetCurrentUserId(),
+            HttpContext.RequestAborted));
 
     /// <summary>Phân công Staff xử lý Incident.</summary>
     [HttpPost("{incidentId:guid}/assign")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(IncidentDetailDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Assign(Guid incidentId, [FromBody] AssignIncidentRequest request)
         => Ok(await _incidentService.AssignAsync(
@@ -102,6 +117,7 @@ public sealed class ManagementIncidentsController : ControllerBase
 
     /// <summary>Merge Incident nguồn vào Incident đích.</summary>
     [HttpPost("{incidentId:guid}/merge")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(IncidentDetailDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Merge(Guid incidentId, [FromBody] MergeIncidentRequest request)
         => Ok(await _incidentService.MergeAsync(
@@ -121,6 +137,7 @@ public sealed class ManagementIncidentsController : ControllerBase
             incidentId,
             pageNumber,
             pageSize,
+            GetCurrentUserId(),
             HttpContext.RequestAborted));
 
     private Guid GetCurrentUserId()
