@@ -1,26 +1,25 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs;
-using UrbanService.DAL.Entities;
-using UrbanService.DAL.Interfaces;
+using UrbanService.BLL.Interfaces;
 
 namespace UrbanService.Controllers;
 
 [ApiController]
-[Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF + "," + UserRole.INTERACTIONMANAGER)]
+[Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
 [Route("api/management/staff-area-assignments")]
 [Route("api/management/staff-responsibilities")]
 public class ManagementStaffAreaAssignmentsController : ControllerBase
 {
-    private readonly IUnitOfWork _uow;
+    private readonly IStaffAreaAssignmentService _staffAreaAssignmentService;
 
-    public ManagementStaffAreaAssignmentsController(IUnitOfWork uow)
+    public ManagementStaffAreaAssignmentsController(
+        IStaffAreaAssignmentService staffAreaAssignmentService)
     {
-        _uow = uow;
+        _staffAreaAssignmentService = staffAreaAssignmentService;
     }
 
     [HttpGet]
@@ -31,220 +30,52 @@ public class ManagementStaffAreaAssignmentsController : ControllerBase
         [FromQuery] int? categoryId = null,
         [FromQuery] bool? isActive = null)
     {
-        var query = GetAssignmentQuery().AsNoTracking();
-
-        if (userId.HasValue)
-        {
-            query = query.Where(a => a.UserId == userId.Value);
-        }
-
-        if (areaId.HasValue)
-        {
-            query = query.Where(a => a.AreaId == areaId.Value);
-        }
-
-        if (categoryId.HasValue)
-        {
-            query = query.Where(a => a.CategoryId == categoryId.Value);
-        }
-
-        if (isActive.HasValue)
-        {
-            query = query.Where(a => a.IsActive == isActive.Value);
-        }
-
-        var assignments = await query
-            .OrderByDescending(a => a.IsActive)
-            .ThenBy(a => a.Area.AreaName)
-            .ThenBy(a => a.User.FullName)
-            .ToListAsync();
-
-        return Ok(assignments.Select(Map).ToList());
+        return Ok(await _staffAreaAssignmentService.GetAssignmentsAsync(
+            GetCurrentUserId(),
+            userId,
+            areaId,
+            categoryId,
+            isActive,
+            HttpContext.RequestAborted));
     }
 
     [HttpPost]
-    [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(StaffAreaAssignmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateAssignment(
         [FromBody] StaffAreaAssignmentCreateRequest request)
     {
-        await EnsureStaffExistsAsync(request.UserId);
-        await EnsureAreaExistsAsync(request.AreaId);
-        await EnsureCategoryExistsAsync(request.CategoryId);
-
-        var existing = await _uow.GetRepository<StaffAreaAssignment>().Entities
-            .FirstOrDefaultAsync(a =>
-                a.UserId == request.UserId &&
-                a.AreaId == request.AreaId &&
-                a.CategoryId == request.CategoryId);
-
-        if (existing != null)
-        {
-            existing.IsActive = true;
-            existing.IsPrimary = request.IsPrimary;
-            existing.StartDate = request.StartDate;
-            existing.EndDate = request.EndDate;
-            await _uow.SaveAsync();
-
-            return Ok(await GetAssignmentDtoAsync(existing.StaffAreaAssignmentId));
-        }
-
-        var assignment = new StaffAreaAssignment
-        {
-            UserId = request.UserId,
-            AreaId = request.AreaId,
-            CategoryId = request.CategoryId,
-            AssignedByUserId = GetCurrentUserId(),
-            IsPrimary = request.IsPrimary,
-            StartDate = request.StartDate,
-            EndDate = request.EndDate,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await _uow.GetRepository<StaffAreaAssignment>().AddAsync(assignment);
-        await _uow.SaveAsync();
-
-        return Ok(await GetAssignmentDtoAsync(assignment.StaffAreaAssignmentId));
+        return Ok(await _staffAreaAssignmentService.CreateAsync(
+            GetCurrentUserId(),
+            request,
+            HttpContext.RequestAborted));
     }
 
     [HttpPut("{assignmentId:int}")]
-    [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(StaffAreaAssignmentDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateAssignment(
         int assignmentId,
         [FromBody] StaffAreaAssignmentUpdateRequest request)
     {
-        await EnsureAreaExistsAsync(request.AreaId);
-        await EnsureCategoryExistsAsync(request.CategoryId);
-
-        var assignment = await _uow.GetRepository<StaffAreaAssignment>().GetByIdAsync(assignmentId)
-            ?? throw new Exception("Assignment không tồn tại.");
-
-        var duplicate = await _uow.GetRepository<StaffAreaAssignment>().Entities
-            .AsNoTracking()
-            .AnyAsync(a =>
-                a.StaffAreaAssignmentId != assignmentId &&
-                a.UserId == assignment.UserId &&
-                a.AreaId == request.AreaId &&
-                a.CategoryId == request.CategoryId);
-
-        if (duplicate)
-        {
-            throw new Exception("Staff đã có phạm vi phụ trách khu vực và danh mục này.");
-        }
-
-        assignment.AreaId = request.AreaId;
-        assignment.CategoryId = request.CategoryId;
-        assignment.IsPrimary = request.IsPrimary;
-        assignment.StartDate = request.StartDate;
-        assignment.EndDate = request.EndDate;
-        await _uow.SaveAsync();
-
-        return Ok(await GetAssignmentDtoAsync(assignmentId));
+        return Ok(await _staffAreaAssignmentService.UpdateAsync(
+            GetCurrentUserId(),
+            assignmentId,
+            request,
+            HttpContext.RequestAborted));
     }
 
     [HttpPatch("{assignmentId:int}/active")]
-    [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(StaffAreaAssignmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> SetActive(
         int assignmentId,
         [FromBody] SetActiveRequest request)
     {
-        var assignment = await _uow.GetRepository<StaffAreaAssignment>().GetByIdAsync(assignmentId)
-            ?? throw new Exception("Assignment khong ton tai.");
-
-        assignment.IsActive = request.IsActive;
-        await _uow.SaveAsync();
-
-        return Ok(await GetAssignmentDtoAsync(assignmentId));
-    }
-
-    private IQueryable<StaffAreaAssignment> GetAssignmentQuery()
-    {
-        return _uow.GetRepository<StaffAreaAssignment>().Entities
-            .Include(a => a.User)
-            .Include(a => a.Area)
-            .Include(a => a.Category)
-            .Include(a => a.AssignedByUser);
-    }
-
-    private async Task<StaffAreaAssignmentDto> GetAssignmentDtoAsync(int assignmentId)
-    {
-        var assignment = await GetAssignmentQuery()
-            .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.StaffAreaAssignmentId == assignmentId)
-            ?? throw new Exception("Assignment khong ton tai.");
-
-        return Map(assignment);
-    }
-
-    private async Task EnsureStaffExistsAsync(Guid userId)
-    {
-        var exists = await _uow.GetRepository<User>().Entities
-            .AsNoTracking()
-            .Include(u => u.Role)
-            .AnyAsync(u =>
-                u.UserId == userId &&
-                u.IsActive &&
-                u.Role.RoleName == UserRole.SYSTEMSTAFF);
-
-        if (!exists)
-        {
-            throw new Exception("Staff khong ton tai hoac khong co role SYSTEMSTAFF.");
-        }
-    }
-
-    private async Task EnsureAreaExistsAsync(int areaId)
-    {
-        var exists = await _uow.GetRepository<OperatingArea>().Entities
-            .AsNoTracking()
-            .AnyAsync(a => a.AreaId == areaId && a.IsActive);
-
-        if (!exists)
-        {
-            throw new Exception("Area khong ton tai hoac da bi khoa.");
-        }
-    }
-
-    private async Task EnsureCategoryExistsAsync(int? categoryId)
-    {
-        if (!categoryId.HasValue)
-        {
-            return;
-        }
-
-        var exists = await _uow.GetRepository<UrbanServiceCategory>().Entities
-            .AsNoTracking()
-            .AnyAsync(category => category.CategoryId == categoryId.Value && category.IsActive);
-
-        if (!exists)
-        {
-            throw new Exception("Danh mục không tồn tại hoặc đã bị khóa.");
-        }
-    }
-
-    private static StaffAreaAssignmentDto Map(StaffAreaAssignment assignment)
-    {
-        return new StaffAreaAssignmentDto
-        {
-            StaffAreaAssignmentId = assignment.StaffAreaAssignmentId,
-            UserId = assignment.UserId,
-            StaffName = assignment.User?.FullName,
-            AreaId = assignment.AreaId,
-            AreaName = assignment.Area?.AreaName,
-            CategoryId = assignment.CategoryId,
-            CategoryName = assignment.Category?.CategoryName,
-            AssignedByUserId = assignment.AssignedByUserId,
-            AssignedByUserName = assignment.AssignedByUser?.FullName,
-            IsPrimary = assignment.IsPrimary,
-            StartDate = assignment.StartDate,
-            EndDate = assignment.EndDate,
-            IsActive = assignment.IsActive,
-            CreatedAt = assignment.CreatedAt
-        };
+        return Ok(await _staffAreaAssignmentService.SetActiveAsync(
+            GetCurrentUserId(),
+            assignmentId,
+            request.IsActive,
+            HttpContext.RequestAborted));
     }
 
     private Guid GetCurrentUserId()

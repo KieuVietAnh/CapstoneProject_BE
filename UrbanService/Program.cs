@@ -38,6 +38,7 @@ builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IManagerAreaAssignmentService, ManagerAreaAssignmentService>();
+builder.Services.AddScoped<IStaffAreaAssignmentService, StaffAreaAssignmentService>();
 builder.Services.AddScoped<IAreaAlertService, AreaAlertService>();
 builder.Services.AddScoped<IInteractionMessageService, InteractionMessageService>();
 builder.Services.AddHttpClient<IMessengerService, MessengerService>(client =>
