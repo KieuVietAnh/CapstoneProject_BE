@@ -1740,8 +1740,8 @@ public class SlaService : ISlaService
             .Entities
             .AsNoTracking()
             .Where(x =>
-                x.RoleName == "InteractionManager" ||
-                x.RoleName == "SystemAdmin")
+                x.RoleName.ToUpper() == UserRole.INTERACTIONMANAGER ||
+                x.RoleName.ToUpper() == UserRole.SYSTEMADMIN)
             .Select(x => x.RoleId)
             .ToListAsync();
 
@@ -2842,7 +2842,7 @@ public class SlaService : ISlaService
             ?? throw new UnauthorizedAccessException(
                 "Không tìm thấy người dùng hoặc tài khoản đã bị khóa.");
 
-        if (actorRole == UserRole.SERVICEUSER)
+        if (actorRole.ToUpperInvariant() == UserRole.SERVICEUSER)
         {
             var isOwner = await _unitOfWork
                 .GetRepository<Feedback>()

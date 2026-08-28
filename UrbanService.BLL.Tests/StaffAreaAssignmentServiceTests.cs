@@ -16,11 +16,11 @@ namespace UrbanService.BLL.Tests;
 public sealed class StaffAreaAssignmentServiceTests
 {
     [Fact]
-    public async Task ManagerWithinCoveredAreas_CanViewCreateUpdateAndDeactivate()
+    public async Task MixedCaseManagerWithinCoveredAreas_CanViewCreateUpdateAndDeactivate()
     {
         var context = new StaffAreaAssignmentTestContext();
-        var manager = context.User(UserRole.INTERACTIONMANAGER, "Ward Manager");
-        var staff = context.User(UserRole.SYSTEMSTAFF, "System Staff");
+        var manager = context.User("InteractionManager", "Ward Manager");
+        var staff = context.User("SystemStaff", "System Staff");
         var firstArea = context.Area("Ward One");
         var secondArea = context.Area("Ward Two");
         var otherArea = context.Area("Ward Three");

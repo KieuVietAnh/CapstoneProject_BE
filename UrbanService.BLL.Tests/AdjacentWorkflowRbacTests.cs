@@ -78,10 +78,10 @@ public class AdjacentWorkflowRbacTests
     }
 
     [Fact]
-    public async Task SlaDashboard_StaffOnlySeesAssignedIncidents()
+    public async Task SlaDashboard_MixedCaseStaffRole_OnlySeesAssignedIncidents()
     {
         var context = new DuplicateTestContext();
-        var staff = context.AddActor(UserRole.SYSTEMSTAFF, "Assigned staff");
+        var staff = context.AddActor("SystemStaff", "Assigned staff");
         var assignedFeedback = DuplicateTestContext.Feedback(
             Guid.NewGuid(),
             DateTime.UtcNow,
@@ -120,6 +120,34 @@ public class AdjacentWorkflowRbacTests
 
         Assert.Equal(1, result.TotalSla);
         Assert.Equal(1, result.RunningSla);
+    }
+
+    [Fact]
+    public async Task SlaTimeline_MixedCaseServiceUserRole_AllowsOwnerAccess()
+    {
+        var context = new DuplicateTestContext();
+        var serviceUser = context.AddActor("ServiceUser", "Resident");
+        var feedback = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            DateTime.UtcNow,
+            isMaster: true,
+            status: FeedbackStatus.InProgress);
+        feedback.UserId = serviceUser.UserId;
+        context.Feedbacks.Add(feedback);
+
+        var sla = CreateSla(feedback);
+        var slaRepository = Substitute.For<IGenericRepository<FeedbackSla>>();
+        slaRepository.Entities.Returns(_ => new[] { sla }.AsAsyncQueryable());
+        var eventRepository = Substitute.For<IGenericRepository<SlaEvent>>();
+        eventRepository.Entities.Returns(_ => Array.Empty<SlaEvent>().AsAsyncQueryable());
+        context.UnitOfWork.GetRepository<FeedbackSla>().Returns(slaRepository);
+        context.UnitOfWork.GetRepository<SlaEvent>().Returns(eventRepository);
+
+        var result = await CreateSlaService(context).GetTimelineAsync(
+            feedback.FeedbackId,
+            serviceUser.UserId);
+
+        Assert.Empty(result);
     }
 
     [Theory]

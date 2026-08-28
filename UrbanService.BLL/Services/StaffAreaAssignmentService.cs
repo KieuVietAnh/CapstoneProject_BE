@@ -263,7 +263,7 @@ public class StaffAreaAssignmentService : IStaffAreaAssignmentService
                 user =>
                     user.UserId == userId &&
                     user.IsActive &&
-                    user.Role.RoleName == UserRole.SYSTEMSTAFF,
+                    user.Role.RoleName.ToUpper() == UserRole.SYSTEMSTAFF,
                 cancellationToken);
 
         if (!exists)

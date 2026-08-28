@@ -20,6 +20,8 @@ public class UserProfileController : ControllerBase
         _userManagementService = userManagementService;
     }
 
+    /// <summary>Lấy hồ sơ của người dùng hiện tại.</summary>
+    /// <remarks>Chỉ `SERVICEUSER`; định danh người dùng được lấy từ JWT.</remarks>
     [HttpGet]
     [ProducesResponseType(typeof(UserProfileDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -30,6 +32,8 @@ public class UserProfileController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Cập nhật hồ sơ của người dùng hiện tại.</summary>
+    /// <remarks>Chỉ `SERVICEUSER`; chỉ các trường hồ sơ được phép mới được cập nhật.</remarks>
     [HttpPut]
     [ProducesResponseType(typeof(UserProfileDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]

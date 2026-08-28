@@ -375,3 +375,6 @@ appsettings.Production.json
 .env
 .env.*
 !.env.example
+
+# Local BMad user overrides
+_bmad/config.user.toml

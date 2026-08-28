@@ -43,15 +43,16 @@ internal static class ManagementAccessRules
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new ForbiddenAccessException("Tài khoản không tồn tại hoặc đã bị khóa.");
 
-        if (actor.RoleName != UserRole.SYSTEMADMIN &&
-            actor.RoleName != UserRole.SYSTEMSTAFF &&
-            actor.RoleName != UserRole.INTERACTIONMANAGER)
+        var normalizedRoleName = actor.RoleName.ToUpperInvariant();
+        if (normalizedRoleName != UserRole.SYSTEMADMIN &&
+            normalizedRoleName != UserRole.SYSTEMSTAFF &&
+            normalizedRoleName != UserRole.INTERACTIONMANAGER)
         {
             throw new ForbiddenAccessException("Tài khoản không có quyền truy cập nghiệp vụ quản lý.");
         }
 
         IReadOnlySet<int> managerAreaIds = new HashSet<int>();
-        if (actor.RoleName == UserRole.INTERACTIONMANAGER)
+        if (normalizedRoleName == UserRole.INTERACTIONMANAGER)
         {
             managerAreaIds = (await uow.GetRepository<ManagerAreaAssignment>().Entities
                     .AsNoTracking()
@@ -65,7 +66,7 @@ internal static class ManagementAccessRules
                 .ToHashSet();
         }
 
-        return new ManagementActorScope(actor.UserId, actor.RoleName, managerAreaIds);
+        return new ManagementActorScope(actor.UserId, normalizedRoleName, managerAreaIds);
     }
 
     public static IQueryable<Incident> ApplyIncidentReadScope(

@@ -60,9 +60,11 @@ public class FeedbackDuplicateCandidateServiceTests
     }
 
     [Fact]
-    public async Task CandidateDetail_ExposesCurrentAndSuggestedIncidents()
+    public async Task CandidateDetail_MixedCaseManagerRole_ExposesCurrentAndSuggestedIncidents()
     {
         var context = new DuplicateTestContext();
+        context.Users.Single(user => user.UserId == context.ManagerUserId)
+            .Role.RoleName = "InteractionManager";
         var createdAt = DateTime.UtcNow;
         var parent = DuplicateTestContext.Feedback(Guid.NewGuid(), createdAt.AddMinutes(-10), isMaster: true);
         var report = DuplicateTestContext.Feedback(Guid.NewGuid(), createdAt, isMaster: false);

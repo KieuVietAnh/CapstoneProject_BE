@@ -21,6 +21,10 @@ public class ManagementServiceProvidersController : ControllerBase
         _uow = uow;
     }
 
+    /// <summary>Lấy danh sách đơn vị cung cấp dịch vụ và đầu mối phối hợp.</summary>
+    /// <remarks>
+    /// Cho phép các role quản lý truy cập; hỗ trợ lọc theo trạng thái, khu vực, danh mục và từ khóa.
+    /// </remarks>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<ServiceProviderCoordinatorDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetServiceProviders(
@@ -69,6 +73,8 @@ public class ManagementServiceProvidersController : ControllerBase
         return Ok(providers.Select(MapProvider).ToList());
     }
 
+    /// <summary>Lấy chi tiết một đơn vị cung cấp dịch vụ.</summary>
+    /// <remarks>Cho phép `SYSTEMADMIN`, `SYSTEMSTAFF` và `INTERACTIONMANAGER` truy cập.</remarks>
     [HttpGet("{coordinatorId:int}")]
     [ProducesResponseType(typeof(ServiceProviderCoordinatorDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -83,6 +89,8 @@ public class ManagementServiceProvidersController : ControllerBase
         return Ok(MapProvider(provider));
     }
 
+    /// <summary>Tạo đơn vị cung cấp dịch vụ và đầu mối phối hợp.</summary>
+    /// <remarks>Cho phép `SYSTEMADMIN` hoặc `INTERACTIONMANAGER` thao tác.</remarks>
     [HttpPost]
     [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(ServiceProviderCoordinatorDto), StatusCodes.Status200OK)]
@@ -110,6 +118,8 @@ public class ManagementServiceProvidersController : ControllerBase
         return Ok(MapProvider(provider));
     }
 
+    /// <summary>Cập nhật thông tin đơn vị cung cấp dịch vụ.</summary>
+    /// <remarks>Cho phép `SYSTEMADMIN` hoặc `INTERACTIONMANAGER`; các trường không truyền lên được giữ nguyên.</remarks>
     [HttpPut("{coordinatorId:int}")]
     [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(ServiceProviderCoordinatorDto), StatusCodes.Status200OK)]
@@ -159,6 +169,8 @@ public class ManagementServiceProvidersController : ControllerBase
         return Ok(MapProvider(provider));
     }
 
+    /// <summary>Kích hoạt hoặc vô hiệu hóa đơn vị cung cấp dịch vụ.</summary>
+    /// <remarks>Cho phép `SYSTEMADMIN` hoặc `INTERACTIONMANAGER` thao tác.</remarks>
     [HttpPatch("{coordinatorId:int}/active")]
     [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(ServiceProviderCoordinatorDto), StatusCodes.Status200OK)]
@@ -179,6 +191,8 @@ public class ManagementServiceProvidersController : ControllerBase
         return Ok(MapProvider(provider));
     }
 
+    /// <summary>Lấy các phạm vi khu vực và danh mục mà đơn vị cung cấp dịch vụ phụ trách.</summary>
+    /// <remarks>Cho phép các role quản lý truy cập.</remarks>
     [HttpGet("{coordinatorId:int}/coverages")]
     [ProducesResponseType(typeof(IReadOnlyCollection<CoordinatorCoverageDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -199,6 +213,10 @@ public class ManagementServiceProvidersController : ControllerBase
         return Ok(coverages.Select(MapCoverage).ToList());
     }
 
+    /// <summary>Tạo phạm vi phụ trách cho đơn vị cung cấp dịch vụ.</summary>
+    /// <remarks>
+    /// Cho phép `SYSTEMADMIN` hoặc `INTERACTIONMANAGER`; bộ ba đơn vị, khu vực và danh mục phải là duy nhất.
+    /// </remarks>
     [HttpPost("{coordinatorId:int}/coverages")]
     [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(CoordinatorCoverageDto), StatusCodes.Status200OK)]
@@ -240,6 +258,10 @@ public class ManagementServiceProvidersController : ControllerBase
         return Ok(await GetCoverageDtoAsync(coverage.CoverageId));
     }
 
+    /// <summary>Cập nhật phạm vi phụ trách của đơn vị cung cấp dịch vụ.</summary>
+    /// <remarks>
+    /// Cho phép `SYSTEMADMIN` hoặc `INTERACTIONMANAGER`; khu vực và danh mục phải đang hoạt động.
+    /// </remarks>
     [HttpPut("{coordinatorId:int}/coverages/{coverageId:int}")]
     [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(typeof(CoordinatorCoverageDto), StatusCodes.Status200OK)]

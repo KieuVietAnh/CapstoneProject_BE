@@ -21,6 +21,10 @@ public class AdminManagerAreaAssignmentsController : ControllerBase
         _managerAreaAssignmentService = managerAreaAssignmentService;
     }
 
+    /// <summary>Lấy danh sách phạm vi khu vực được phân cho Interaction Manager.</summary>
+    /// <remarks>
+    /// Chỉ `SYSTEMADMIN` được truy cập. Có thể lọc theo Manager, khu vực và trạng thái hoạt động.
+    /// </remarks>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<ManagerAreaAssignmentDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAssignments(
@@ -31,6 +35,8 @@ public class AdminManagerAreaAssignmentsController : ControllerBase
             HttpContext.RequestAborted));
     }
 
+    /// <summary>Lấy chi tiết một phạm vi quản lý của Interaction Manager.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được truy cập.</remarks>
     [HttpGet("{assignmentId:int}")]
     [ProducesResponseType(typeof(ManagerAreaAssignmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -41,6 +47,10 @@ public class AdminManagerAreaAssignmentsController : ControllerBase
             HttpContext.RequestAborted));
     }
 
+    /// <summary>Phân một khu vực cho Interaction Manager.</summary>
+    /// <remarks>
+    /// Chỉ `SYSTEMADMIN` được thao tác. Nếu phạm vi đã tồn tại, hệ thống kích hoạt lại bản ghi đó.
+    /// </remarks>
     [HttpPost]
     [ProducesResponseType(typeof(ManagerAreaAssignmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -53,6 +63,8 @@ public class AdminManagerAreaAssignmentsController : ControllerBase
             HttpContext.RequestAborted));
     }
 
+    /// <summary>Cập nhật khu vực trong phạm vi quản lý của Interaction Manager.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác; cặp Manager và khu vực phải là duy nhất.</remarks>
     [HttpPut("{assignmentId:int}")]
     [ProducesResponseType(typeof(ManagerAreaAssignmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -67,6 +79,8 @@ public class AdminManagerAreaAssignmentsController : ControllerBase
             HttpContext.RequestAborted));
     }
 
+    /// <summary>Kích hoạt hoặc vô hiệu hóa phạm vi quản lý của Interaction Manager.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác.</remarks>
     [HttpPatch("{assignmentId:int}/active")]
     [ProducesResponseType(typeof(ManagerAreaAssignmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]

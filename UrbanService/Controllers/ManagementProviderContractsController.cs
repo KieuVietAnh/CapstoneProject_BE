@@ -27,6 +27,10 @@ public class ManagementProviderContractsController : ControllerBase
         _cloudinaryService = cloudinaryService;
     }
 
+    /// <summary>Lấy danh sách hợp đồng với đơn vị cung cấp dịch vụ.</summary>
+    /// <remarks>
+    /// Cho phép các role quản lý truy cập; hỗ trợ lọc theo đơn vị, khu vực, danh mục và trạng thái hợp đồng.
+    /// </remarks>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<ProviderContractDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetContracts(
@@ -72,6 +76,8 @@ public class ManagementProviderContractsController : ControllerBase
         return Ok(contracts.Select(MapContract).ToList());
     }
 
+    /// <summary>Lấy chi tiết một hợp đồng dịch vụ.</summary>
+    /// <remarks>Cho phép `SYSTEMADMIN`, `SYSTEMSTAFF` và `INTERACTIONMANAGER` truy cập.</remarks>
     [HttpGet("{contractId:int}")]
     [ProducesResponseType(typeof(ProviderContractDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -85,6 +91,10 @@ public class ManagementProviderContractsController : ControllerBase
         return Ok(MapContract(contract));
     }
 
+    /// <summary>Tạo hợp đồng mới với đơn vị cung cấp dịch vụ.</summary>
+    /// <remarks>
+    /// Chỉ `SYSTEMADMIN` được thao tác. Khu vực và danh mục là tùy chọn nhưng phải đang hoạt động nếu được cung cấp.
+    /// </remarks>
     [HttpPost]
     [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(ProviderContractDto), StatusCodes.Status200OK)]
@@ -117,6 +127,8 @@ public class ManagementProviderContractsController : ControllerBase
         return Ok(await GetContractDtoAsync(contract.ContractId));
     }
 
+    /// <summary>Cập nhật thông tin một hợp đồng dịch vụ.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác; các trường không truyền lên được giữ nguyên.</remarks>
     [HttpPut("{contractId:int}")]
     [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(ProviderContractDto), StatusCodes.Status200OK)]
@@ -175,6 +187,8 @@ public class ManagementProviderContractsController : ControllerBase
         return Ok(await GetContractDtoAsync(contractId));
     }
 
+    /// <summary>Lấy danh sách tệp đính kèm của hợp đồng.</summary>
+    /// <remarks>Cho phép các role quản lý truy cập; tệp được sắp xếp mới nhất trước.</remarks>
     [HttpGet("{contractId:int}/attachments")]
     [ProducesResponseType(typeof(IReadOnlyCollection<ProviderContractAttachmentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -192,6 +206,10 @@ public class ManagementProviderContractsController : ControllerBase
         return Ok(attachments.Select(MapAttachment).ToList());
     }
 
+    /// <summary>Tải tệp đính kèm lên một hợp đồng.</summary>
+    /// <remarks>
+    /// Chỉ `SYSTEMADMIN` được thao tác. Request dùng `multipart/form-data` và phải có ít nhất một tệp.
+    /// </remarks>
     [HttpPost("{contractId:int}/attachments")]
     [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [Consumes("multipart/form-data")]

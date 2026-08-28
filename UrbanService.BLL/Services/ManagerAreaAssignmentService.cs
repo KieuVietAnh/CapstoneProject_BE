@@ -218,7 +218,7 @@ public class ManagerAreaAssignmentService : IManagerAreaAssignmentService
                 user =>
                     user.UserId == managerUserId &&
                     user.IsActive &&
-                    user.Role.RoleName == UserRole.INTERACTIONMANAGER,
+                    user.Role.RoleName.ToUpper() == UserRole.INTERACTIONMANAGER,
                 cancellationToken);
 
         if (!exists)
@@ -262,7 +262,7 @@ public class ManagerAreaAssignmentService : IManagerAreaAssignmentService
                 user =>
                     user.UserId == adminUserId &&
                     user.IsActive &&
-                    user.Role.RoleName == UserRole.SYSTEMADMIN,
+                    user.Role.RoleName.ToUpper() == UserRole.SYSTEMADMIN,
                 cancellationToken);
         if (!isAdmin)
         {

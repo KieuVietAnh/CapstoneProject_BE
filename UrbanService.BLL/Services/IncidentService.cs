@@ -1346,7 +1346,7 @@ public sealed class IncidentService : IIncidentService
             .Where(assignment =>
                 assignment.IsActive &&
                 assignment.User.IsActive &&
-                assignment.User.Role.RoleName == UserRole.SYSTEMSTAFF &&
+                assignment.User.Role.RoleName.ToUpper() == UserRole.SYSTEMSTAFF &&
                 assignment.AreaId == incident.AreaId &&
                 (!assignment.CategoryId.HasValue || assignment.CategoryId == incident.CategoryId) &&
                 (!assignment.StartDate.HasValue || assignment.StartDate <= today) &&
@@ -1394,7 +1394,7 @@ public sealed class IncidentService : IIncidentService
                 assignment.UserId == request.StaffUserId &&
                 assignment.IsActive &&
                 assignment.User.IsActive &&
-                assignment.User.Role.RoleName == UserRole.SYSTEMSTAFF &&
+                assignment.User.Role.RoleName.ToUpper() == UserRole.SYSTEMSTAFF &&
                 assignment.AreaId == incident.AreaId &&
                 (!assignment.CategoryId.HasValue || assignment.CategoryId == incident.CategoryId) &&
                 (!assignment.StartDate.HasValue || assignment.StartDate <= today) &&

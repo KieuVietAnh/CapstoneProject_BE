@@ -95,6 +95,50 @@ public sealed class ManagerAreaAssignmentServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_AdminRoleDiffersOnlyByCase_CreatesAssignment()
+    {
+        var context = new ManagerAreaAssignmentTestContext();
+        var admin = context.User("SystemAdmin", "System Admin");
+        var manager = context.User(UserRole.INTERACTIONMANAGER, "Ward Manager");
+        var area = context.Area("Ward One", "WARD-001");
+        var service = new ManagerAreaAssignmentService(context.UnitOfWork);
+
+        var result = await service.CreateAsync(admin.UserId, new ManagerAreaAssignmentCreateRequest
+        {
+            ManagerUserId = manager.UserId,
+            AreaId = area.AreaId
+        });
+
+        Assert.Equal(admin.UserId, result.CreatedByUserId);
+        Assert.True(result.IsActive);
+        await context.AssignmentRepository.Received(1)
+            .AddAsync(Arg.Any<ManagerAreaAssignment>());
+        await context.UnitOfWork.Received(1).SaveAsync();
+    }
+
+    [Fact]
+    public async Task CreateAsync_ManagerRoleDiffersOnlyByCase_CreatesAssignment()
+    {
+        var context = new ManagerAreaAssignmentTestContext();
+        var admin = context.User(UserRole.SYSTEMADMIN, "System Admin");
+        var manager = context.User("InteractionManager", "Ward Manager");
+        var area = context.Area("Ward One", "WARD-001");
+        var service = new ManagerAreaAssignmentService(context.UnitOfWork);
+
+        var result = await service.CreateAsync(admin.UserId, new ManagerAreaAssignmentCreateRequest
+        {
+            ManagerUserId = manager.UserId,
+            AreaId = area.AreaId
+        });
+
+        Assert.Equal(manager.UserId, result.ManagerUserId);
+        Assert.True(result.IsActive);
+        await context.AssignmentRepository.Received(1)
+            .AddAsync(Arg.Any<ManagerAreaAssignment>());
+        await context.UnitOfWork.Received(1).SaveAsync();
+    }
+
+    [Fact]
     public async Task CreateAsync_ExistingInactiveAssignment_ReactivatesWithoutAddingDuplicate()
     {
         var context = new ManagerAreaAssignmentTestContext();

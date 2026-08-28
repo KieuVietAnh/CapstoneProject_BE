@@ -346,7 +346,7 @@ public class AreaAlertService : IAreaAlertService
                 assignment.AreaId == areaId &&
                 assignment.Area.IsActive &&
                 assignment.ManagerUser.IsActive &&
-                assignment.ManagerUser.Role.RoleName == UserRole.INTERACTIONMANAGER);
+                assignment.ManagerUser.Role.RoleName.ToUpper() == UserRole.INTERACTIONMANAGER);
 
         if (!hasAccess)
         {

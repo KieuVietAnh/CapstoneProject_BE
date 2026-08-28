@@ -190,8 +190,13 @@ public class SlaController : ControllerBase
     /// <summary>
     /// Kiểm tra vi phạm SLA thủ công.
     /// </summary>
+    /// <remarks>Chỉ `INTERACTIONMANAGER`; cập nhật trạng thái vi phạm dựa trên thời điểm hiện tại.</remarks>
     [HttpPost("{feedbackSlaId:long}/check")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CheckViolation(
         long feedbackSlaId)
     {

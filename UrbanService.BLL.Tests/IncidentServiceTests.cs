@@ -406,7 +406,7 @@ public sealed class IncidentServiceTests
     }
 
     [Fact]
-    public async Task GetAssigneeCandidates_ReturnsOnlyActiveStaffForIncidentScope()
+    public async Task GetAssigneeCandidates_MixedCaseRoles_ReturnsOnlyActiveStaffForIncidentScope()
     {
         var context = new IncidentTestContext();
         var service = new IncidentService(context.UnitOfWork);
@@ -414,10 +414,11 @@ public sealed class IncidentServiceTests
         var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
         var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
         context.Incidents.Add(incident);
-        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Ward manager");
+        var manager = context.AddActor("InteractionManager", "Ward manager");
         context.AddManagerAreaAssignment(manager, incident.Area);
 
         var eligibleStaff = IncidentTestContext.Staff(Guid.NewGuid(), "Eligible staff");
+        eligibleStaff.Role.RoleName = "SystemStaff";
         var wrongAreaStaff = IncidentTestContext.Staff(Guid.NewGuid(), "Wrong area staff");
         var wrongCategoryStaff = IncidentTestContext.Staff(Guid.NewGuid(), "Wrong category staff");
         var inactiveStaff = IncidentTestContext.Staff(Guid.NewGuid(), "Inactive staff");
@@ -448,7 +449,7 @@ public sealed class IncidentServiceTests
     }
 
     [Fact]
-    public async Task Assign_ManagerSetsStaffAndProjectsAssignedStatusToAllActiveReports()
+    public async Task Assign_MixedCaseRoles_ManagerSetsStaffAndProjectsAssignedStatusToAllActiveReports()
     {
         var context = new IncidentTestContext();
         var service = new IncidentService(context.UnitOfWork);
@@ -467,8 +468,9 @@ public sealed class IncidentServiceTests
             IncidentTestContext.Link(incident, corroborating, IncidentLinkRole.Corroborating, now.AddMinutes(1))
         ]);
         var staff = IncidentTestContext.Staff(Guid.NewGuid(), "Assigned staff");
+        staff.Role.RoleName = "SystemStaff";
         context.Assignments.Add(IncidentTestContext.Assignment(staff, incident.Area, incident.CategoryId));
-        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Ward manager");
+        var manager = context.AddActor("InteractionManager", "Ward manager");
         context.AddManagerAreaAssignment(manager, incident.Area);
 
         var result = await service.AssignAsync(

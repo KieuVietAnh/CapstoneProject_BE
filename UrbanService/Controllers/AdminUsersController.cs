@@ -21,6 +21,8 @@ public class AdminUsersController : ControllerBase
         _userManagementService = userManagementService;
     }
 
+    /// <summary>Lấy danh sách tài khoản trong hệ thống.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được truy cập; hỗ trợ bộ lọc và phân trang từ query.</remarks>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResultDto<AdminUserDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -31,6 +33,8 @@ public class AdminUsersController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Lấy danh sách role có thể dùng khi quản trị tài khoản.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được truy cập.</remarks>
     [HttpGet("roles")]
     [ProducesResponseType(typeof(IReadOnlyCollection<RoleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -41,6 +45,8 @@ public class AdminUsersController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Lấy chi tiết một tài khoản theo định danh.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được truy cập.</remarks>
     [HttpGet("{userId:guid}")]
     [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -52,6 +58,8 @@ public class AdminUsersController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Tạo tài khoản mới từ màn hình quản trị.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác; email và dữ liệu định danh phải hợp lệ.</remarks>
     [HttpPost]
     [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -64,6 +72,8 @@ public class AdminUsersController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Cập nhật thông tin và role của một tài khoản.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác; áp dụng các ràng buộc tự bảo vệ tài khoản quản trị.</remarks>
     [HttpPut("{userId:guid}")]
     [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -75,6 +85,8 @@ public class AdminUsersController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Kích hoạt hoặc khóa một tài khoản.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác; quản trị viên hiện tại không thể tự khóa chính mình.</remarks>
     [HttpPatch("{userId:guid}/active")]
     [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -90,6 +102,8 @@ public class AdminUsersController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Đặt lại mật khẩu cho một tài khoản.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác. Thành công trả về `204 No Content`.</remarks>
     [HttpPatch("{userId:guid}/reset-password")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]

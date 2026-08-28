@@ -21,6 +21,8 @@ public class CategoriesController : ControllerBase
         _uow = uow;
     }
 
+    /// <summary>Lấy danh sách danh mục phản ánh.</summary>
+    /// <remarks>Yêu cầu JWT. Mặc định chỉ trả danh mục đang hoạt động.</remarks>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<CategoryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCategories([FromQuery] bool includeInactive = false)
@@ -39,6 +41,8 @@ public class CategoriesController : ControllerBase
         return Ok(categories.Select(Map).ToList());
     }
 
+    /// <summary>Lấy chi tiết một danh mục phản ánh.</summary>
+    /// <remarks>Yêu cầu JWT; kết quả có thể bao gồm danh mục đã bị khóa.</remarks>
     [HttpGet("{categoryId:int}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -52,6 +56,8 @@ public class CategoriesController : ControllerBase
         return Ok(Map(category));
     }
 
+    /// <summary>Tạo danh mục phản ánh mới.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác; danh mục mới được kích hoạt mặc định.</remarks>
     [HttpPost]
     [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
@@ -77,6 +83,8 @@ public class CategoriesController : ControllerBase
         return Ok(Map(category));
     }
 
+    /// <summary>Cập nhật tên hoặc mô tả của danh mục phản ánh.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác; các trường không truyền lên được giữ nguyên.</remarks>
     [HttpPut("{categoryId:int}")]
     [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
@@ -103,6 +111,8 @@ public class CategoriesController : ControllerBase
         return Ok(Map(category));
     }
 
+    /// <summary>Kích hoạt hoặc vô hiệu hóa một danh mục phản ánh.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác.</remarks>
     [HttpPatch("{categoryId:int}/active")]
     [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]

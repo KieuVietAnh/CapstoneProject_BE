@@ -21,6 +21,10 @@ public class AreasController : ControllerBase
         _uow = uow;
     }
 
+    /// <summary>Lấy danh sách khu vực vận hành.</summary>
+    /// <remarks>
+    /// Yêu cầu JWT. Mặc định chỉ trả khu vực đang hoạt động; có thể lấy cả khu vực bị khóa và tìm kiếm theo tên hoặc mã phường.
+    /// </remarks>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyCollection<AreaDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAreas(
@@ -53,6 +57,8 @@ public class AreasController : ControllerBase
         return Ok(areas.Select(Map).ToList());
     }
 
+    /// <summary>Lấy chi tiết một khu vực.</summary>
+    /// <remarks>Yêu cầu JWT; kết quả có thể bao gồm khu vực đã bị khóa.</remarks>
     [HttpGet("{areaId:int}")]
     [ProducesResponseType(typeof(AreaDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -66,6 +72,8 @@ public class AreasController : ControllerBase
         return Ok(Map(area));
     }
 
+    /// <summary>Tạo khu vực vận hành mới.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác; khu vực mới được kích hoạt mặc định.</remarks>
     [HttpPost]
     [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(AreaDto), StatusCodes.Status200OK)]
@@ -104,6 +112,8 @@ public class AreasController : ControllerBase
         return Ok(Map(area));
     }
 
+    /// <summary>Cập nhật thông tin một khu vực.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác; các trường không truyền lên được giữ nguyên.</remarks>
     [HttpPut("{areaId:int}")]
     [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(AreaDto), StatusCodes.Status200OK)]
@@ -157,6 +167,8 @@ public class AreasController : ControllerBase
         return Ok(Map(area));
     }
 
+    /// <summary>Kích hoạt hoặc vô hiệu hóa một khu vực.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được thao tác.</remarks>
     [HttpPatch("{areaId:int}/active")]
     [Authorize(Roles = UserRole.SYSTEMADMIN)]
     [ProducesResponseType(typeof(AreaDto), StatusCodes.Status200OK)]

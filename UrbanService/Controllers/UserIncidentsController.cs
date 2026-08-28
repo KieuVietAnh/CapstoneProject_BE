@@ -20,11 +20,15 @@ public sealed class UserIncidentsController : ControllerBase
         _incidentService = incidentService;
     }
 
+    /// <summary>Lấy danh sách sự vụ mà người dùng hiện tại đang theo dõi hoặc có phản ánh liên quan.</summary>
+    /// <remarks>Chỉ `SERVICEUSER`; dữ liệu được giới hạn theo định danh lấy từ JWT.</remarks>
     [HttpGet("me")]
     [ProducesResponseType(typeof(PagedResultDto<IncidentListItemDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetMyIncidents([FromQuery] IncidentQueryParameters query)
         => Ok(await _incidentService.GetMyIncidentsAsync(GetCurrentUserId(), query, HttpContext.RequestAborted));
 
+    /// <summary>Đăng ký theo dõi cập nhật của một sự vụ.</summary>
+    /// <remarks>Chỉ `SERVICEUSER`; thao tác lặp lại không tạo đăng ký trùng.</remarks>
     [HttpPost("{incidentId:guid}/subscribe")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Subscribe(Guid incidentId)
@@ -33,6 +37,8 @@ public sealed class UserIncidentsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Hủy đăng ký theo dõi một sự vụ.</summary>
+    /// <remarks>Chỉ `SERVICEUSER`; thành công trả về `204 No Content`.</remarks>
     [HttpDelete("{incidentId:guid}/subscribe")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Unsubscribe(Guid incidentId)

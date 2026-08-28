@@ -259,8 +259,13 @@ public class ManagementFeedbacksController : ControllerBase
     /// <summary>
     /// Manager verify feedback
     /// </summary>
+    /// <remarks>Chỉ `INTERACTIONMANAGER`; phản ánh phải thỏa điều kiện workflow hiện tại.</remarks>
     [HttpPut("{feedbackId:guid}/verify")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> VerifyFeedback(
         Guid feedbackId)
     {
@@ -277,8 +282,13 @@ public class ManagementFeedbacksController : ControllerBase
     /// <summary>
     /// Staff report feedback cho coordinator
     /// </summary>
+    /// <remarks>Chỉ `SYSTEMSTAFF`; định danh Staff được lấy từ JWT thay vì request body.</remarks>
     [HttpPost("assign")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [ProducesResponseType(typeof(FeedbackProviderReportDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> AssignFeedback(
         [FromBody] AssignFeedbackRequest request)
     {
@@ -294,8 +304,13 @@ public class ManagementFeedbacksController : ControllerBase
     /// <summary>
     /// Staff gửi kết quả xử lý
     /// </summary>
+    /// <remarks>Chỉ `SYSTEMSTAFF`; định danh Staff được lấy từ JWT.</remarks>
     [HttpPost("submit-resolution")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> SubmitResolution(
         [FromBody] SubmitResolutionRequest request)
     {
@@ -314,8 +329,13 @@ public class ManagementFeedbacksController : ControllerBase
     /// <summary>
     /// Manager duyệt kết quả xử lý
     /// </summary>
+    /// <remarks>Chỉ `INTERACTIONMANAGER`; có thể truyền ghi chú phê duyệt qua query.</remarks>
     [HttpPut("{feedbackId:guid}/approve")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ApproveResolution(
         Guid feedbackId,
         [FromQuery] string? note)
@@ -332,11 +352,17 @@ public class ManagementFeedbacksController : ControllerBase
         });
     }
 
+    /// <summary>Yêu cầu Staff làm lại kết quả xử lý phản ánh.</summary>
+    /// <remarks>Chỉ `INTERACTIONMANAGER`; request body là lý do cần làm lại.</remarks>
     [HttpPut("{feedbackId:guid}/need-rework")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> NeedRework(
-    Guid feedbackId,
-    [FromBody] string reason)
+        Guid feedbackId,
+        [FromBody] string reason)
     {
         await _feedbackService.RequireReworkAsync(
             feedbackId,
