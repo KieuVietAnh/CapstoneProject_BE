@@ -219,6 +219,15 @@ public sealed class IncidentService : IIncidentService
             return targetIncidentId;
         }
 
+        var allowedMergeStatuses = new[] { IncidentStatus.New, IncidentStatus.Verified };
+        if (!allowedMergeStatuses.Contains(targetIncidentStatus) ||
+            (childLink != null && !allowedMergeStatuses.Contains(childLink.Incident.Status)) ||
+            parentLink?.Incident.AssignedStaffUserId != null ||
+            childLink?.Incident.AssignedStaffUserId != null)
+        {
+            throw new Exception("Duplicate reports can only be merged before staff assignment and provider processing.");
+        }
+
         var now = DateTime.UtcNow;
         Guid? previousIncidentId = null;
 
@@ -491,6 +500,8 @@ public sealed class IncidentService : IIncidentService
                 Severity = incident.Severity,
                 Status = incident.Status,
                 DueDate = incident.DueDate,
+                AssignedAt = incident.AssignedAt,
+                ProcessingStartedAt = incident.ProcessingStartedAt,
                 ResolvedAt = incident.ResolvedAt,
                 ClosedAt = incident.ClosedAt,
                 MergedIntoIncidentId = incident.MergedIntoIncidentId,
@@ -1224,6 +1235,20 @@ public sealed class IncidentService : IIncidentService
         return MapFeedbackStatusHistory(history);
     }
 
+    public async Task UpdateStatusFromProviderAssignmentAsync(
+        Guid incidentId,
+        UpdateIncidentStatusRequest request,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        await ManagementAccessRules.EnsureStaffIncidentOperationAsync(
+            _uow,
+            incidentId,
+            actorUserId,
+            cancellationToken);
+        await UpdateStatusCoreAsync(incidentId, request, actorUserId, cancellationToken);
+    }
+
     private async Task<IncidentStatusUpdateResult> UpdateStatusCoreAsync(
         Guid incidentId,
         UpdateIncidentStatusRequest request,
@@ -1295,6 +1320,9 @@ public sealed class IncidentService : IIncidentService
 
                 incident.Status = status;
                 incident.UpdatedAt = now;
+                incident.ProcessingStartedAt = status == IncidentStatus.InProgress
+                    ? incident.ProcessingStartedAt ?? now
+                    : incident.ProcessingStartedAt;
                 incident.ResolvedAt = status == IncidentStatus.Resolved ? now : incident.ResolvedAt;
                 incident.ClosedAt = status == IncidentStatus.Closed ? now : incident.ClosedAt;
 
@@ -1407,6 +1435,7 @@ public sealed class IncidentService : IIncidentService
         var oldAssignee = incident.AssignedStaffUserId;
         incident.AssignedStaffUserId = request.StaffUserId;
         var now = DateTime.UtcNow;
+        incident.AssignedAt ??= now;
         incident.UpdatedAt = now;
         if (string.Equals(incident.Status, IncidentStatus.Verified, StringComparison.OrdinalIgnoreCase))
         {
@@ -1492,6 +1521,23 @@ public sealed class IncidentService : IIncidentService
                 throw new Exception("Không thể merge Incident đã được merge.");
             if (source.AreaId != target.AreaId)
                 throw new Exception("Chỉ có thể merge các Incident cùng khu vực.");
+            var allowedMergeStatuses = new[] { IncidentStatus.New, IncidentStatus.Verified };
+            if (!allowedMergeStatuses.Contains(source.Status) || !allowedMergeStatuses.Contains(target.Status) ||
+                source.AssignedStaffUserId.HasValue || target.AssignedStaffUserId.HasValue)
+            {
+                throw new Exception("Incident can only be merged before staff assignment and provider processing.");
+            }
+
+            var hasProviderAssignment = await _uow.GetRepository<FeedbackProviderReport>().Entities
+                .AsNoTracking()
+                .AnyAsync(report =>
+                    report.IncidentId == sourceIncidentId ||
+                    report.IncidentId == request.TargetIncidentId,
+                    cancellationToken);
+            if (hasProviderAssignment)
+            {
+                throw new Exception("Incident with a provider assignment cannot be merged.");
+            }
 
             var links = await _uow.GetRepository<IncidentReportLink>().Entities
                 .Where(link =>

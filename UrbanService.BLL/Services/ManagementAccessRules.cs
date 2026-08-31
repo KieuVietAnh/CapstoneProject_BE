@@ -211,15 +211,66 @@ internal static class ManagementAccessRules
         return context;
     }
 
-    public static async Task<Guid> GetProviderReportFeedbackIdAsync(
+    public static async Task<IncidentAccessContext> EnsureStaffIncidentOperationAsync(
         IUnitOfWork uow,
-        int providerReportId,
+        Guid incidentId,
+        Guid staffUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await GetActorScopeAsync(uow, staffUserId, cancellationToken);
+        EnsureStaffRole(actor);
+
+        var context = await uow.GetRepository<Incident>().Entities
+            .AsNoTracking()
+            .Where(incident =>
+                incident.IncidentId == incidentId &&
+                incident.MergedIntoIncidentId == null)
+            .Select(incident => new IncidentAccessContext(
+                incident.IncidentId,
+                incident.AreaId,
+                incident.CategoryId,
+                incident.Status,
+                incident.AssignedStaffUserId,
+                Guid.Empty,
+                string.Empty))
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new ForbiddenAccessException("Incident does not exist or is no longer active.");
+
+        if (context.AssignedStaffUserId != staffUserId)
+        {
+            throw new ForbiddenAccessException("Incident is not assigned to the current staff user.");
+        }
+
+        return context;
+    }
+
+    public static async Task EnsureIncidentReadAccessAsync(
+        IUnitOfWork uow,
+        Guid incidentId,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await GetActorScopeAsync(uow, actorUserId, cancellationToken);
+        var canRead = await ApplyIncidentReadScope(
+                uow.GetRepository<Incident>().Entities.AsNoTracking(),
+                actor)
+            .AnyAsync(incident => incident.IncidentId == incidentId, cancellationToken);
+
+        if (!canRead)
+        {
+            throw new ForbiddenAccessException("You do not have access to this incident.");
+        }
+    }
+
+    public static async Task<Guid> GetProviderAssignmentIncidentIdAsync(
+        IUnitOfWork uow,
+        int providerAssignmentId,
         CancellationToken cancellationToken = default)
     {
         return await uow.GetRepository<FeedbackProviderReport>().Entities
             .AsNoTracking()
-            .Where(report => report.ProviderReportId == providerReportId)
-            .Select(report => (Guid?)report.FeedbackId)
+            .Where(report => report.ProviderReportId == providerAssignmentId)
+            .Select(report => (Guid?)report.IncidentId)
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new Exception("Provider report không tồn tại.");
     }

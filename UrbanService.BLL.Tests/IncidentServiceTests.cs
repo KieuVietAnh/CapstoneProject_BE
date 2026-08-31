@@ -53,10 +53,11 @@ public sealed class IncidentServiceTests
         var createdAt = DateTime.UtcNow;
         var parent = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), createdAt.AddMinutes(-10));
         var child = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), createdAt);
-        parent.Status = FeedbackStatus.InProgress;
+        parent.Status = FeedbackStatus.Verified;
         child.Status = FeedbackStatus.AiReviewed;
         var targetIncident = IncidentTestContext.Incident(Guid.NewGuid(), parent, createdAt.AddMinutes(-10));
         var childIncident = IncidentTestContext.Incident(Guid.NewGuid(), child, createdAt);
+        childIncident.Status = IncidentStatus.New;
         context.Incidents.AddRange([targetIncident, childIncident]);
         context.Links.AddRange(
         [
@@ -103,11 +104,11 @@ public sealed class IncidentServiceTests
             item.UserId == child.UserId &&
             item.IsActive);
         Assert.Contains(context.Events, item => item.EventType == IncidentEventType.IncidentMerged);
-        Assert.Equal(FeedbackStatus.InProgress, child.Status);
+        Assert.Equal(FeedbackStatus.Verified, child.Status);
         Assert.Contains(context.StatusHistories, history =>
             history.FeedbackId == child.FeedbackId &&
             history.OldStatus == FeedbackStatus.AiReviewed &&
-            history.NewStatus == FeedbackStatus.InProgress);
+            history.NewStatus == FeedbackStatus.Verified);
     }
 
     [Fact]
@@ -142,6 +143,38 @@ public sealed class IncidentServiceTests
             history.FeedbackId == child.FeedbackId &&
             history.OldStatus == FeedbackStatus.AiReviewed &&
             history.NewStatus == FeedbackStatus.InProgress);
+    }
+
+    [Fact]
+    public async Task RelinkConfirmedDuplicate_RejectsMergeAfterProviderProcessingStarted()
+    {
+        var context = new IncidentTestContext();
+        var service = new IncidentService(context.UnitOfWork);
+        var now = DateTime.UtcNow;
+        var parent = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now.AddMinutes(-5));
+        var child = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        parent.Status = FeedbackStatus.InProgress;
+        child.Status = FeedbackStatus.AiReviewed;
+        var targetIncident = IncidentTestContext.Incident(Guid.NewGuid(), parent, now.AddMinutes(-5));
+        var childIncident = IncidentTestContext.Incident(Guid.NewGuid(), child, now);
+        context.Incidents.AddRange([targetIncident, childIncident]);
+        context.Links.AddRange(
+        [
+            IncidentTestContext.Link(targetIncident, parent, IncidentLinkRole.Primary, now.AddMinutes(-5)),
+            IncidentTestContext.Link(childIncident, child, IncidentLinkRole.Primary, now)
+        ]);
+
+        var exception = await Assert.ThrowsAsync<Exception>(() =>
+            service.RelinkConfirmedDuplicateAsync(
+                child,
+                parent,
+                Guid.NewGuid(),
+                0.94m,
+                "Late duplicate confirmation"));
+
+        Assert.Contains("before staff assignment", exception.Message);
+        Assert.Equal(childIncident.IncidentId, context.Links.Single(link =>
+            link.FeedbackId == child.FeedbackId && link.LinkStatus == IncidentLinkStatus.Active).IncidentId);
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
+using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
 
 namespace UrbanService.Controllers;
@@ -14,10 +15,14 @@ namespace UrbanService.Controllers;
 public sealed class ManagementIncidentsController : ControllerBase
 {
     private readonly IIncidentService _incidentService;
+    private readonly IFeedbackService _feedbackService;
 
-    public ManagementIncidentsController(IIncidentService incidentService)
+    public ManagementIncidentsController(
+        IIncidentService incidentService,
+        IFeedbackService feedbackService)
     {
         _incidentService = incidentService;
+        _feedbackService = feedbackService;
     }
 
     /// <summary>Lấy queue Incident cho management.</summary>
@@ -114,6 +119,71 @@ public sealed class ManagementIncidentsController : ControllerBase
             request,
             GetCurrentUserId(),
             HttpContext.RequestAborted));
+
+    /// <summary>Lấy đơn vị xử lý phù hợp với khu vực và danh mục của Incident.</summary>
+    [HttpGet("{incidentId:guid}/provider-candidates")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<ProviderCandidateDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProviderCandidates(Guid incidentId)
+        => Ok(await _feedbackService.GetIncidentProviderCandidatesAsync(
+            incidentId,
+            GetCurrentUserId()));
+
+    /// <summary>Lấy phân công đơn vị xử lý hiện tại của Incident.</summary>
+    [HttpGet("{incidentId:guid}/provider-assignment")]
+    [ProducesResponseType(typeof(IncidentProviderAssignmentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> GetProviderAssignment(Guid incidentId)
+    {
+        var assignment = await _feedbackService.GetCurrentProviderAssignmentAsync(
+            incidentId,
+            GetCurrentUserId());
+        return assignment == null ? NoContent() : Ok(assignment);
+    }
+
+    /// <summary>Staff phân công một đơn vị xử lý cho Incident.</summary>
+    /// <remarks>Mỗi Incident chỉ có một phân công và không hỗ trợ đổi đơn vị.</remarks>
+    [HttpPost("{incidentId:guid}/provider-assignment")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [ProducesResponseType(typeof(IncidentProviderAssignmentDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> AssignProvider(
+        Guid incidentId,
+        [FromBody] AssignIncidentProviderRequest request)
+    {
+        var assignment = await _feedbackService.AssignIncidentProviderAsync(
+            incidentId,
+            GetCurrentUserId(),
+            request);
+        return CreatedAtAction(
+            nameof(GetProviderAssignment),
+            new { incidentId },
+            assignment);
+    }
+
+    /// <summary>Lấy kết quả xử lý đã gửi cho Incident.</summary>
+    [HttpGet("{incidentId:guid}/resolutions")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<FeedbackResolutionDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetResolutions(Guid incidentId)
+        => Ok(await _feedbackService.GetIncidentResolutionsAsync(
+            incidentId,
+            GetCurrentUserId()));
+
+    /// <summary>Staff gửi kết quả xử lý của Incident để Manager duyệt.</summary>
+    [HttpPost("{incidentId:guid}/resolutions")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SubmitResolution(
+        Guid incidentId,
+        [FromBody] SubmitResolutionRequest request)
+    {
+        await _feedbackService.SubmitIncidentResolutionAsync(
+            incidentId,
+            GetCurrentUserId(),
+            request);
+        return Ok(new { Message = "Resolution submitted successfully." });
+    }
 
     /// <summary>Merge Incident nguồn vào Incident đích.</summary>
     [HttpPost("{incidentId:guid}/merge")]

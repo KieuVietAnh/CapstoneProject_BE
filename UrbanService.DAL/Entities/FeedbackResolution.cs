@@ -7,7 +7,7 @@ public partial class FeedbackResolution
 {
     public int ResolutionId { get; set; }
 
-    public Guid FeedbackId { get; set; }
+    public Guid IncidentId { get; set; }
 
     public int? ProviderReportId { get; set; }
 
@@ -23,7 +23,7 @@ public partial class FeedbackResolution
 
     public string Status { get; set; } = null!;
 
-    public virtual Feedback Feedback { get; set; } = null!;
+    public virtual Incident Incident { get; set; } = null!;
 
     public virtual FeedbackProviderReport? ProviderReport { get; set; }
 

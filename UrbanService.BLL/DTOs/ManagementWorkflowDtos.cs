@@ -204,11 +204,11 @@ public class ProviderCandidateDto
     public string? ContractStatus { get; set; }
 }
 
-public class FeedbackProviderReportDto
+public class IncidentProviderAssignmentDto
 {
-    public int ProviderReportId { get; set; }
+    public int ProviderAssignmentId { get; set; }
 
-    public Guid FeedbackId { get; set; }
+    public Guid IncidentId { get; set; }
 
     public int CoordinatorId { get; set; }
 
@@ -224,9 +224,9 @@ public class FeedbackProviderReportDto
 
     public string? Note { get; set; }
 
-    public Guid ReportedByUserId { get; set; }
+    public Guid AssignedByStaffUserId { get; set; }
 
-    public string? ReportedByUserName { get; set; }
+    public string? AssignedByStaffUserName { get; set; }
 
     public string ReportStatus { get; set; } = null!;
 
@@ -234,7 +234,7 @@ public class FeedbackProviderReportDto
 
     public string? ReportNote { get; set; }
 
-    public DateTime ReportedAt { get; set; }
+    public DateTime AssignedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }
 
@@ -243,7 +243,7 @@ public class FeedbackProviderReportDto
     public int CompletionDocumentCount { get; set; }
 }
 
-public class UpdateProviderReportStatusRequest
+public class UpdateProviderAssignmentStatusRequest
 {
     public string Status { get; set; } = null!;
 
@@ -265,7 +265,7 @@ public class ProviderContactLogDto
 {
     public int ContactLogId { get; set; }
 
-    public int ProviderReportId { get; set; }
+    public int ProviderAssignmentId { get; set; }
 
     public int CoordinatorId { get; set; }
 
@@ -298,9 +298,9 @@ public class CompletionDocumentDto
 {
     public int CompletionDocumentId { get; set; }
 
-    public int ProviderReportId { get; set; }
+    public int ProviderAssignmentId { get; set; }
 
-    public Guid FeedbackId { get; set; }
+    public Guid IncidentId { get; set; }
 
     public int CoordinatorId { get; set; }
 
@@ -323,9 +323,9 @@ public class FeedbackResolutionDto
 {
     public int ResolutionId { get; set; }
 
-    public Guid FeedbackId { get; set; }
+    public Guid IncidentId { get; set; }
 
-    public int? ProviderReportId { get; set; }
+    public int? ProviderAssignmentId { get; set; }
 
     public Guid CreatedByStaffUserId { get; set; }
 

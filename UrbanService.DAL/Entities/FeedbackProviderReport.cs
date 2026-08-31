@@ -7,7 +7,7 @@ public partial class FeedbackProviderReport
 {
     public int ProviderReportId { get; set; }
 
-    public Guid FeedbackId { get; set; }
+    public Guid IncidentId { get; set; }
 
     public int CoordinatorId { get; set; }
 
@@ -25,7 +25,7 @@ public partial class FeedbackProviderReport
 
     public virtual ServiceProviderCoordinator Coordinator { get; set; } = null!;
 
-    public virtual Feedback Feedback { get; set; } = null!;
+    public virtual Incident Incident { get; set; } = null!;
 
     public virtual User ReportedByUser { get; set; } = null!;
 

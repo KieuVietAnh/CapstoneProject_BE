@@ -59,39 +59,41 @@ public interface IFeedbackService
         Guid feedbackId,
         Guid staffUserId);
 
-    Task<FeedbackProviderReportDto> AssignFeedbackAsync(
-        AssignFeedbackRequest request);
+    Task<IncidentProviderAssignmentDto> AssignIncidentProviderAsync(
+        Guid incidentId,
+        Guid staffUserId,
+        AssignIncidentProviderRequest request);
 
-    Task<IReadOnlyCollection<ProviderCandidateDto>> GetProviderCandidatesAsync(
-        Guid feedbackId,
+    Task<IReadOnlyCollection<ProviderCandidateDto>> GetIncidentProviderCandidatesAsync(
+        Guid incidentId,
         Guid currentUserId);
 
-    Task<IReadOnlyCollection<FeedbackProviderReportDto>> GetProviderReportsAsync(
-        Guid feedbackId,
+    Task<IncidentProviderAssignmentDto?> GetCurrentProviderAssignmentAsync(
+        Guid incidentId,
         Guid currentUserId);
 
-    Task<FeedbackProviderReportDto> UpdateProviderReportStatusAsync(
-        int providerReportId,
+    Task<IncidentProviderAssignmentDto> UpdateProviderAssignmentStatusAsync(
+        int providerAssignmentId,
         Guid currentUserId,
-        UpdateProviderReportStatusRequest request);
+        UpdateProviderAssignmentStatusRequest request);
 
     Task<ProviderContactLogDto> AddProviderContactLogAsync(
-        int providerReportId,
+        int providerAssignmentId,
         Guid currentUserId,
         ProviderContactLogCreateRequest request);
 
     Task<IReadOnlyCollection<ProviderContactLogDto>> GetProviderContactLogsAsync(
-        int providerReportId,
+        int providerAssignmentId,
         Guid currentUserId);
 
     Task<IReadOnlyCollection<CompletionDocumentDto>> AddCompletionDocumentsAsync(
-        int providerReportId,
+        int providerAssignmentId,
         Guid currentUserId,
         IReadOnlyCollection<UploadedFeedbackAttachmentDto> documents,
         string? description);
 
     Task<IReadOnlyCollection<CompletionDocumentDto>> GetCompletionDocumentsAsync(
-        int providerReportId,
+        int providerAssignmentId,
         Guid currentUserId);
 
     Task<IReadOnlyCollection<FeedbackResolutionDto>> GetFeedbackResolutionsAsync(
@@ -99,6 +101,10 @@ public interface IFeedbackService
         Guid currentUserId);
 
     Task<IReadOnlyCollection<FeedbackResolutionDto>> GetFeedbackResolutionsAsync(Guid feedbackId);
+
+    Task<IReadOnlyCollection<FeedbackResolutionDto>> GetIncidentResolutionsAsync(
+        Guid incidentId,
+        Guid currentUserId);
 
     Task<FeedbackResolutionDto> GetResolutionAsync(
         int resolutionId,
@@ -109,7 +115,9 @@ public interface IFeedbackService
         Guid currentUserId,
         NotifyProviderResultRequest request);
 
-    Task SubmitResolutionAsync(
+    Task SubmitIncidentResolutionAsync(
+        Guid incidentId,
+        Guid staffUserId,
         SubmitResolutionRequest request);
 
     Task ApproveResolutionAsync(
@@ -126,14 +134,14 @@ public interface IFeedbackService
         CitizenReviewRequest request);
 
     Task ClearCompletionDocumentsAsync(
-        int providerReportId,
+        int providerAssignmentId,
         Guid currentUserId);
 
     Task EnsureManagementFeedbackReadAccessAsync(
         Guid feedbackId,
         Guid currentUserId);
 
-    Task EnsureProviderReportOperationAccessAsync(
-        int providerReportId,
+    Task EnsureProviderAssignmentOperationAccessAsync(
+        int providerAssignmentId,
         Guid currentUserId);
 }

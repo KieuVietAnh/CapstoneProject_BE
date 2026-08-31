@@ -59,8 +59,6 @@ public partial class Feedback
 
     public virtual UrbanServiceCategory? Category { get; set; }
 
-    public virtual ICollection<CompletionDocument> CompletionDocuments { get; set; } = new List<CompletionDocument>();
-
     public virtual ICollection<FeedbackAttachment> FeedbackAttachments { get; set; } = new List<FeedbackAttachment>();
 
     public virtual ICollection<FeedbackComment> FeedbackComments { get; set; } = new List<FeedbackComment>();
@@ -70,10 +68,6 @@ public partial class Feedback
     public virtual ICollection<FeedbackDuplicateCandidate> PotentialParentDuplicateCandidates { get; set; } = new List<FeedbackDuplicateCandidate>();
 
     public virtual ICollection<FeedbackResolutionReview> FeedbackResolutionReviews { get; set; } = new List<FeedbackResolutionReview>();
-
-    public virtual ICollection<FeedbackResolution> FeedbackResolutions { get; set; } = new List<FeedbackResolution>();
-
-    public virtual ICollection<FeedbackProviderReport> FeedbackProviderReports { get; set; } = new List<FeedbackProviderReport>();
 
     public virtual ICollection<FeedbackStatusHistory> FeedbackStatusHistories { get; set; } = new List<FeedbackStatusHistory>();
 

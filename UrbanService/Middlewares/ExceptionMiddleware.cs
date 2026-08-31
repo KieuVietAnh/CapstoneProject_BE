@@ -71,6 +71,9 @@ namespace UrbanService.Middlewares
             if (ex is ForbiddenAccessException)
                 return (403, ex.Message);
 
+            if (ex is ConflictException)
+                return (409, ex.Message);
+
             if (root is FileNotFoundException || root is DirectoryNotFoundException)
                 return (500, root.Message);
 

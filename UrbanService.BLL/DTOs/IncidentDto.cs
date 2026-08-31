@@ -70,6 +70,10 @@ public sealed class IncidentDetailDto : IncidentListItemDto
 
     public DateTime? DueDate { get; set; }
 
+    public DateTime? AssignedAt { get; set; }
+
+    public DateTime? ProcessingStartedAt { get; set; }
+
     public DateTime? ResolvedAt { get; set; }
 
     public DateTime? ClosedAt { get; set; }
