@@ -24,7 +24,7 @@ public sealed class IncidentService : IIncidentService
         _notificationService = notificationService;
     }
 
-    public async Task<Guid> StageNewReportIncidentAsync(
+    private async Task<Incident> StageNewReportIncidentCoreAsync(
         Feedback feedback,
         Guid actorUserId,
         DateTime occurredAt)
@@ -37,7 +37,7 @@ public sealed class IncidentService : IIncidentService
         var incidentId = Guid.NewGuid();
         var linkId = Guid.NewGuid();
 
-        await _uow.GetRepository<Incident>().AddAsync(new Incident
+        var incident = new Incident
         {
             IncidentId = incidentId,
             AreaId = feedback.AreaId,
@@ -53,7 +53,8 @@ public sealed class IncidentService : IIncidentService
             DueDate = feedback.DueDate,
             CreatedAt = occurredAt,
             UpdatedAt = occurredAt
-        });
+        };
+        await _uow.GetRepository<Incident>().AddAsync(incident);
 
         await _uow.GetRepository<IncidentReportLink>().AddAsync(new IncidentReportLink
         {
@@ -106,7 +107,99 @@ public sealed class IncidentService : IIncidentService
             }
         ]);
 
-        return incidentId;
+        return incident;
+    }
+
+    public async Task<FeedbackStatusHistoryDto> VerifyReportAsync(
+        Guid feedbackId,
+        Guid managerUserId,
+        string? note = null,
+        CancellationToken cancellationToken = default)
+    {
+        var transactionCompleted = false;
+        _uow.BeginTransaction();
+        try
+        {
+            await _uow.AcquireTransactionAdvisoryLockAsync(ToAdvisoryLockKey(feedbackId));
+
+            var existingIncidentId = await _uow.GetRepository<IncidentReportLink>().Entities
+                .AsNoTracking()
+                .Where(link =>
+                    link.FeedbackId == feedbackId &&
+                    link.LinkStatus == IncidentLinkStatus.Active)
+                .Select(link => (Guid?)link.IncidentId)
+                .SingleOrDefaultAsync(cancellationToken);
+
+            if (existingIncidentId.HasValue)
+            {
+                _uow.CommitTransaction();
+                transactionCompleted = true;
+                return await UpdateStatusFromFeedbackAsync(
+                    feedbackId,
+                    new UpdateIncidentStatusRequest
+                    {
+                        Status = IncidentStatus.Verified,
+                        Note = note
+                    },
+                    managerUserId,
+                    cancellationToken);
+            }
+
+            var feedback = await _uow.GetRepository<Feedback>().Entities
+                .FirstOrDefaultAsync(item => item.FeedbackId == feedbackId, cancellationToken)
+                ?? throw new Exception("Không tìm thấy Feedback.");
+            if (feedback.Status != FeedbackStatus.Submitted &&
+                feedback.Status != FeedbackStatus.AiReviewed)
+            {
+                throw new Exception("Feedback must be Submitted or AiReviewed.");
+            }
+
+            var now = DateTime.UtcNow;
+            var oldStatus = feedback.Status;
+            var normalizedNote = NormalizeOptional(note) ?? "Manager đã xác nhận phản ánh";
+            var incident = await StageNewReportIncidentCoreAsync(feedback, managerUserId, now);
+            incident.Status = IncidentStatus.Verified;
+
+            feedback.Status = FeedbackStatus.Verified;
+            feedback.UpdatedAt = now;
+            var history = new FeedbackStatusHistory
+            {
+                FeedbackId = feedback.FeedbackId,
+                ChangedByUserId = managerUserId,
+                OldStatus = oldStatus,
+                NewStatus = FeedbackStatus.Verified,
+                Note = normalizedNote,
+                ChangedAt = now
+            };
+            await _uow.GetRepository<FeedbackStatusHistory>().AddAsync(history);
+            await _uow.GetRepository<IncidentEvent>().AddAsync(new IncidentEvent
+            {
+                IncidentId = incident.IncidentId,
+                FeedbackId = feedback.FeedbackId,
+                EventType = IncidentEventType.StatusChanged,
+                ActorUserId = managerUserId,
+                PayloadJson = JsonSerializer.Serialize(new
+                {
+                    oldStatus = IncidentStatus.New,
+                    newStatus = IncidentStatus.Verified,
+                    note = normalizedNote
+                }),
+                CreatedAt = now
+            });
+
+            await _uow.SaveAsync();
+            _uow.CommitTransaction();
+            transactionCompleted = true;
+            return MapFeedbackStatusHistory(history);
+        }
+        catch
+        {
+            if (!transactionCompleted)
+            {
+                _uow.RollBack();
+            }
+            throw;
+        }
     }
 
     public async Task StageReportInExistingIncidentAsync(
@@ -187,24 +280,10 @@ public sealed class IncidentService : IIncidentService
                 link.LinkStatus == IncidentLinkStatus.Active)
             .ToListAsync(cancellationToken);
 
-        var parentLink = activeLinks.FirstOrDefault(link => link.FeedbackId == parentFeedback.FeedbackId);
-        Guid targetIncidentId;
-        string targetIncidentStatus;
-
-        if (parentLink == null)
-        {
-            targetIncidentId = await StageNewReportIncidentAsync(
-                parentFeedback,
-                staffUserId,
-                DateTime.UtcNow);
-            targetIncidentStatus = IncidentStatus.New;
-            await _uow.SaveAsync();
-        }
-        else
-        {
-            targetIncidentId = parentLink.IncidentId;
-            targetIncidentStatus = parentLink.Incident.Status;
-        }
+        var parentLink = activeLinks.FirstOrDefault(link => link.FeedbackId == parentFeedback.FeedbackId)
+            ?? throw new Exception("Phản ánh canonical chưa thuộc Incident đang hoạt động.");
+        var targetIncidentId = parentLink.IncidentId;
+        var targetIncidentStatus = parentLink.Incident.Status;
 
         var childLink = activeLinks.FirstOrDefault(link => link.FeedbackId == childFeedback.FeedbackId);
         if (childLink?.IncidentId == targetIncidentId)
@@ -217,6 +296,15 @@ public sealed class IncidentService : IIncidentService
                 DateTime.UtcNow);
             await _uow.SaveAsync();
             return targetIncidentId;
+        }
+
+        var allowedMergeStatuses = new[] { IncidentStatus.New, IncidentStatus.Verified };
+        if (!allowedMergeStatuses.Contains(targetIncidentStatus) ||
+            (childLink != null && !allowedMergeStatuses.Contains(childLink.Incident.Status)) ||
+            parentLink?.Incident.AssignedStaffUserId != null ||
+            childLink?.Incident.AssignedStaffUserId != null)
+        {
+            throw new Exception("Duplicate reports can only be merged before staff assignment and provider processing.");
         }
 
         var now = DateTime.UtcNow;
@@ -491,6 +579,8 @@ public sealed class IncidentService : IIncidentService
                 Severity = incident.Severity,
                 Status = incident.Status,
                 DueDate = incident.DueDate,
+                AssignedAt = incident.AssignedAt,
+                ProcessingStartedAt = incident.ProcessingStartedAt,
                 ResolvedAt = incident.ResolvedAt,
                 ClosedAt = incident.ClosedAt,
                 MergedIntoIncidentId = incident.MergedIntoIncidentId,
@@ -1224,6 +1314,20 @@ public sealed class IncidentService : IIncidentService
         return MapFeedbackStatusHistory(history);
     }
 
+    public async Task UpdateStatusFromProviderAssignmentAsync(
+        Guid incidentId,
+        UpdateIncidentStatusRequest request,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        await ManagementAccessRules.EnsureStaffIncidentOperationAsync(
+            _uow,
+            incidentId,
+            actorUserId,
+            cancellationToken);
+        await UpdateStatusCoreAsync(incidentId, request, actorUserId, cancellationToken);
+    }
+
     private async Task<IncidentStatusUpdateResult> UpdateStatusCoreAsync(
         Guid incidentId,
         UpdateIncidentStatusRequest request,
@@ -1295,6 +1399,9 @@ public sealed class IncidentService : IIncidentService
 
                 incident.Status = status;
                 incident.UpdatedAt = now;
+                incident.ProcessingStartedAt = status == IncidentStatus.InProgress
+                    ? incident.ProcessingStartedAt ?? now
+                    : incident.ProcessingStartedAt;
                 incident.ResolvedAt = status == IncidentStatus.Resolved ? now : incident.ResolvedAt;
                 incident.ClosedAt = status == IncidentStatus.Closed ? now : incident.ClosedAt;
 
@@ -1407,6 +1514,7 @@ public sealed class IncidentService : IIncidentService
         var oldAssignee = incident.AssignedStaffUserId;
         incident.AssignedStaffUserId = request.StaffUserId;
         var now = DateTime.UtcNow;
+        incident.AssignedAt ??= now;
         incident.UpdatedAt = now;
         if (string.Equals(incident.Status, IncidentStatus.Verified, StringComparison.OrdinalIgnoreCase))
         {
@@ -1492,6 +1600,23 @@ public sealed class IncidentService : IIncidentService
                 throw new Exception("Không thể merge Incident đã được merge.");
             if (source.AreaId != target.AreaId)
                 throw new Exception("Chỉ có thể merge các Incident cùng khu vực.");
+            var allowedMergeStatuses = new[] { IncidentStatus.New, IncidentStatus.Verified };
+            if (!allowedMergeStatuses.Contains(source.Status) || !allowedMergeStatuses.Contains(target.Status) ||
+                source.AssignedStaffUserId.HasValue || target.AssignedStaffUserId.HasValue)
+            {
+                throw new Exception("Incident can only be merged before staff assignment and provider processing.");
+            }
+
+            var hasProviderAssignment = await _uow.GetRepository<FeedbackProviderReport>().Entities
+                .AsNoTracking()
+                .AnyAsync(report =>
+                    report.IncidentId == sourceIncidentId ||
+                    report.IncidentId == request.TargetIncidentId,
+                    cancellationToken);
+            if (hasProviderAssignment)
+            {
+                throw new Exception("Incident with a provider assignment cannot be merged.");
+            }
 
             var links = await _uow.GetRepository<IncidentReportLink>().Entities
                 .Where(link =>

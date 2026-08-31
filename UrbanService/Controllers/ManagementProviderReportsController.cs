@@ -11,7 +11,7 @@ namespace UrbanService.Controllers;
 
 [ApiController]
 [Authorize(Roles = UserRole.SYSTEMADMIN + "," + UserRole.SYSTEMSTAFF + "," + UserRole.INTERACTIONMANAGER)]
-[Route("api/management/provider-reports")]
+[Route("api/management/provider-assignments")]
 public class ManagementProviderReportsController : ControllerBase
 {
     private readonly IFeedbackService _feedbackService;
@@ -26,18 +26,18 @@ public class ManagementProviderReportsController : ControllerBase
     }
 
     /// <summary>Cap nhat trang thai report gui Service Provider.</summary>
-    [HttpPatch("{providerReportId:int}/status")]
+    [HttpPatch("{providerAssignmentId:int}/status")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]
-    [ProducesResponseType(typeof(FeedbackProviderReportDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IncidentProviderAssignmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UpdateStatus(
-        int providerReportId,
-        [FromBody] UpdateProviderReportStatusRequest request)
+        int providerAssignmentId,
+        [FromBody] UpdateProviderAssignmentStatusRequest request)
     {
-        var result = await _feedbackService.UpdateProviderReportStatusAsync(
-            providerReportId,
+        var result = await _feedbackService.UpdateProviderAssignmentStatusAsync(
+            providerAssignmentId,
             GetCurrentUserId(),
             request);
 
@@ -45,32 +45,32 @@ public class ManagementProviderReportsController : ControllerBase
     }
 
     /// <summary>Xem lich su lien he Service Provider cua mot provider report.</summary>
-    [HttpGet("{providerReportId:int}/contact-logs")]
+    [HttpGet("{providerAssignmentId:int}/contact-logs")]
     [ProducesResponseType(typeof(IReadOnlyCollection<ProviderContactLogDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> GetContactLogs(int providerReportId)
+    public async Task<IActionResult> GetContactLogs(int providerAssignmentId)
     {
         var result = await _feedbackService.GetProviderContactLogsAsync(
-            providerReportId,
+            providerAssignmentId,
             GetCurrentUserId());
         return Ok(result);
     }
 
     /// <summary>Staff ghi lai ket qua da goi/email/nhan tin Service Provider.</summary>
-    [HttpPost("{providerReportId:int}/contact-logs")]
+    [HttpPost("{providerAssignmentId:int}/contact-logs")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]
     [ProducesResponseType(typeof(ProviderContactLogDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> AddContactLog(
-        int providerReportId,
+        int providerAssignmentId,
         [FromBody] ProviderContactLogCreateRequest request)
     {
         var result = await _feedbackService.AddProviderContactLogAsync(
-            providerReportId,
+            providerAssignmentId,
             GetCurrentUserId(),
             request);
 
@@ -78,21 +78,21 @@ public class ManagementProviderReportsController : ControllerBase
     }
 
     /// <summary>Xem tai lieu/anh hoan thanh cua mot provider report.</summary>
-    [HttpGet("{providerReportId:int}/completion-documents")]
+    [HttpGet("{providerAssignmentId:int}/completion-documents")]
     [ProducesResponseType(typeof(IReadOnlyCollection<CompletionDocumentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> GetCompletionDocuments(int providerReportId)
+    public async Task<IActionResult> GetCompletionDocuments(int providerAssignmentId)
     {
         var result = await _feedbackService.GetCompletionDocumentsAsync(
-            providerReportId,
+            providerAssignmentId,
             GetCurrentUserId());
         return Ok(result);
     }
 
     /// <summary>Upload anh/tai lieu hoan thanh cho provider report.</summary>
-    [HttpPost("{providerReportId:int}/completion-documents")]
+    [HttpPost("{providerAssignmentId:int}/completion-documents")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(IReadOnlyCollection<CompletionDocumentDto>), StatusCodes.Status200OK)]
@@ -100,15 +100,15 @@ public class ManagementProviderReportsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> AddCompletionDocuments(
-        int providerReportId,
+        int providerAssignmentId,
         [FromForm] CompletionDocumentUploadRequest form)
     {
-        await _feedbackService.EnsureProviderReportOperationAccessAsync(
-            providerReportId,
+        await _feedbackService.EnsureProviderAssignmentOperationAccessAsync(
+            providerAssignmentId,
             GetCurrentUserId());
         var documents = await UploadFilesAsync(form.Files, "urban-service/completion-documents");
         var result = await _feedbackService.AddCompletionDocumentsAsync(
-            providerReportId,
+            providerAssignmentId,
             GetCurrentUserId(),
             documents,
             form.Description);
@@ -121,18 +121,18 @@ public class ManagementProviderReportsController : ControllerBase
     /// Xoa toan bo anh/tai lieu hoan thanh cu cua provider report.
     /// Chi dung khi feedback dang NeedRework.
     /// </summary>
-    [HttpDelete("{providerReportId:int}/completion-documents")]
+    [HttpDelete("{providerAssignmentId:int}/completion-documents")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ClearCompletionDocuments(
-        int providerReportId)
+        int providerAssignmentId)
     {
         await _feedbackService
             .ClearCompletionDocumentsAsync(
-                providerReportId,
+                providerAssignmentId,
                 GetCurrentUserId());
 
         return Ok(new

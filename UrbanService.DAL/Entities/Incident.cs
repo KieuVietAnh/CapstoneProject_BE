@@ -29,6 +29,10 @@ public partial class Incident
 
     public DateTime? DueDate { get; set; }
 
+    public DateTime? AssignedAt { get; set; }
+
+    public DateTime? ProcessingStartedAt { get; set; }
+
     public DateTime? ResolvedAt { get; set; }
 
     public DateTime? ClosedAt { get; set; }
@@ -52,6 +56,12 @@ public partial class Incident
     public virtual ICollection<Incident> MergedIncidents { get; set; } = new List<Incident>();
 
     public virtual ICollection<IncidentEvent> IncidentEvents { get; set; } = new List<IncidentEvent>();
+
+    public virtual ICollection<FeedbackProviderReport> ProviderAssignments { get; set; } = new List<FeedbackProviderReport>();
+
+    public virtual ICollection<FeedbackResolution> Resolutions { get; set; } = new List<FeedbackResolution>();
+
+    public virtual ICollection<CompletionDocument> CompletionDocuments { get; set; } = new List<CompletionDocument>();
 
     public virtual ICollection<IncidentReportLink> IncidentReportLinks { get; set; } = new List<IncidentReportLink>();
 

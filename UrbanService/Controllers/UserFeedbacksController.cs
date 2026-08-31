@@ -152,6 +152,7 @@ public class UserFeedbacksController : ControllerBase
     /// 3. Feedback được tạo với `status = Submitted`.
     /// 4. Nếu không truyền `priority`, hệ thống dùng `Medium`.
     /// 5. Hệ thống tạo lịch sử trạng thái đầu tiên với ghi chú `Feedback created`.
+    /// 6. Incident chỉ được tạo sau khi Manager xác nhận Report không trùng.
     ///
     /// Hiện tại hệ thống chưa có API công khai để lấy danh sách category; client
     /// cần sử dụng một `categoryId` hợp lệ đã được cung cấp.

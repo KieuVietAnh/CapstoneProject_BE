@@ -1351,7 +1351,9 @@ public class SlaService : ISlaService
             .Entities
             .AsSplitQuery()
             .Include(x => x.Feedback)
-                .ThenInclude(x => x.FeedbackProviderReports)
+                .ThenInclude(x => x.IncidentReportLinks)
+                    .ThenInclude(x => x.Incident)
+                        .ThenInclude(x => x.ProviderAssignments)
                     .ThenInclude(x => x.Coordinator)
             .FirstOrDefaultAsync(x =>
                 x.FeedbackSlaId == feedbackSlaId);
@@ -1395,7 +1397,9 @@ public class SlaService : ISlaService
             .Entities
             .AsSplitQuery()
             .Include(x => x.Feedback)
-                .ThenInclude(x => x.FeedbackProviderReports)
+                .ThenInclude(x => x.IncidentReportLinks)
+                    .ThenInclude(x => x.Incident)
+                        .ThenInclude(x => x.ProviderAssignments)
                     .ThenInclude(x => x.Coordinator)
             .Where(x =>
                 x.IsCurrent &&
@@ -2001,8 +2005,9 @@ public class SlaService : ISlaService
          * FeedbackProviderReport mới nhất được xem là assignment
          * provider hiện tại của feedback.
          */
-        var providerReport = entity.Feedback
-            .FeedbackProviderReports
+        var providerReport = entity.Feedback.IncidentReportLinks
+            .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+            .SelectMany(link => link.Incident.ProviderAssignments)
             .Where(x =>
                 x.Coordinator != null &&
                 x.Coordinator.IsActive)
@@ -2145,8 +2150,9 @@ public class SlaService : ISlaService
          * FeedbackProviderReport mới nhất được xem là assignment
          * provider hiện tại của feedback.
          */
-        var providerReport = entity.Feedback
-            .FeedbackProviderReports
+        var providerReport = entity.Feedback.IncidentReportLinks
+            .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+            .SelectMany(link => link.Incident.ProviderAssignments)
             .Where(x =>
                 x.Coordinator != null &&
                 x.Coordinator.IsActive)

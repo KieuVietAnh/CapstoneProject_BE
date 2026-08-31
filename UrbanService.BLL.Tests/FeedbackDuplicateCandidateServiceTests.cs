@@ -87,6 +87,33 @@ public class FeedbackDuplicateCandidateServiceTests
     }
 
     [Fact]
+    public async Task CandidateDetail_UnlinkedReport_IsVisibleToManagerForItsArea()
+    {
+        var context = new DuplicateTestContext();
+        var createdAt = DateTime.UtcNow;
+        var parent = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            createdAt.AddMinutes(-10),
+            isMaster: true,
+            status: FeedbackStatus.Verified);
+        var report = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            createdAt,
+            isMaster: false,
+            status: FeedbackStatus.AiReviewed);
+        context.Feedbacks.AddRange([parent, report]);
+        var candidate = context.Candidate(report, parent);
+        var service = CreateService(context);
+
+        var result = await service.GetCandidateDetailAsync(
+            candidate.DuplicateCandidateId,
+            context.ManagerUserId);
+
+        Assert.Null(result.CurrentIncidentId);
+        Assert.Equal(report.FeedbackId, result.FeedbackId);
+    }
+
+    [Fact]
     public void Controller_ExposesIncidentMatchRouteAlongsideLegacyRoute()
     {
         var routes = typeof(StaffFeedbackDuplicatesController)

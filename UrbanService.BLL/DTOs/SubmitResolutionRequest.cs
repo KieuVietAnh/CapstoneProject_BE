@@ -8,11 +8,7 @@ namespace UrbanService.BLL.DTOs
 {
     public class SubmitResolutionRequest
     {
-        public Guid FeedbackId { get; set; }
-
-        public Guid StaffUserId { get; set; }
-
-        public int? ProviderReportId { get; set; }
+        public int? ProviderAssignmentId { get; set; }
 
         public string ResolutionSummary { get; set; } = string.Empty;
 

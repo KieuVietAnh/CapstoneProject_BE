@@ -105,16 +105,16 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             })
             .SingleOrDefaultAsync()
             ?? throw new Exception("Không tìm thấy đề xuất phản ánh trùng.");
-        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+        await ManagementAccessRules.EnsureManagerFeedbackReviewAccessAsync(
             _uow,
             candidateScope.FeedbackId,
             reviewerUserId,
-            requirePrimary: false);
-        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+            requirePrimaryWhenLinked: false);
+        await ManagementAccessRules.EnsureManagerFeedbackReviewAccessAsync(
             _uow,
             candidateScope.PotentialParentFeedbackId,
             reviewerUserId,
-            requirePrimary: false);
+            requirePrimaryWhenLinked: false);
         Feedback childFeedback;
         Feedback parentFeedback;
         Guid? confirmedIncidentId = null;
@@ -276,11 +276,11 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             .Select(candidate => (Guid?)candidate.FeedbackId)
             .SingleOrDefaultAsync()
             ?? throw new Exception("Không tìm thấy đề xuất phản ánh trùng.");
-        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+        await ManagementAccessRules.EnsureManagerFeedbackReviewAccessAsync(
             _uow,
             feedbackId,
             reviewerUserId,
-            requirePrimary: false);
+            requirePrimaryWhenLinked: false);
         _uow.BeginTransaction();
         try
         {
@@ -407,7 +407,11 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             candidate.Feedback.IncidentReportLinks.Any(link =>
                 link.LinkStatus == IncidentLinkStatus.Active &&
                 link.Incident.MergedIntoIncidentId == null &&
-                actor.ManagerAreaIds.Contains(link.Incident.AreaId)));
+                actor.ManagerAreaIds.Contains(link.Incident.AreaId)) ||
+            (!candidate.Feedback.IncidentReportLinks.Any(link =>
+                link.LinkStatus == IncidentLinkStatus.Active &&
+                link.Incident.MergedIntoIncidentId == null) &&
+             actor.ManagerAreaIds.Contains(candidate.Feedback.AreaId)));
     }
 
     private async Task<FeedbackDuplicateCandidateDto> GetCandidateDetailCoreAsync(

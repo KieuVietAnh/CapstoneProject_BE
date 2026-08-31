@@ -112,35 +112,6 @@ public class ManagementFeedbacksController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Lay danh sach Service Provider phu hop voi area/category cua feedback.</summary>
-    [HttpGet("{feedbackId:guid}/provider-candidates")]
-    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
-    [ProducesResponseType(typeof(IReadOnlyCollection<ProviderCandidateDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> GetProviderCandidates(Guid feedbackId)
-    {
-        var result = await _feedbackService.GetProviderCandidatesAsync(
-            feedbackId,
-            GetCurrentUserId());
-        return Ok(result);
-    }
-
-    /// <summary>Xem cac lan feedback da duoc report sang Service Provider.</summary>
-    [HttpGet("{feedbackId:guid}/provider-reports")]
-    [ProducesResponseType(typeof(IReadOnlyCollection<FeedbackProviderReportDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> GetProviderReports(Guid feedbackId)
-    {
-        var result = await _feedbackService.GetProviderReportsAsync(
-            feedbackId,
-            GetCurrentUserId());
-        return Ok(result);
-    }
-
     /// <summary>Xem lich su ket qua xu ly staff da submit cho feedback.</summary>
     [HttpGet("{feedbackId:guid}/resolutions")]
     [ProducesResponseType(typeof(IReadOnlyCollection<FeedbackResolutionDto>), StatusCodes.Status200OK)]
@@ -259,7 +230,10 @@ public class ManagementFeedbacksController : ControllerBase
     /// <summary>
     /// Manager verify feedback
     /// </summary>
-    /// <remarks>Chỉ `INTERACTIONMANAGER`; phản ánh phải thỏa điều kiện workflow hiện tại.</remarks>
+    /// <remarks>
+    /// Chỉ `INTERACTIONMANAGER`; phản ánh phải thỏa điều kiện workflow hiện tại.
+    /// Nếu Report chưa thuộc Incident, thao tác này tạo Incident và chuyển cả hai sang `Verified`.
+    /// </remarks>
     [HttpPut("{feedbackId:guid}/verify")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -276,53 +250,6 @@ public class ManagementFeedbacksController : ControllerBase
         return Ok(new
         {
             Message = "Feedback verified successfully."
-        });
-    }
-
-    /// <summary>
-    /// Staff report feedback cho coordinator
-    /// </summary>
-    /// <remarks>Chỉ `SYSTEMSTAFF`; định danh Staff được lấy từ JWT thay vì request body.</remarks>
-    [HttpPost("assign")]
-    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
-    [ProducesResponseType(typeof(FeedbackProviderReportDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> AssignFeedback(
-        [FromBody] AssignFeedbackRequest request)
-    {
-        request.StaffUserId =
-            GetCurrentUserId();
-
-        var result = await _feedbackService.AssignFeedbackAsync(
-            request);
-
-        return Ok(result);
-    }
-
-    /// <summary>
-    /// Staff gửi kết quả xử lý
-    /// </summary>
-    /// <remarks>Chỉ `SYSTEMSTAFF`; định danh Staff được lấy từ JWT.</remarks>
-    [HttpPost("submit-resolution")]
-    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> SubmitResolution(
-        [FromBody] SubmitResolutionRequest request)
-    {
-        request.StaffUserId =
-            GetCurrentUserId();
-
-        await _feedbackService
-            .SubmitResolutionAsync(request);
-
-        return Ok(new
-        {
-            Message = "Resolution submitted successfully."
         });
     }
 

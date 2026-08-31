@@ -11,6 +11,61 @@ namespace UrbanService.BLL.Tests;
 
 public class FeedbackMasterStatusTests
 {
+    [Fact]
+    public async Task Create_NewReport_DoesNotCreateIncidentBeforeManagerVerification()
+    {
+        var context = new DuplicateTestContext();
+        var area = new OperatingArea
+        {
+            AreaId = 1,
+            AreaName = "Area 1",
+            AreaType = "Ward",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        var areaRepository = Substitute.For<IGenericRepository<OperatingArea>>();
+        areaRepository.Entities.Returns(new[] { area }.AsAsyncQueryable());
+        context.UnitOfWork.GetRepository<OperatingArea>().Returns(areaRepository);
+        context.FeedbackRepository.AddAsync(Arg.Any<Feedback>()).Returns(call =>
+        {
+            var feedback = call.Arg<Feedback>();
+            feedback.Area = area;
+            context.Feedbacks.Add(feedback);
+            return Task.CompletedTask;
+        });
+        var incidentService = Substitute.For<IIncidentService>();
+        var reviewQueue = Substitute.For<IAiFeedbackReviewQueue>();
+        var service = new FeedbackService(
+            context.UnitOfWork,
+            Substitute.For<INotificationService>(),
+            reviewQueue,
+            Substitute.For<IAiFeedbackDuplicateService>(),
+            Substitute.For<ISlaService>(),
+            incidentService);
+        var userId = Guid.NewGuid();
+
+        var result = await service.CreateAsync(
+            userId,
+            new FeedbackCreateRequest
+            {
+                AreaId = area.AreaId,
+                Title = "Ổ gà trên đường",
+                Description = "Mặt đường xuất hiện ổ gà lớn",
+                LocationText = "Phường 1"
+            },
+            Array.Empty<UploadedFeedbackAttachmentDto>());
+
+        Assert.Equal(FeedbackStatus.Submitted, result.Status);
+        Assert.Null(result.IncidentId);
+        await incidentService.DidNotReceiveWithAnyArgs().StageReportInExistingIncidentAsync(
+            default!,
+            default,
+            default,
+            default,
+            default);
+        await reviewQueue.Received(1).EnqueueAsync(result.FeedbackId, userId);
+    }
+
     [Theory]
     [InlineData(FeedbackStatus.Submitted)]
     [InlineData(FeedbackStatus.AiReviewed)]
@@ -63,6 +118,7 @@ public class FeedbackMasterStatusTests
             status: FeedbackStatus.AiReviewed);
         context.Feedbacks.AddRange([master, possibleDuplicate]);
         context.Candidate(possibleDuplicate, master);
+        context.TrackActiveIncident(possibleDuplicate);
         var service = CreateService(context);
 
         await Assert.ThrowsAsync<Exception>(() => service.UpdateStatusByStaffOrAdminAsync(
@@ -137,7 +193,7 @@ public class FeedbackMasterStatusTests
     }
 
     [Fact]
-    public async Task Verify_ForwardsToCanonicalIncidentAndStartsLegacySla()
+    public async Task Verify_UnlinkedReportCreatesVerifiedIncidentAndStartsLegacySla()
     {
         var context = new DuplicateTestContext();
         var feedback = DuplicateTestContext.Feedback(
@@ -146,13 +202,12 @@ public class FeedbackMasterStatusTests
             isMaster: true,
             status: FeedbackStatus.AiReviewed);
         context.Feedbacks.Add(feedback);
-        context.TrackActiveIncident(feedback);
         var actorUserId = context.ManagerUserId;
         var incidentService = Substitute.For<IIncidentService>();
-        incidentService.UpdateStatusFromFeedbackAsync(
+        incidentService.VerifyReportAsync(
                 feedback.FeedbackId,
-                Arg.Is<UpdateIncidentStatusRequest>(request => request.Status == FeedbackStatus.Verified),
                 actorUserId,
+                Arg.Is<string>(note => note.Contains("xác nhận phản ánh")),
                 Arg.Any<CancellationToken>())
             .Returns(new FeedbackStatusHistoryDto
             {
@@ -171,10 +226,10 @@ public class FeedbackMasterStatusTests
 
         await service.VerifyFeedbackAsync(feedback.FeedbackId, actorUserId);
 
-        await incidentService.Received(1).UpdateStatusFromFeedbackAsync(
+        await incidentService.Received(1).VerifyReportAsync(
             feedback.FeedbackId,
-            Arg.Any<UpdateIncidentStatusRequest>(),
             actorUserId,
+            Arg.Any<string>(),
             Arg.Any<CancellationToken>());
         await slaService.Received(1).StartAsync(feedback.FeedbackId, actorUserId);
         await context.UnitOfWork.DidNotReceive().SaveAsync();

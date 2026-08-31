@@ -34,6 +34,9 @@ public static class IncidentEventType
     public const string IncidentUpdated = "IncidentUpdated";
     public const string StatusChanged = "StatusChanged";
     public const string AssigneeChanged = "AssigneeChanged";
+    public const string ProviderAssigned = "ProviderAssigned";
+    public const string ProviderContactLogged = "ProviderContactLogged";
+    public const string CompletionDocumentsAdded = "CompletionDocumentsAdded";
 }
 
 public static class IncidentSubscriptionSource

@@ -60,7 +60,7 @@ public class FeedbackWorkflowRbacTests
     }
 
     [Fact]
-    public async Task EnsureProviderReportOperationAccess_AllowsAssignedStaffOnPrimaryFeedback()
+    public async Task EnsureProviderAssignmentOperationAccess_AllowsAssignedStaffOnIncident()
     {
         var context = new FeedbackWorkflowRbacContext();
         var staffUserId = context.AddActor(UserRole.SYSTEMSTAFF);
@@ -68,15 +68,15 @@ public class FeedbackWorkflowRbacTests
             areaId: 1,
             assignedStaffUserId: staffUserId,
             linkRole: IncidentLinkRole.Primary);
-        var providerReport = context.AddProviderReport(assigned.Feedback, staffUserId);
+        var providerReport = context.AddProviderReport(assigned.Incident, staffUserId);
 
-        await context.Service.EnsureProviderReportOperationAccessAsync(
+        await context.Service.EnsureProviderAssignmentOperationAccessAsync(
             providerReport.ProviderReportId,
             staffUserId);
     }
 
     [Fact]
-    public async Task EnsureProviderReportOperationAccess_RejectsStaffNotAssignedToIncident()
+    public async Task EnsureProviderAssignmentOperationAccess_RejectsStaffNotAssignedToIncident()
     {
         var context = new FeedbackWorkflowRbacContext();
         var staffUserId = context.AddActor(UserRole.SYSTEMSTAFF);
@@ -86,17 +86,17 @@ public class FeedbackWorkflowRbacTests
             assignedStaffUserId: otherStaffUserId,
             linkRole: IncidentLinkRole.Primary);
         var providerReport = context.AddProviderReport(
-            assignedToOtherStaff.Feedback,
+            assignedToOtherStaff.Incident,
             otherStaffUserId);
 
         await Assert.ThrowsAsync<ForbiddenAccessException>(() =>
-            context.Service.EnsureProviderReportOperationAccessAsync(
+            context.Service.EnsureProviderAssignmentOperationAccessAsync(
                 providerReport.ProviderReportId,
                 staffUserId));
     }
 
     [Fact]
-    public async Task EnsureProviderReportOperationAccess_RejectsSecondaryFeedbackOfAssignedIncident()
+    public async Task EnsureProviderAssignmentOperationAccess_DoesNotDependOnPrimaryFeedback()
     {
         var context = new FeedbackWorkflowRbacContext();
         var staffUserId = context.AddActor(UserRole.SYSTEMSTAFF);
@@ -104,12 +104,11 @@ public class FeedbackWorkflowRbacTests
             areaId: 1,
             assignedStaffUserId: staffUserId,
             linkRole: IncidentLinkRole.Corroborating);
-        var providerReport = context.AddProviderReport(secondary.Feedback, staffUserId);
+        var providerReport = context.AddProviderReport(secondary.Incident, staffUserId);
 
-        await Assert.ThrowsAsync<ForbiddenAccessException>(() =>
-            context.Service.EnsureProviderReportOperationAccessAsync(
-                providerReport.ProviderReportId,
-                staffUserId));
+        await context.Service.EnsureProviderAssignmentOperationAccessAsync(
+            providerReport.ProviderReportId,
+            staffUserId);
     }
 
     [Theory]
@@ -154,10 +153,10 @@ public class FeedbackWorkflowRbacTests
     }
 
     [Theory]
-    [InlineData(typeof(ManagementFeedbacksController), nameof(ManagementFeedbacksController.GetProviderCandidates))]
+    [InlineData(typeof(ManagementIncidentsController), nameof(ManagementIncidentsController.GetProviderCandidates))]
     [InlineData(typeof(ManagementFeedbacksController), nameof(ManagementFeedbacksController.NotifyProviderResult))]
-    [InlineData(typeof(ManagementFeedbacksController), nameof(ManagementFeedbacksController.AssignFeedback))]
-    [InlineData(typeof(ManagementFeedbacksController), nameof(ManagementFeedbacksController.SubmitResolution))]
+    [InlineData(typeof(ManagementIncidentsController), nameof(ManagementIncidentsController.AssignProvider))]
+    [InlineData(typeof(ManagementIncidentsController), nameof(ManagementIncidentsController.SubmitResolution))]
     [InlineData(typeof(ManagementProviderReportsController), nameof(ManagementProviderReportsController.UpdateStatus))]
     [InlineData(typeof(ManagementProviderReportsController), nameof(ManagementProviderReportsController.AddContactLog))]
     [InlineData(typeof(ManagementProviderReportsController), nameof(ManagementProviderReportsController.AddCompletionDocuments))]
@@ -184,6 +183,7 @@ public class FeedbackWorkflowRbacTests
     {
         private readonly List<User> _users = [];
         private readonly List<Feedback> _feedbacks = [];
+        private readonly List<Incident> _incidents = [];
         private readonly List<IncidentReportLink> _incidentReportLinks = [];
         private readonly List<ManagerAreaAssignment> _managerAreaAssignments = [];
         private readonly List<FeedbackProviderReport> _providerReports = [];
@@ -194,6 +194,7 @@ public class FeedbackWorkflowRbacTests
         {
             ConfigureRepository(_users);
             ConfigureRepository(_feedbacks);
+            ConfigureRepository(_incidents);
             ConfigureRepository(_incidentReportLinks);
             ConfigureRepository(_managerAreaAssignments);
             ConfigureRepository(_providerReports);
@@ -315,23 +316,24 @@ public class FeedbackWorkflowRbacTests
             feedback.IncidentReportLinks.Add(link);
             incident.IncidentReportLinks.Add(link);
             _feedbacks.Add(feedback);
+            _incidents.Add(incident);
             _incidentReportLinks.Add(link);
             return (feedback, incident);
         }
 
-        public FeedbackProviderReport AddProviderReport(Feedback feedback, Guid reportedByUserId)
+        public FeedbackProviderReport AddProviderReport(Incident incident, Guid reportedByUserId)
         {
             var report = new FeedbackProviderReport
             {
                 ProviderReportId = _nextProviderReportId++,
-                FeedbackId = feedback.FeedbackId,
-                Feedback = feedback,
+                IncidentId = incident.IncidentId,
+                Incident = incident,
                 CoordinatorId = 1,
                 ReportedByUserId = reportedByUserId,
                 ReportStatus = "Reported",
                 ReportedAt = DateTime.UtcNow
             };
-            feedback.FeedbackProviderReports.Add(report);
+            incident.ProviderAssignments.Add(report);
             _providerReports.Add(report);
             return report;
         }

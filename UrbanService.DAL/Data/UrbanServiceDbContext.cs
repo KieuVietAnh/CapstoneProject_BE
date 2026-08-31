@@ -440,6 +440,8 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.Severity).HasMaxLength(20).HasDefaultValue("Medium").HasColumnName("severity");
             entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValueSql("'New'::character varying").HasColumnName("status");
             entity.Property(e => e.DueDate).HasColumnName("due_date");
+            entity.Property(e => e.AssignedAt).HasColumnName("assigned_at");
+            entity.Property(e => e.ProcessingStartedAt).HasColumnName("processing_started_at");
             entity.Property(e => e.ResolvedAt).HasColumnName("resolved_at");
             entity.Property(e => e.ClosedAt).HasColumnName("closed_at");
             entity.Property(e => e.MergedIntoIncidentId).HasColumnName("merged_into_incident_id");
@@ -785,7 +787,7 @@ public partial class UrbanServiceDbContext : DbContext
             entity.ToTable("feedback_provider_reports");
 
             entity.Property(e => e.ProviderReportId).HasColumnName("provider_report_id");
-            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
             entity.Property(e => e.CoordinatorId).HasColumnName("coordinator_id");
             entity.Property(e => e.ReportedByUserId).HasColumnName("reported_by_user_id");
             entity.Property(e => e.ReportStatus).HasMaxLength(50).HasDefaultValueSql("'Reported'::character varying").HasColumnName("report_status");
@@ -794,10 +796,13 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.ReportedAt).HasDefaultValueSql("now()").HasColumnName("reported_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
 
-            entity.HasOne(d => d.Feedback).WithMany(p => p.FeedbackProviderReports)
-                .HasForeignKey(d => d.FeedbackId)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_feedback_provider_report_feedback");
+            entity.HasIndex(e => e.IncidentId, "ux_feedback_provider_reports_incident_id")
+                .IsUnique();
+
+            entity.HasOne(d => d.Incident).WithMany(p => p.ProviderAssignments)
+                .HasForeignKey(d => d.IncidentId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_feedback_provider_report_incident");
 
             entity.HasOne(d => d.Coordinator).WithMany(p => p.FeedbackProviderReports)
                 .HasForeignKey(d => d.CoordinatorId)
@@ -847,7 +852,7 @@ public partial class UrbanServiceDbContext : DbContext
 
             entity.Property(e => e.CompletionDocumentId).HasColumnName("completion_document_id");
             entity.Property(e => e.ProviderReportId).HasColumnName("provider_report_id");
-            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
             entity.Property(e => e.CoordinatorId).HasColumnName("coordinator_id");
             entity.Property(e => e.UploadedByUserId).HasColumnName("uploaded_by_user_id");
             entity.Property(e => e.FileUrl).HasMaxLength(500).HasColumnName("file_url");
@@ -860,10 +865,10 @@ public partial class UrbanServiceDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_completion_document_report");
 
-            entity.HasOne(d => d.Feedback).WithMany(p => p.CompletionDocuments)
-                .HasForeignKey(d => d.FeedbackId)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_completion_document_feedback");
+            entity.HasOne(d => d.Incident).WithMany(p => p.CompletionDocuments)
+                .HasForeignKey(d => d.IncidentId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_completion_document_incident");
 
             entity.HasOne(d => d.Coordinator).WithMany(p => p.CompletionDocuments)
                 .HasForeignKey(d => d.CoordinatorId)
@@ -882,7 +887,7 @@ public partial class UrbanServiceDbContext : DbContext
             entity.ToTable("feedback_resolutions");
 
             entity.Property(e => e.ResolutionId).HasColumnName("resolution_id");
-            entity.Property(e => e.FeedbackId).HasColumnName("feedback_id");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
             entity.Property(e => e.ProviderReportId).HasColumnName("provider_report_id");
             entity.Property(e => e.CreatedByStaffUserId).HasColumnName("created_by_staff_user_id");
             entity.Property(e => e.ResolutionSummary).HasMaxLength(500).HasColumnName("resolution_summary");
@@ -891,10 +896,13 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.ResolvedAt).HasDefaultValueSql("now()").HasColumnName("resolved_at");
             entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValueSql("'SubmittedForApproval'::character varying").HasColumnName("status");
 
-            entity.HasOne(d => d.Feedback).WithMany(p => p.FeedbackResolutions)
-                .HasForeignKey(d => d.FeedbackId)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_feedback_resolution_feedback");
+            entity.HasIndex(e => e.IncidentId, "ux_feedback_resolutions_incident_id")
+                .IsUnique();
+
+            entity.HasOne(d => d.Incident).WithMany(p => p.Resolutions)
+                .HasForeignKey(d => d.IncidentId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_feedback_resolution_incident");
 
             entity.HasOne(d => d.ProviderReport).WithMany(p => p.FeedbackResolutions)
                 .HasForeignKey(d => d.ProviderReportId)

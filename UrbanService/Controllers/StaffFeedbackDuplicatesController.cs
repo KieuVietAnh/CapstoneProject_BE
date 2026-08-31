@@ -71,9 +71,9 @@ public class StaffFeedbackDuplicatesController : ControllerBase
 
     /// <summary>Xác nhận hai Report cùng sự vụ và chuyển Report vào Incident canonical.</summary>
     /// <remarks>
-    /// Chỉ Manager phụ trách phường của cả hai Incident được phép xác nhận.
-    /// Khi confirm, Feedback/Report vẫn được giữ nguyên; active link được chuyển sang
-    /// Incident canonical, Incident rỗng được đánh dấu Merged và candidate chuyển Confirmed.
+    /// Chỉ Manager phụ trách khu vực của cả hai Report được phép xác nhận.
+    /// Khi confirm, Feedback/Report vẫn được giữ nguyên và được link `Corroborating` vào
+    /// Incident canonical đã có; thao tác này không tạo Incident mới. Candidate chuyển Confirmed.
     /// ParentTicketId/IsMasterTicket vẫn được cập nhật tạm thời để tương thích API cũ.
     /// </remarks>
     [HttpPost("{duplicateCandidateId:guid}/confirm")]
@@ -88,10 +88,10 @@ public class StaffFeedbackDuplicatesController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Từ chối đề xuất cùng sự vụ; mỗi Report tiếp tục thuộc Incident riêng.</summary>
+    /// <summary>Từ chối đề xuất cùng sự vụ; Report vẫn chờ được xác nhận độc lập.</summary>
     /// <remarks>
-    /// Chỉ Manager phụ trách phường của Incident được phép từ chối.
-    /// Khi reject, candidate chuyển Rejected, không relink Report và không merge Incident.
+    /// Chỉ Manager phụ trách khu vực của Report được phép từ chối.
+    /// Khi reject, candidate chuyển Rejected và Report chưa được tạo Incident cho tới khi verify.
     /// </remarks>
     [HttpPost("{duplicateCandidateId:guid}/reject")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
