@@ -5,11 +5,6 @@ namespace UrbanService.BLL.Interfaces;
 
 public interface IIncidentService
 {
-    Task<Guid> StageNewReportIncidentAsync(
-        Feedback feedback,
-        Guid actorUserId,
-        DateTime occurredAt);
-
     Task StageReportInExistingIncidentAsync(
         Feedback feedback,
         Guid incidentId,
@@ -23,6 +18,12 @@ public interface IIncidentService
         Guid staffUserId,
         decimal? confidenceScore,
         string? reason,
+        CancellationToken cancellationToken = default);
+
+    Task<FeedbackStatusHistoryDto> VerifyReportAsync(
+        Guid feedbackId,
+        Guid managerUserId,
+        string? note = null,
         CancellationToken cancellationToken = default);
 
     Task<PagedResultDto<IncidentListItemDto>> GetIncidentsAsync(

@@ -171,9 +171,6 @@ internal sealed class DuplicateTestContext
         Feedback parent,
         string status = "Pending")
     {
-        TrackActiveIncident(child);
-        TrackActiveIncident(parent);
-
         var candidate = new FeedbackDuplicateCandidate
         {
             DuplicateCandidateId = Guid.NewGuid(),

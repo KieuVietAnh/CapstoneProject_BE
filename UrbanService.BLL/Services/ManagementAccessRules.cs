@@ -100,7 +100,11 @@ internal static class ManagementAccessRules
                 feedback.IncidentReportLinks.Any(link =>
                     link.LinkStatus == IncidentLinkStatus.Active &&
                     link.Incident.MergedIntoIncidentId == null &&
-                    actor.ManagerAreaIds.Contains(link.Incident.AreaId))),
+                    actor.ManagerAreaIds.Contains(link.Incident.AreaId)) ||
+                (!feedback.IncidentReportLinks.Any(link =>
+                    link.LinkStatus == IncidentLinkStatus.Active &&
+                    link.Incident.MergedIntoIncidentId == null) &&
+                 actor.ManagerAreaIds.Contains(feedback.AreaId))),
             _ => feedbacks.Where(_ => false)
         };
     }
@@ -149,21 +153,35 @@ internal static class ManagementAccessRules
             throw new ForbiddenAccessException("Bạn không có quyền xem phản ánh này.");
         }
 
-        if (actor.RoleName == UserRole.SYSTEMADMIN)
+        var activeContext = await GetActiveIncidentContextAsync(uow, feedbackId, cancellationToken);
+        if (activeContext is not null)
         {
-            return await GetActiveIncidentContextAsync(uow, feedbackId, cancellationToken)
-                ?? new IncidentAccessContext(
-                    Guid.Empty,
-                    0,
-                    null,
-                    string.Empty,
-                    null,
-                    feedbackId,
-                    string.Empty);
+            return activeContext;
         }
 
-        return await GetActiveIncidentContextAsync(uow, feedbackId, cancellationToken)
-            ?? throw new ForbiddenAccessException("Phản ánh không thuộc sự vụ đang hoạt động.");
+        if (actor.RoleName == UserRole.SYSTEMADMIN || actor.RoleName == UserRole.INTERACTIONMANAGER)
+        {
+            var unlinkedContext = await uow.GetRepository<Feedback>().Entities
+                .AsNoTracking()
+                .Where(feedback => feedback.FeedbackId == feedbackId)
+                .Select(feedback => new IncidentAccessContext(
+                    Guid.Empty,
+                    feedback.AreaId,
+                    feedback.CategoryId,
+                    feedback.Status,
+                    null,
+                    feedback.FeedbackId,
+                    string.Empty))
+                .SingleAsync(cancellationToken);
+            if (actor.RoleName == UserRole.INTERACTIONMANAGER)
+            {
+                EnsureManagerArea(actor, unlinkedContext.AreaId);
+            }
+
+            return unlinkedContext;
+        }
+
+        throw new ForbiddenAccessException("Phản ánh không thuộc sự vụ đang hoạt động.");
     }
 
     public static async Task<IncidentAccessContext> EnsureStaffFeedbackOperationAsync(
@@ -204,6 +222,32 @@ internal static class ManagementAccessRules
         EnsureManagerArea(actor, context.AreaId);
 
         if (requirePrimary && context.LinkRole != IncidentLinkRole.Primary)
+        {
+            throw new ForbiddenAccessException("Chỉ phản ánh chính của sự vụ được xử lý độc lập.");
+        }
+
+        return context;
+    }
+
+    public static async Task<IncidentAccessContext> EnsureManagerFeedbackReviewAccessAsync(
+        IUnitOfWork uow,
+        Guid feedbackId,
+        Guid managerUserId,
+        bool requirePrimaryWhenLinked = true,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await GetActorScopeAsync(uow, managerUserId, cancellationToken);
+        EnsureManagerRole(actor);
+        var context = await EnsureFeedbackReadAccessAsync(
+            uow,
+            feedbackId,
+            managerUserId,
+            cancellationToken);
+        EnsureManagerArea(actor, context.AreaId);
+
+        if (requirePrimaryWhenLinked &&
+            context.IncidentId != Guid.Empty &&
+            context.LinkRole != IncidentLinkRole.Primary)
         {
             throw new ForbiddenAccessException("Chỉ phản ánh chính của sự vụ được xử lý độc lập.");
         }

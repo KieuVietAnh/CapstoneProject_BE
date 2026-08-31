@@ -142,7 +142,6 @@ public class FeedbackService : IFeedbackService
         await EnsureAreaMatchesLocationAsync(request.AreaId, request.Latitude, request.Longitude);
 
         var now = DateTime.UtcNow;
-        Guid? createdIncidentId = null;
         var feedback = new Feedback
         {
             FeedbackId = Guid.NewGuid(),
@@ -191,16 +190,11 @@ public class FeedbackService : IFeedbackService
             await _uow.GetRepository<Feedback>().AddAsync(feedback);
             if (targetIncidentId.HasValue)
             {
-                createdIncidentId = targetIncidentId.Value;
                 await _incidentService.StageReportInExistingIncidentAsync(
                     feedback,
                     targetIncidentId.Value,
                     userId,
                     now);
-            }
-            else
-            {
-                createdIncidentId = await _incidentService.StageNewReportIncidentAsync(feedback, userId, now);
             }
             await _uow.SaveAsync();
             _uow.CommitTransaction();
@@ -216,7 +210,7 @@ public class FeedbackService : IFeedbackService
             feedback,
             "Phản ánh đã được tạo",
             $"Phản ánh \"{feedback.Title}\" đã được tiếp nhận và đang chờ xử lý.",
-            incidentIdOverride: createdIncidentId);
+            incidentIdOverride: targetIncidentId);
 
         return await GetMyFeedbackDetailAsync(userId, feedback.FeedbackId);
     }
@@ -2165,7 +2159,7 @@ public class FeedbackService : IFeedbackService
     Guid feedbackId,
     Guid managerUserId)
     {
-        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+        await ManagementAccessRules.EnsureManagerFeedbackReviewAccessAsync(
             _uow,
             feedbackId,
             managerUserId);
@@ -2183,14 +2177,10 @@ public class FeedbackService : IFeedbackService
         await EnsureDuplicateMasterStatusInvariantAsync(feedback, FeedbackStatus.Verified);
         await EnsureDuplicateReviewCompletedBeforeWorkflowAsync(feedback, FeedbackStatus.Verified);
 
-        var history = await _incidentService.UpdateStatusFromFeedbackAsync(
+        var history = await _incidentService.VerifyReportAsync(
             feedbackId,
-            new UpdateIncidentStatusRequest
-            {
-                Status = FeedbackStatus.Verified,
-                Note = "Manager đã xác nhận phản ánh"
-            },
-            managerUserId);
+            managerUserId,
+            "Manager đã xác nhận phản ánh");
 
         // SLA legacy vẫn bắt đầu theo Feedback cho tới Slice SLA cutover.
         await SynchronizeSlaByStatusAsync(

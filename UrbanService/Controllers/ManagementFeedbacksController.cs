@@ -230,7 +230,10 @@ public class ManagementFeedbacksController : ControllerBase
     /// <summary>
     /// Manager verify feedback
     /// </summary>
-    /// <remarks>Chỉ `INTERACTIONMANAGER`; phản ánh phải thỏa điều kiện workflow hiện tại.</remarks>
+    /// <remarks>
+    /// Chỉ `INTERACTIONMANAGER`; phản ánh phải thỏa điều kiện workflow hiện tại.
+    /// Nếu Report chưa thuộc Incident, thao tác này tạo Incident và chuyển cả hai sang `Verified`.
+    /// </remarks>
     [HttpPut("{feedbackId:guid}/verify")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(StatusCodes.Status200OK)]

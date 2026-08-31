@@ -13,36 +13,84 @@ namespace UrbanService.BLL.Tests;
 public sealed class IncidentServiceTests
 {
     [Fact]
-    public async Task StageNewReport_CreatesIncidentLinkSubscriptionAndEvents()
+    public async Task VerifyReport_CreatesVerifiedIncidentLinkSubscriptionAndEvents()
     {
         var context = new IncidentTestContext();
         var service = new IncidentService(context.UnitOfWork);
         var now = DateTime.UtcNow;
         var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        feedback.Status = FeedbackStatus.AiReviewed;
+        context.Feedbacks.Add(feedback);
+        var managerUserId = Guid.NewGuid();
 
-        var incidentId = await service.StageNewReportIncidentAsync(feedback, feedback.UserId, now);
+        var history = await service.VerifyReportAsync(
+            feedback.FeedbackId,
+            managerUserId,
+            "Manager confirmed report");
 
         var incident = Assert.Single(context.Incidents);
-        Assert.Equal(incidentId, incident.IncidentId);
         Assert.Equal(feedback.AreaId, incident.AreaId);
-        Assert.Equal(IncidentStatus.New, incident.Status);
+        Assert.Equal(IncidentStatus.Verified, incident.Status);
         Assert.Equal(IncidentSeverity.Medium, incident.Severity);
+        Assert.Equal(FeedbackStatus.Verified, feedback.Status);
+        Assert.Equal(FeedbackStatus.AiReviewed, history.OldStatus);
+        Assert.Equal(FeedbackStatus.Verified, history.NewStatus);
 
         var link = Assert.Single(context.Links);
-        Assert.Equal(incidentId, link.IncidentId);
+        Assert.Equal(incident.IncidentId, link.IncidentId);
         Assert.Equal(feedback.FeedbackId, link.FeedbackId);
         Assert.Equal(IncidentLinkStatus.Active, link.LinkStatus);
         Assert.Equal(IncidentLinkMethod.Created, link.LinkMethod);
         Assert.Equal(IncidentLinkRole.Primary, link.LinkRole);
 
         var subscription = Assert.Single(context.Subscriptions);
-        Assert.Equal(incidentId, subscription.IncidentId);
+        Assert.Equal(incident.IncidentId, subscription.IncidentId);
         Assert.Equal(feedback.UserId, subscription.UserId);
         Assert.True(subscription.IsActive);
 
-        Assert.Equal(2, context.Events.Count);
+        Assert.Equal(3, context.Events.Count);
         Assert.Contains(context.Events, item => item.EventType == IncidentEventType.IncidentCreated);
         Assert.Contains(context.Events, item => item.EventType == IncidentEventType.ReportLinked);
+        Assert.Contains(context.Events, item => item.EventType == IncidentEventType.StatusChanged);
+        context.UnitOfWork.Received(1).CommitTransaction();
+    }
+
+    [Fact]
+    public async Task RelinkConfirmedDuplicate_WhenChildHasNoIncident_LinksCanonicalWithoutCreatingIncident()
+    {
+        var context = new IncidentTestContext();
+        var service = new IncidentService(context.UnitOfWork);
+        var createdAt = DateTime.UtcNow;
+        var parent = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), createdAt.AddMinutes(-10));
+        var child = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), createdAt);
+        parent.Status = FeedbackStatus.Verified;
+        child.Status = FeedbackStatus.AiReviewed;
+        var canonicalIncident = IncidentTestContext.Incident(
+            Guid.NewGuid(),
+            parent,
+            createdAt.AddMinutes(-5));
+        canonicalIncident.Status = IncidentStatus.Verified;
+        context.Incidents.Add(canonicalIncident);
+        context.Links.Add(IncidentTestContext.Link(
+            canonicalIncident,
+            parent,
+            IncidentLinkRole.Primary,
+            createdAt.AddMinutes(-5)));
+
+        var result = await service.RelinkConfirmedDuplicateAsync(
+            child,
+            parent,
+            Guid.NewGuid(),
+            0.94m,
+            "Cùng sự vụ và vị trí");
+
+        Assert.Equal(canonicalIncident.IncidentId, result);
+        Assert.Single(context.Incidents);
+        var childLink = Assert.Single(context.Links.Where(link => link.FeedbackId == child.FeedbackId));
+        Assert.Equal(canonicalIncident.IncidentId, childLink.IncidentId);
+        Assert.Equal(IncidentLinkRole.Corroborating, childLink.LinkRole);
+        Assert.DoesNotContain(context.Events, item => item.EventType == IncidentEventType.IncidentMerged);
+        Assert.Equal(FeedbackStatus.Verified, child.Status);
     }
 
     [Fact]
