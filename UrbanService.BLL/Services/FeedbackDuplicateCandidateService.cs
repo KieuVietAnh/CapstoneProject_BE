@@ -538,6 +538,7 @@ public class FeedbackDuplicateCandidateService : IFeedbackDuplicateCandidateServ
             Latitude = feedback.Latitude,
             Longitude = feedback.Longitude,
             Priority = feedback.Priority,
+            Severity = feedback.Severity,
             Status = feedback.Status,
             CreatedAt = feedback.CreatedAt,
             UpdatedAt = feedback.UpdatedAt,

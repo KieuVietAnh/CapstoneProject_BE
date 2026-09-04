@@ -139,6 +139,8 @@ public class FeedbackListItemDto
 
     public string? Priority { get; set; }
 
+    public string? Severity { get; set; }
+
     public string Status { get; set; } = null!;
 
     public string SubmissionChannel { get; set; } = null!;
