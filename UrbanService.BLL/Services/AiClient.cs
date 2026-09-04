@@ -236,3 +236,6 @@ public class AiClient : IAiClient
         return value.Length <= maxLength ? value : value[..maxLength];
     }
 }
+
+
+

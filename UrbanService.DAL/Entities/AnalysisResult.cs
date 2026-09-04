@@ -19,6 +19,8 @@ public partial class AnalysisResult
 
     public string? UrgencyLevel { get; set; }
 
+    public string? SeverityLevel { get; set; }
+
     public string? Summary { get; set; }
 
     public string? Keywords { get; set; }

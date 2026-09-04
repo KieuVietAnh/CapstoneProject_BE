@@ -48,7 +48,7 @@ public sealed class IncidentService : IIncidentService
             Latitude = feedback.Latitude,
             Longitude = feedback.Longitude,
             Priority = feedback.Priority,
-            Severity = IncidentSeverity.Medium,
+            Severity = feedback.Severity ?? IncidentSeverity.Medium,
             Status = IncidentStatus.New,
             DueDate = feedback.DueDate,
             CreatedAt = occurredAt,

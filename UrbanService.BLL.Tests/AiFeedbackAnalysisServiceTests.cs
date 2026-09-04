@@ -41,13 +41,15 @@ public class AiFeedbackAnalysisServiceTests
         Assert.Contains("vo nghia; la spam/quang cao; nam ngoai pham vi van de do thi", prompt);
         Assert.Contains("chon category active gan nhat va khong bia them du kien", prompt);
         Assert.Contains("dung category active dau tien trong danh sach tren lam fallback ky thuat", prompt);
-        Assert.Contains("dat sentiment la Neutral, urgencyLevel la Low va confidenceScore o muc thap, khong qua 0.30", prompt);
+        Assert.Contains("dat sentiment la Neutral, urgencyLevel la Low, severityLevel la Low va confidenceScore o muc thap, khong qua 0.30", prompt);
         Assert.Contains("keywords chi duoc lay tu tu ngu hoac chu de thuc su co trong du lieu", prompt);
         Assert.Contains("Ly do trong riskNotes chi dua tren du lieu da cho", prompt);
         Assert.Contains("Nghi vấn không hợp lệ —", prompt);
         Assert.Contains("Nghi vấn phản ánh không hợp lệ:", prompt);
         Assert.Contains("neu ngan gon ly do va yeu cau nhan vien xem xet", prompt);
         Assert.Contains("\"detectedCategoryName\": string", prompt);
+        Assert.Contains("\"urgencyLevel\": \"Low\" | \"Medium\" | \"High\" | \"Urgent\"", prompt);
+        Assert.Contains("\"severityLevel\": \"Low\" | \"Medium\" | \"High\" | \"Critical\"", prompt);
         Assert.Contains("\"riskNotes\": string[]", prompt);
         Assert.Equal(title, block.Data.GetProperty("title").GetString());
         Assert.Equal(description, block.Data.GetProperty("description").GetString());
@@ -86,6 +88,7 @@ public class AiFeedbackAnalysisServiceTests
             description,
             "Trước cổng trường",
             priority: "Medium",
+            severity: "High",
             category: ActiveCategories.First());
 
         var prompt = InvokeBuildAnalysisPrompt(feedback, hasImages: false);
@@ -100,6 +103,7 @@ public class AiFeedbackAnalysisServiceTests
         Assert.Equal(description, block.Data.GetProperty("description").GetString());
         Assert.Equal("Trước cổng trường", block.Data.GetProperty("location").GetString());
         Assert.Equal("Medium", block.Data.GetProperty("currentPriority").GetString());
+        Assert.Equal("High", block.Data.GetProperty("currentSeverity").GetString());
         Assert.Equal("Hạ tầng giao thông", block.Data.GetProperty("currentCategory").GetString());
         Assert.Contains("Ổ gà lớn trước cổng trường", block.Json);
         Assert.Contains("Hạ tầng giao thông", block.Json);
@@ -154,6 +158,7 @@ public class AiFeedbackAnalysisServiceTests
         string description,
         string locationText,
         string? priority = null,
+        string? severity = null,
         UrbanServiceCategory? category = null)
     {
         return new Feedback
@@ -162,6 +167,7 @@ public class AiFeedbackAnalysisServiceTests
             Description = description,
             LocationText = locationText,
             Priority = priority,
+            Severity = severity,
             Category = category,
             Status = "Submitted",
             SubmissionChannel = "Web"
@@ -215,7 +221,7 @@ public class AiFeedbackAnalysisServiceTests
         string prompt,
         PromptFeedbackBlock block)
     {
-        string[] fieldNames = ["title", "description", "location", "currentPriority", "currentCategory"];
+        string[] fieldNames = ["title", "description", "location", "currentPriority", "currentSeverity", "currentCategory"];
         foreach (var fieldName in fieldNames)
         {
             var fieldIndex = prompt.IndexOf(

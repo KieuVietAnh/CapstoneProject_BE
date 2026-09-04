@@ -635,6 +635,7 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasColumnName("submission_channel");
             entity.Property(e => e.IsLocationVerified).HasDefaultValue(false).HasColumnName("is_location_verified");
             entity.Property(e => e.Priority).HasMaxLength(50).HasDefaultValueSql("'Medium'::character varying").HasColumnName("priority");
+            entity.Property(e => e.Severity).HasMaxLength(50).HasColumnName("severity");
             entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValueSql("'Submitted'::character varying").HasColumnName("status");
             entity.Property(e => e.DueDate).HasColumnName("due_date");
             entity.Property(e => e.ApprovedByManagerId).HasColumnName("approved_by_manager_id");
@@ -1390,6 +1391,7 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.DetectedAreaId).HasColumnName("detected_area_id");
             entity.Property(e => e.Sentiment).HasMaxLength(50).HasColumnName("sentiment");
             entity.Property(e => e.UrgencyLevel).HasMaxLength(50).HasColumnName("urgency_level");
+            entity.Property(e => e.SeverityLevel).HasMaxLength(50).HasColumnName("severity_level");
             entity.Property(e => e.Summary).HasMaxLength(500).HasColumnName("summary");
             entity.Property(e => e.Keywords).HasMaxLength(500).HasColumnName("keywords");
             entity.Property(e => e.ConfidenceScore).HasPrecision(5, 4).HasColumnName("confidence_score");
