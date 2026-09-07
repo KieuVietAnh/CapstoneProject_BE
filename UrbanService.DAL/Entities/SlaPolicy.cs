@@ -66,6 +66,6 @@ public partial class SlaPolicy
 
     public virtual User? UpdatedByUser { get; set; }
 
-    public virtual ICollection<FeedbackSla> FeedbackSlas { get; set; }
-        = new List<FeedbackSla>();
+    public virtual ICollection<IncidentSla> IncidentSlas { get; set; }
+        = new List<IncidentSla>();
 }

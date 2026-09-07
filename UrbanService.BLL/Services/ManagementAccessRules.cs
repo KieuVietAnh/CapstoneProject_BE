@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.DAL.Entities;
@@ -286,6 +286,47 @@ internal static class ManagementAccessRules
         }
 
         return context;
+    }
+
+    /// <summary>
+    /// Manager thao tác nghiệp vụ trên một sự vụ thuộc phường mình phụ trách.
+    /// </summary>
+    public static async Task<IncidentAccessContext> EnsureManagerIncidentOperationAsync(
+        IUnitOfWork uow,
+        Guid incidentId,
+        Guid managerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await GetActorScopeAsync(uow, managerUserId, cancellationToken);
+        var context = await GetIncidentContextAsync(uow, incidentId, cancellationToken)
+            ?? throw new ForbiddenAccessException("Sự vụ không tồn tại hoặc đã được gộp.");
+        EnsureManagerArea(actor, context.AreaId);
+
+        return context;
+    }
+
+    /// <summary>
+    /// Lấy ngữ cảnh của một sự vụ đang hoạt động mà không kiểm tra quyền.
+    /// </summary>
+    public static async Task<IncidentAccessContext?> GetIncidentContextAsync(
+        IUnitOfWork uow,
+        Guid incidentId,
+        CancellationToken cancellationToken = default)
+    {
+        return await uow.GetRepository<Incident>().Entities
+            .AsNoTracking()
+            .Where(incident =>
+                incident.IncidentId == incidentId &&
+                incident.MergedIntoIncidentId == null)
+            .Select(incident => new IncidentAccessContext(
+                incident.IncidentId,
+                incident.AreaId,
+                incident.CategoryId,
+                incident.Status,
+                incident.AssignedStaffUserId,
+                Guid.Empty,
+                string.Empty))
+            .SingleOrDefaultAsync(cancellationToken);
     }
 
     public static async Task EnsureIncidentReadAccessAsync(

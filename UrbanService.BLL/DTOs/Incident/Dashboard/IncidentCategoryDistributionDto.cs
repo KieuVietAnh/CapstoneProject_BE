@@ -1,6 +1,6 @@
-﻿namespace UrbanService.BLL.DTOs.Feedback.Dashboard;
+﻿namespace UrbanService.BLL.DTOs.Incident.Dashboard;
 
-public class FeedbackCategoryDistributionDto
+public class IncidentCategoryDistributionDto
 {
     public int? CategoryId { get; set; }
 

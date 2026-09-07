@@ -1,14 +1,23 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common.Constraint;
-using UrbanService.BLL.DTOs.Feedback.Dashboard;
+using UrbanService.BLL.DTOs.Incident.Dashboard;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
 
 namespace UrbanService.BLL.Services;
 
-public class FeedbackDashboardService
-    : IFeedbackDashboardService
+/// <summary>
+/// Dashboard vận hành sự vụ đô thị.
+///
+/// Dashboard đọc từ hai đơn vị khác nhau và không được trộn lẫn:
+/// - Chỉ số tiếp nhận đếm <see cref="Feedback"/> vì đó là lượng phản ánh
+///   người dân thực sự gửi lên.
+/// - Chỉ số xử lý đếm <see cref="Incident"/> vì trạng thái, phân công và SLA
+///   đều thuộc sự vụ. Nhiều phản ánh trùng nhau chỉ tạo ra một việc phải xử lý.
+/// </summary>
+public class IncidentDashboardService
+    : IIncidentDashboardService
 {
     private const int DefaultMonths = 12;
     private const int MaxMonths = 24;
@@ -16,63 +25,80 @@ public class FeedbackDashboardService
     private const int DefaultLimit = 10;
     private const int MaxLimit = 100;
 
+    private const int DefaultMapPointsPerArea = 500;
+    private const int MaxMapPointsPerArea = 5000;
+
+    private static readonly string[] ClosedIncidentStatuses =
+    [
+        IncidentStatus.Resolved,
+        IncidentStatus.Approved,
+        IncidentStatus.Closed
+    ];
+
     private readonly IUnitOfWork _unitOfWork;
 
-    public FeedbackDashboardService(
+    public IncidentDashboardService(
         IUnitOfWork unitOfWork)
     {
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<FeedbackDashboardOverviewDto>
+    public async Task<IncidentDashboardOverviewDto>
         GetOverviewAsync(Guid actorUserId)
     {
         var now = DateTime.UtcNow;
         var startOfToday = now.Date;
 
-        var query = await GetScopedFeedbacksAsync(actorUserId);
+        var reports = await GetScopedFeedbacksAsync(actorUserId);
+        var incidents = await GetScopedIncidentsAsync(actorUserId);
 
         var totalFeedback =
-            await query.CountAsync();
+            await reports.CountAsync();
 
         var newToday =
-            await query.CountAsync(x =>
+            await reports.CountAsync(x =>
+                x.CreatedAt >= startOfToday &&
+                x.CreatedAt <= now);
+
+        var totalIncident =
+            await incidents.CountAsync();
+
+        var newIncidentToday =
+            await incidents.CountAsync(x =>
                 x.CreatedAt >= startOfToday &&
                 x.CreatedAt <= now);
 
         var assigned =
-            await query.CountAsync(x =>
-                x.Status == FeedbackStatus.Assigned);
+            await incidents.CountAsync(x =>
+                x.Status == IncidentStatus.Assigned);
 
         var inProgress =
-            await query.CountAsync(x =>
-                x.Status == FeedbackStatus.InProgress);
+            await incidents.CountAsync(x =>
+                x.Status == IncidentStatus.InProgress);
 
         var pendingApproval =
-            await query.CountAsync(x =>
+            await incidents.CountAsync(x =>
                 x.Status ==
-                FeedbackStatus.SubmittedForApproval);
+                IncidentStatus.SubmittedForApproval);
 
         var completed =
-            await query.CountAsync(x =>
-                x.Status == FeedbackStatus.Resolved ||
-                x.Status == FeedbackStatus.Approved ||
-                x.Status == FeedbackStatus.Closed);
+            await incidents.CountAsync(x =>
+                ClosedIncidentStatuses.Contains(x.Status));
 
         var cancelled =
-            await query.CountAsync(x =>
-                x.Status == FeedbackStatus.Cancelled);
+            await incidents.CountAsync(x =>
+                x.Status == IncidentStatus.Cancelled ||
+                x.Status == IncidentStatus.Rejected);
 
         var urgentOpen =
-            await query.CountAsync(x =>
+            await incidents.CountAsync(x =>
                 x.Priority == "Urgent" &&
-                x.Status != FeedbackStatus.Resolved &&
-                x.Status != FeedbackStatus.Approved &&
-                x.Status != FeedbackStatus.Closed &&
-                x.Status != FeedbackStatus.Cancelled);
+                !ClosedIncidentStatuses.Contains(x.Status) &&
+                x.Status != IncidentStatus.Cancelled &&
+                x.Status != IncidentStatus.Rejected);
 
         /*
-         * Chỉ tính tỷ lệ trên các feedback đã có kết quả cuối.
+         * Chỉ tính tỷ lệ trên các sự vụ đã có kết quả cuối.
          */
         var finalizedCount =
             completed + cancelled;
@@ -86,10 +112,12 @@ public class FeedbackDashboardService
                     100,
                     2);
 
-        return new FeedbackDashboardOverviewDto
+        return new IncidentDashboardOverviewDto
         {
             TotalFeedback = totalFeedback,
             NewToday = newToday,
+            TotalIncident = totalIncident,
+            NewIncidentToday = newIncidentToday,
             Assigned = assigned,
             InProgress = inProgress,
             PendingApproval = pendingApproval,
@@ -100,10 +128,10 @@ public class FeedbackDashboardService
         };
     }
 
-    public async Task<List<FeedbackStatusDistributionDto>>
+    public async Task<List<IncidentStatusDistributionDto>>
         GetStatusDistributionAsync(Guid actorUserId)
     {
-        var query = await GetScopedFeedbacksAsync(actorUserId);
+        var query = await GetScopedIncidentsAsync(actorUserId);
 
         var total =
             await query.CountAsync();
@@ -125,7 +153,7 @@ public class FeedbackDashboardService
 
         return data
             .Select(x =>
-                new FeedbackStatusDistributionDto
+                new IncidentStatusDistributionDto
                 {
                     Status = x.Status,
 
@@ -140,10 +168,10 @@ public class FeedbackDashboardService
             .ToList();
     }
 
-    public async Task<List<FeedbackPriorityDistributionDto>>
+    public async Task<List<IncidentPriorityDistributionDto>>
         GetPriorityDistributionAsync(Guid actorUserId)
     {
-        var query = await GetScopedFeedbacksAsync(actorUserId);
+        var query = await GetScopedIncidentsAsync(actorUserId);
 
         var total =
             await query.CountAsync();
@@ -176,7 +204,7 @@ public class FeedbackDashboardService
 
         return data
             .Select(x =>
-                new FeedbackPriorityDistributionDto
+                new IncidentPriorityDistributionDto
                 {
                     Priority = x.Priority,
 
@@ -197,10 +225,10 @@ public class FeedbackDashboardService
             .ToList();
     }
 
-    public async Task<List<FeedbackCategoryDistributionDto>>
+    public async Task<List<IncidentCategoryDistributionDto>>
         GetCategoryDistributionAsync(Guid actorUserId)
     {
-        var query = await GetScopedFeedbacksAsync(actorUserId);
+        var query = await GetScopedIncidentsAsync(actorUserId);
 
         var total =
             await query.CountAsync();
@@ -231,7 +259,7 @@ public class FeedbackDashboardService
 
         return data
             .Select(x =>
-                new FeedbackCategoryDistributionDto
+                new IncidentCategoryDistributionDto
                 {
                     CategoryId = x.CategoryId,
 
@@ -248,10 +276,17 @@ public class FeedbackDashboardService
             .ToList();
     }
 
-    public async Task<List<FeedbackAreaDistributionDto>>
-        GetAreaDistributionAsync(Guid actorUserId)
+    public async Task<List<IncidentAreaDistributionDto>>
+        GetAreaDistributionAsync(
+            Guid actorUserId,
+            int maxPointsPerArea = DefaultMapPointsPerArea)
     {
-        var query = await GetScopedFeedbacksAsync(actorUserId);
+        maxPointsPerArea = Math.Clamp(
+            maxPointsPerArea,
+            1,
+            MaxMapPointsPerArea);
+
+        var query = await GetScopedIncidentsAsync(actorUserId);
 
         var total =
             await query.CountAsync();
@@ -265,35 +300,44 @@ public class FeedbackDashboardService
             .GroupBy(x => new
             {
                 x.AreaId,
-                x.Area.AreaName
+                x.Area.AreaName,
+                x.Area.CenterLatitude,
+                x.Area.CenterLongitude
             })
             .Select(group => new
             {
                 group.Key.AreaId,
                 group.Key.AreaName,
+                group.Key.CenterLatitude,
+                group.Key.CenterLongitude,
 
                 Count =
                     group.Count(),
 
                 CompletedCount =
                     group.Count(x =>
-                        x.Status == FeedbackStatus.Resolved ||
-                        x.Status == FeedbackStatus.Approved ||
-                        x.Status == FeedbackStatus.Closed),
+                        ClosedIncidentStatuses.Contains(x.Status)),
 
                 OpenCount =
                     group.Count(x =>
-                        x.Status != FeedbackStatus.Resolved &&
-                        x.Status != FeedbackStatus.Approved &&
-                        x.Status != FeedbackStatus.Closed &&
-                        x.Status != FeedbackStatus.Cancelled)
+                        !ClosedIncidentStatuses.Contains(x.Status) &&
+                        x.Status != IncidentStatus.Cancelled &&
+                        x.Status != IncidentStatus.Rejected)
             })
             .OrderByDescending(x => x.Count)
             .ToListAsync();
 
+        var pointsByArea =
+            await GetMapPointsByAreaAsync(query);
+
         return data
             .Select(x =>
-                new FeedbackAreaDistributionDto
+            {
+                var hasPoints = pointsByArea.TryGetValue(
+                    x.AreaId,
+                    out var areaPoints);
+
+                return new IncidentAreaDistributionDto
                 {
                     AreaId = x.AreaId,
 
@@ -310,12 +354,106 @@ public class FeedbackDashboardService
                         x.Count /
                         (decimal)total *
                         100,
-                        2)
-                })
+                        2),
+
+                    CenterLatitude = x.CenterLatitude,
+
+                    CenterLongitude = x.CenterLongitude,
+
+                    MappedCount =
+                        hasPoints
+                            ? areaPoints!.Count
+                            : 0,
+
+                    Points =
+                        hasPoints
+                            ? areaPoints!
+                                .Take(maxPointsPerArea)
+                                .ToList()
+                            : []
+                };
+            })
             .ToList();
     }
 
-    public async Task<List<FeedbackMonthlyTrendDto>>
+    /// <summary>
+    /// Lấy tọa độ các sự vụ trong phạm vi đọc của người dùng, gom theo khu vực.
+    ///
+    /// Việc lọc theo phạm vi và theo điều kiện có tọa độ được thực hiện ở database;
+    /// chỉ thao tác gom nhóm và cắt theo giới hạn mới chạy trong bộ nhớ, nên số dòng
+    /// đọc lên đúng bằng số điểm thực sự vẽ được trên bản đồ.
+    /// </summary>
+    private static async Task<Dictionary<int, List<IncidentMapPointDto>>>
+        GetMapPointsByAreaAsync(IQueryable<Incident> scopedIncidents)
+    {
+        var rows = await scopedIncidents
+            .Where(incident =>
+                incident.Latitude.HasValue &&
+                incident.Longitude.HasValue)
+            .OrderByDescending(incident => incident.CreatedAt)
+            .Select(incident => new
+            {
+                incident.AreaId,
+                incident.IncidentId,
+                incident.Title,
+                incident.Latitude,
+                incident.Longitude,
+                incident.Status,
+                incident.Priority,
+                incident.Severity,
+                incident.CategoryId,
+
+                CategoryName =
+                    incident.Category != null
+                        ? incident.Category.CategoryName
+                        : null,
+
+                incident.LocationText,
+
+                ReportCount = incident.IncidentReportLinks.Count(link =>
+                    link.LinkStatus == IncidentLinkStatus.Active),
+
+                incident.CreatedAt
+            })
+            .ToListAsync();
+
+        return rows
+            .GroupBy(row => row.AreaId)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Select(row => new IncidentMapPointDto
+                    {
+                        IncidentId = row.IncidentId,
+
+                        Title = row.Title,
+
+                        Latitude = row.Latitude!.Value,
+
+                        Longitude = row.Longitude!.Value,
+
+                        Status = row.Status,
+
+                        Priority = row.Priority,
+
+                        Severity = row.Severity,
+
+                        CategoryId = row.CategoryId,
+
+                        CategoryName = row.CategoryName,
+
+                        LocationText = row.LocationText,
+
+                        ReportCount = row.ReportCount,
+
+                        IsOpen = IsOpenIncidentStatus(row.Status),
+
+                        CreatedAt = row.CreatedAt
+                    })
+                    .ToList());
+    }
+
+    public async Task<List<IncidentMonthlyTrendDto>>
         GetMonthlyTrendAsync(
             Guid actorUserId,
             int months = DefaultMonths)
@@ -341,8 +479,20 @@ public class FeedbackDashboardService
             currentMonth.AddMonths(
                 -(months - 1));
 
-        var scopedFeedbacks = await GetScopedFeedbacksAsync(actorUserId);
-        var feedbacks = await scopedFeedbacks
+        /*
+         * Lượng tiếp nhận đếm theo Report, còn tiến độ xử lý đếm theo Incident.
+         * Hai đường trên cùng biểu đồ nhưng khác đơn vị nên phải tách rõ.
+         */
+        var scopedReports = await GetScopedFeedbacksAsync(actorUserId);
+        var reportMonths = await scopedReports
+            .Where(x =>
+                x.CreatedAt >= fromMonth &&
+                x.CreatedAt <= now)
+            .Select(x => x.CreatedAt)
+            .ToListAsync();
+
+        var scopedIncidents = await GetScopedIncidentsAsync(actorUserId);
+        var incidents = await scopedIncidents
             .Where(x =>
                 x.CreatedAt >= fromMonth &&
                 x.CreatedAt <= now)
@@ -350,12 +500,27 @@ public class FeedbackDashboardService
             {
                 x.CreatedAt,
                 x.UpdatedAt,
-                x.ApprovedAt,
+                x.ResolvedAt,
+                x.ClosedAt,
                 x.Status
             })
             .ToListAsync();
 
-        var createdByMonth = feedbacks
+        var reportsByMonth = reportMonths
+            .GroupBy(createdAt => new
+            {
+                createdAt.Year,
+                createdAt.Month
+            })
+            .ToDictionary(
+                group =>
+                    (
+                        group.Key.Year,
+                        group.Key.Month
+                    ),
+                group => group.Count());
+
+        var createdByMonth = incidents
             .GroupBy(x => new
             {
                 x.CreatedAt.Year,
@@ -370,25 +535,18 @@ public class FeedbackDashboardService
                 group => group.Count());
 
         /*
-         * Feedback đã hoàn thành được tính theo UpdatedAt,
-         * vì dữ liệu seed đã gắn UpdatedAt theo timeline nghiệp vụ.
+         * Sự vụ đã hoàn thành được tính theo mốc kết thúc thực tế:
+         * ClosedAt, rồi tới ResolvedAt, cuối cùng mới dùng UpdatedAt.
          */
-        var completedByMonth = feedbacks
+        var completedByMonth = incidents
             .Where(x =>
-                (
-                    x.Status == FeedbackStatus.Resolved ||
-                    x.Status == FeedbackStatus.Approved ||
-                    x.Status == FeedbackStatus.Closed
-                )
-                &&
-                x.UpdatedAt.HasValue)
-            .GroupBy(x => new
+                ClosedIncidentStatuses.Contains(x.Status))
+            .Select(x => x.ClosedAt ?? x.ResolvedAt ?? x.UpdatedAt)
+            .Where(completedAt => completedAt.HasValue)
+            .GroupBy(completedAt => new
             {
-                Year =
-                    x.UpdatedAt!.Value.Year,
-
-                Month =
-                    x.UpdatedAt.Value.Month
+                completedAt!.Value.Year,
+                completedAt.Value.Month
             })
             .ToDictionary(
                 group =>
@@ -398,9 +556,10 @@ public class FeedbackDashboardService
                     ),
                 group => group.Count());
 
-        var cancelledByMonth = feedbacks
+        var cancelledByMonth = incidents
             .Where(x =>
-                x.Status == FeedbackStatus.Cancelled &&
+                (x.Status == IncidentStatus.Cancelled ||
+                 x.Status == IncidentStatus.Rejected) &&
                 x.UpdatedAt.HasValue)
             .GroupBy(x => new
             {
@@ -419,7 +578,7 @@ public class FeedbackDashboardService
                 group => group.Count());
 
         var result =
-            new List<FeedbackMonthlyTrendDto>();
+            new List<IncidentMonthlyTrendDto>();
 
         for (var index = 0;
              index < months;
@@ -435,7 +594,7 @@ public class FeedbackDashboardService
                 );
 
             result.Add(
-                new FeedbackMonthlyTrendDto
+                new IncidentMonthlyTrendDto
                 {
                     Year = month.Year,
 
@@ -443,6 +602,13 @@ public class FeedbackDashboardService
 
                     Period =
                         $"{month.Month:00}/{month.Year}",
+
+                    ReportCount =
+                        reportsByMonth.TryGetValue(
+                            key,
+                            out var reportCount)
+                            ? reportCount
+                            : 0,
 
                     CreatedCount =
                         createdByMonth.TryGetValue(
@@ -470,7 +636,7 @@ public class FeedbackDashboardService
         return result;
     }
 
-    public async Task<List<UrgentOpenFeedbackDto>>
+    public async Task<List<UrgentOpenIncidentDto>>
         GetUrgentOpenAsync(
             Guid actorUserId,
             int limit = DefaultLimit)
@@ -483,14 +649,13 @@ public class FeedbackDashboardService
         var now =
             DateTime.UtcNow;
 
-        var scopedFeedbacks = await GetScopedFeedbacksAsync(actorUserId);
-        var data = await scopedFeedbacks
+        var scopedIncidents = await GetScopedIncidentsAsync(actorUserId);
+        var data = await scopedIncidents
             .Where(x =>
                 x.Priority == "Urgent" &&
-                x.Status != FeedbackStatus.Resolved &&
-                x.Status != FeedbackStatus.Approved &&
-                x.Status != FeedbackStatus.Closed &&
-                x.Status != FeedbackStatus.Cancelled)
+                !ClosedIncidentStatuses.Contains(x.Status) &&
+                x.Status != IncidentStatus.Cancelled &&
+                x.Status != IncidentStatus.Rejected)
             .OrderBy(x =>
                 x.DueDate ?? DateTime.MaxValue)
             .ThenBy(x =>
@@ -498,7 +663,7 @@ public class FeedbackDashboardService
             .Take(limit)
             .Select(x => new
             {
-                x.FeedbackId,
+                x.IncidentId,
                 x.Title,
                 x.Status,
                 x.Priority,
@@ -513,16 +678,19 @@ public class FeedbackDashboardService
 
                 x.LocationText,
                 x.CreatedAt,
-                x.DueDate
+                x.DueDate,
+
+                ReportCount = x.IncidentReportLinks.Count(link =>
+                    link.LinkStatus == IncidentLinkStatus.Active)
             })
             .ToListAsync();
 
         return data
             .Select(x =>
-                new UrgentOpenFeedbackDto
+                new UrgentOpenIncidentDto
                 {
-                    FeedbackId =
-                        x.FeedbackId,
+                    IncidentId =
+                        x.IncidentId,
 
                     Title =
                         x.Title,
@@ -548,6 +716,9 @@ public class FeedbackDashboardService
                     LocationText =
                         x.LocationText,
 
+                    ReportCount =
+                        x.ReportCount,
+
                     CreatedAt =
                         x.CreatedAt,
 
@@ -571,6 +742,10 @@ public class FeedbackDashboardService
             .ToList();
     }
 
+    /// <summary>
+    /// Danh sách phản ánh vừa tiếp nhận. Đây là chỉ số tiếp nhận nên vẫn
+    /// đọc theo Report để nhân sự thấy đúng những gì người dân mới gửi.
+    /// </summary>
     public async Task<List<RecentFeedbackDto>>
         GetRecentAsync(
             Guid actorUserId,
@@ -627,6 +802,16 @@ public class FeedbackDashboardService
             .ToListAsync();
     }
 
+    /// <summary>
+    /// Sự vụ đang mở là sự vụ chưa kết thúc và chưa bị hủy hoặc từ chối.
+    /// </summary>
+    private static bool IsOpenIncidentStatus(string status)
+    {
+        return !ClosedIncidentStatuses.Contains(status) &&
+            status != IncidentStatus.Cancelled &&
+            status != IncidentStatus.Rejected;
+    }
+
     private async Task<IQueryable<Feedback>> GetScopedFeedbacksAsync(Guid actorUserId)
     {
         var actor = await ManagementAccessRules.GetActorScopeAsync(
@@ -635,5 +820,20 @@ public class FeedbackDashboardService
         return ManagementAccessRules.ApplyFeedbackReadScope(
             _unitOfWork.GetRepository<Feedback>().Entities.AsNoTracking(),
             actor);
+    }
+
+    /// <summary>
+    /// Sự vụ đã gộp không được đếm riêng, vì công việc của chúng đã chuyển
+    /// sang sự vụ canonical.
+    /// </summary>
+    private async Task<IQueryable<Incident>> GetScopedIncidentsAsync(Guid actorUserId)
+    {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _unitOfWork,
+            actorUserId);
+        return ManagementAccessRules.ApplyIncidentReadScope(
+            _unitOfWork.GetRepository<Incident>().Entities.AsNoTracking(),
+            actor)
+            .Where(incident => incident.MergedIntoIncidentId == null);
     }
 }

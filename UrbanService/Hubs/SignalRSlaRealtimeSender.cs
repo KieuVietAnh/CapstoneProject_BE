@@ -21,8 +21,8 @@ public class SignalRSlaRealtimeSender
     }
 
     public async Task SendSlaUpdatedAsync(
-        Guid feedbackId,
-        long feedbackSlaId,
+        Guid incidentId,
+        long incidentSlaId,
         string eventType)
     {
         await _hubContext
@@ -32,18 +32,18 @@ public class SignalRSlaRealtimeSender
                 "SlaUpdated",
                 new
                 {
-                    FeedbackId = feedbackId,
-                    FeedbackSlaId = feedbackSlaId,
+                    IncidentId = incidentId,
+                    IncidentSlaId = incidentSlaId,
                     EventType = eventType
                 });
 
         _logger.LogInformation(
             "SignalR event SlaUpdated sent. " +
-            "FeedbackId: {FeedbackId}, " +
-            "FeedbackSlaId: {FeedbackSlaId}, " +
+            "IncidentId: {IncidentId}, " +
+            "IncidentSlaId: {IncidentSlaId}, " +
             "EventType: {EventType}",
-            feedbackId,
-            feedbackSlaId,
+            incidentId,
+            incidentSlaId,
             eventType);
     }
 }

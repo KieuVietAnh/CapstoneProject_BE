@@ -6,7 +6,7 @@ public partial class SlaEvent
 {
     public long SlaEventId { get; set; }
 
-    public long FeedbackSlaId { get; set; }
+    public long IncidentSlaId { get; set; }
 
     /// <summary>
     /// Started, Responded, Paused, Resumed, Warning,
@@ -39,7 +39,7 @@ public partial class SlaEvent
 
     public DateTime CreatedAt { get; set; }
 
-    public virtual FeedbackSla FeedbackSla { get; set; } = null!;
+    public virtual IncidentSla IncidentSla { get; set; } = null!;
 
     public virtual User? TriggeredByUser { get; set; }
 }

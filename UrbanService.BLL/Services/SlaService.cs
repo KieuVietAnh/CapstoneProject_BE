@@ -41,24 +41,24 @@ public class SlaService : ISlaService
 
 
     public async Task<List<SlaTimelineDto>> GetTimelineAsync(
-        Guid feedbackId,
+        Guid incidentId,
         Guid actorUserId)
     {
-        await EnsureFeedbackReadAccessAsync(feedbackId, actorUserId);
+        await EnsureIncidentReadAccessAsync(incidentId, actorUserId);
 
         var sla = await _unitOfWork
-            .GetRepository<FeedbackSla>()
+            .GetRepository<IncidentSla>()
             .Entities
             .AsNoTracking()
             .FirstOrDefaultAsync(x =>
-                x.FeedbackId == feedbackId &&
+                x.IncidentId == incidentId &&
                 x.IsCurrent);
 
 
         if (sla == null)
         {
             throw new KeyNotFoundException(
-                "Feedback chưa có SLA.");
+                "Sự vụ chưa có SLA.");
         }
 
 
@@ -68,8 +68,8 @@ public class SlaService : ISlaService
             .Entities
             .AsNoTracking()
             .Where(x =>
-                x.FeedbackSlaId ==
-                sla.FeedbackSlaId)
+                x.IncidentSlaId ==
+                sla.IncidentSlaId)
             .OrderByDescending(x =>
                 x.CreatedAt)
             .Select(x =>
@@ -110,23 +110,23 @@ public class SlaService : ISlaService
     }
 
     public async Task<SlaStatusDto> GetStatusAsync(
-        Guid feedbackId,
+        Guid incidentId,
         Guid actorUserId)
     {
-        await EnsureFeedbackReadAccessAsync(feedbackId, actorUserId);
+        await EnsureIncidentReadAccessAsync(incidentId, actorUserId);
 
         var sla = await _unitOfWork
-            .GetRepository<FeedbackSla>()
+            .GetRepository<IncidentSla>()
             .Entities
             .AsNoTracking()
             .FirstOrDefaultAsync(x =>
-                x.FeedbackId == feedbackId &&
+                x.IncidentId == incidentId &&
                 x.IsCurrent);
 
         if (sla == null)
         {
             throw new KeyNotFoundException(
-                "Feedback chưa có SLA.");
+                "Sự vụ chưa có SLA.");
         }
 
         var now =
@@ -164,8 +164,8 @@ public class SlaService : ISlaService
                 .Entities
                 .AsNoTracking()
                 .Where(x =>
-                    x.FeedbackSlaId ==
-                    sla.FeedbackSlaId &&
+                    x.IncidentSlaId ==
+                    sla.IncidentSlaId &&
                     !x.ResumedAt.HasValue)
                 .OrderByDescending(x =>
                     x.PausedAt)
@@ -190,7 +190,7 @@ public class SlaService : ISlaService
 
         var completedPausedDuration =
             await GetCompletedPausedDurationAsync(
-                sla.FeedbackSlaId);
+                sla.IncidentSlaId);
 
         var completedPausedMinutes =
             completedPausedDuration.TotalMinutes;
@@ -290,8 +290,8 @@ public class SlaService : ISlaService
             .Entities
             .AsNoTracking()
             .Where(x =>
-                x.FeedbackSlaId ==
-                    sla.FeedbackSlaId &&
+                x.IncidentSlaId ==
+                    sla.IncidentSlaId &&
                 (
                     x.EventType ==
                         SlaEventType.ResponseWarning ||
@@ -313,11 +313,11 @@ public class SlaService : ISlaService
 
         return new SlaStatusDto
         {
-            FeedbackId =
-                sla.FeedbackId,
+            IncidentId =
+                sla.IncidentId,
 
-            FeedbackSlaId =
-                sla.FeedbackSlaId,
+            IncidentSlaId =
+                sla.IncidentSlaId,
 
             Status =
                 sla.Status,
@@ -384,16 +384,16 @@ public class SlaService : ISlaService
         };
     }
 
-    public async Task<FeedbackSlaDto> StartAsync(
-        Guid feedbackId,
+    public async Task<IncidentSlaDto> StartAsync(
+        Guid incidentId,
         Guid startedByUserId)
     {
-        ValidateFeedbackId(feedbackId);
+        ValidateIncidentId(incidentId);
         ValidateUserId(startedByUserId);
 
-        var incident = await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+        var incident = await ManagementAccessRules.EnsureManagerIncidentOperationAsync(
             _unitOfWork,
-            feedbackId,
+            incidentId,
             startedByUserId);
         if (incident.Status != IncidentStatus.Verified)
         {
@@ -401,84 +401,81 @@ public class SlaService : ISlaService
                 "Chỉ được bắt đầu SLA khi sự vụ đã được xác minh.");
         }
 
-        var feedback = await _unitOfWork
-            .GetRepository<Feedback>()
+        var incidentData = await _unitOfWork
+            .GetRepository<Incident>()
             .Entities
             .AsNoTracking()
-            .FirstOrDefaultAsync(x =>
-                x.FeedbackId == feedbackId);
+            .Where(x => x.IncidentId == incidentId)
+            .Select(x => new
+            {
+                x.AreaId,
+                x.CategoryId,
+                x.Priority
+            })
+            .FirstOrDefaultAsync();
 
-        if (feedback == null)
+        if (incidentData == null)
         {
             throw new KeyNotFoundException(
-                "Không tìm thấy feedback.");
+                "Không tìm thấy sự vụ.");
         }
 
-        if (!string.Equals(
-                feedback.Status,
-                FeedbackStatus.Verified,
-                StringComparison.OrdinalIgnoreCase))
+        if (incidentData.AreaId <= 0)
         {
             throw new InvalidOperationException(
-                "Chỉ được bắt đầu SLA sau khi feedback đã được xác minh.");
+                "Sự vụ chưa xác định khu vực nên chưa thể bắt đầu SLA.");
         }
 
-        if (feedback.AreaId <= 0)
+        if (!incidentData.CategoryId.HasValue)
         {
             throw new InvalidOperationException(
-                "Feedback chưa xác định khu vực nên chưa thể bắt đầu SLA.");
+                "Sự vụ chưa có category nên chưa thể bắt đầu SLA.");
         }
 
-        if (!feedback.CategoryId.HasValue)
+        if (string.IsNullOrWhiteSpace(incidentData.Priority))
         {
             throw new InvalidOperationException(
-                "Feedback chưa có category nên chưa thể bắt đầu SLA.");
-        }
-
-        if (string.IsNullOrWhiteSpace(feedback.Priority))
-        {
-            throw new InvalidOperationException(
-                "Feedback chưa có priority nên chưa thể bắt đầu SLA.");
+                "Sự vụ chưa có priority nên chưa thể bắt đầu SLA.");
         }
 
         var existingCurrentSla = await _unitOfWork
-            .GetRepository<FeedbackSla>()
+            .GetRepository<IncidentSla>()
             .Entities
             .AsNoTracking()
             .AnyAsync(x =>
-                x.FeedbackId == feedbackId &&
+                x.IncidentId == incidentId &&
                 x.IsCurrent);
 
         if (existingCurrentSla)
         {
             throw new InvalidOperationException(
-                "Feedback đã có SLA hiện tại.");
+                "Sự vụ đã có SLA hiện tại.");
         }
 
         var normalizedPriority =
-            NormalizePriority(feedback.Priority);
+            NormalizePriority(incidentData.Priority);
 
         var now = SlaDateTimeHelper.UtcNow;
 
         var policy = await FindApplicablePolicyAsync(
-            feedback.AreaId,
-            feedback.CategoryId.Value,
+            incidentData.AreaId,
+            incidentData.CategoryId.Value,
             normalizedPriority,
             now);
 
-        long createdFeedbackSlaId;
+        long createdIncidentSlaId;
 
         _unitOfWork.BeginTransaction();
 
         try
         {
-            var feedbackSla = new FeedbackSla
+            var incidentSla = new IncidentSla
             {
-                FeedbackId = feedback.FeedbackId,
+                IncidentId = incidentId,
                 SlaPolicyId = policy.SlaPolicyId,
 
-                AreaId = feedback.AreaId,
-                CategoryId = feedback.CategoryId.Value,
+                AreaId = incidentData.AreaId,
+                CategoryId = incidentData.CategoryId.Value,
                 Priority = normalizedPriority,
 
                 StartedAt = now,
@@ -515,13 +512,13 @@ public class SlaService : ISlaService
             };
 
             await _unitOfWork
-                .GetRepository<FeedbackSla>()
-                .AddAsync(feedbackSla);
+                .GetRepository<IncidentSla>()
+                .AddAsync(incidentSla);
 
             await _unitOfWork.SaveAsync();
 
             await AddEventAsync(
-                feedbackSlaId: feedbackSla.FeedbackSlaId,
+                incidentSlaId: incidentSla.IncidentSlaId,
                 eventType: SlaEventType.Started,
                 oldStatus: null,
                 newStatus: SlaStatus.Running,
@@ -533,8 +530,8 @@ public class SlaService : ISlaService
 
             await _unitOfWork.SaveAsync();
 
-            createdFeedbackSlaId =
-                feedbackSla.FeedbackSlaId;
+            createdIncidentSlaId =
+                incidentSla.IncidentSlaId;
 
             _unitOfWork.CommitTransaction();
         }
@@ -546,53 +543,53 @@ public class SlaService : ISlaService
 
 
         await SendSlaRealtimeSafeAsync(
-            feedbackId,
-            createdFeedbackSlaId,
+            incidentId,
+            createdIncidentSlaId,
             SlaEventType.Started);
 
         return await GetByIdAsync(
-            createdFeedbackSlaId);
+            createdIncidentSlaId);
     }
 
-    public async Task<FeedbackSlaDto>
-        GetCurrentByFeedbackIdAsync(
-            Guid feedbackId,
+    public async Task<IncidentSlaDto>
+        GetCurrentByIncidentIdAsync(
+            Guid incidentId,
             Guid actorUserId)
     {
-        ValidateFeedbackId(feedbackId);
-        await EnsureFeedbackReadAccessAsync(feedbackId, actorUserId);
+        ValidateIncidentId(incidentId);
+        await EnsureIncidentReadAccessAsync(incidentId, actorUserId);
 
-        var feedbackSlaId = await _unitOfWork
-            .GetRepository<FeedbackSla>()
+        var incidentSlaId = await _unitOfWork
+            .GetRepository<IncidentSla>()
             .Entities
             .AsNoTracking()
             .Where(x =>
-                x.FeedbackId == feedbackId &&
+                x.IncidentId == incidentId &&
                 x.IsCurrent)
-            .Select(x => (long?)x.FeedbackSlaId)
+            .Select(x => (long?)x.IncidentSlaId)
             .FirstOrDefaultAsync();
 
-        if (!feedbackSlaId.HasValue)
+        if (!incidentSlaId.HasValue)
         {
             throw new KeyNotFoundException(
-                "Feedback chưa có SLA hiện tại.");
+                "Sự vụ chưa có SLA hiện tại.");
         }
 
         return await GetByIdAsync(
-            feedbackSlaId.Value);
+            incidentSlaId.Value);
     }
 
-    private async Task<FeedbackSlaDto> GetByIdAsync(
-        long feedbackSlaId)
+    private async Task<IncidentSlaDto> GetByIdAsync(
+        long incidentSlaId)
     {
-        ValidateFeedbackSlaId(feedbackSlaId);
+        ValidateIncidentSlaId(incidentSlaId);
 
         var entity = await _unitOfWork
-            .GetRepository<FeedbackSla>()
+            .GetRepository<IncidentSla>()
             .Entities
             .AsNoTracking()
             .AsSplitQuery()
-            .Include(x => x.Feedback)
+            .Include(x => x.Incident)
             .Include(x => x.SlaPolicy)
             .Include(x => x.Area)
             .Include(x => x.Category)
@@ -605,7 +602,7 @@ public class SlaService : ISlaService
             .Include(x => x.SlaPauseHistories)
                 .ThenInclude(x => x.ResumedByUser)
             .FirstOrDefaultAsync(x =>
-                x.FeedbackSlaId == feedbackSlaId);
+                x.IncidentSlaId == incidentSlaId);
 
         if (entity == null)
         {
@@ -616,17 +613,17 @@ public class SlaService : ISlaService
         return MapToDto(entity);
     }
 
-    public async Task<FeedbackSlaDto> MarkRespondedAsync(
-        Guid feedbackId,
+    public async Task<IncidentSlaDto> MarkRespondedAsync(
+        Guid incidentId,
         Guid triggeredByUserId,
         string? note)
     {
-        ValidateFeedbackId(feedbackId);
+        ValidateIncidentId(incidentId);
         ValidateUserId(triggeredByUserId);
 
-        var incident = await ManagementAccessRules.EnsureStaffFeedbackOperationAsync(
+        var incident = await ManagementAccessRules.EnsureStaffIncidentOperationAsync(
             _unitOfWork,
-            feedbackId,
+            incidentId,
             triggeredByUserId);
         if (incident.Status != IncidentStatus.InProgress)
         {
@@ -635,7 +632,7 @@ public class SlaService : ISlaService
         }
 
         var entity =
-            await GetCurrentEntityAsync(feedbackId);
+            await GetCurrentEntityAsync(incidentId);
 
         if (entity.Status == SlaStatus.Cancelled)
         {
@@ -678,7 +675,7 @@ public class SlaService : ISlaService
         entity.UpdatedAt = now;
 
         await AddEventAsync(
-            entity.FeedbackSlaId,
+            entity.IncidentSlaId,
             SlaEventType.Responded,
             entity.Status,
             entity.Status,
@@ -689,33 +686,33 @@ public class SlaService : ISlaService
         await _unitOfWork.SaveAsync();
 
         await SendSlaRealtimeSafeAsync(
-            entity.FeedbackId,
-            entity.FeedbackSlaId,
+            entity.IncidentId,
+            entity.IncidentSlaId,
             SlaEventType.Responded);
 
 
         return await GetByIdAsync(
-            entity.FeedbackSlaId);
+            entity.IncidentSlaId);
     }
 
-    public async Task<FeedbackSlaDto> PauseAsync(
-        Guid feedbackId,
+    public async Task<IncidentSlaDto> PauseAsync(
+        Guid incidentId,
         Guid pausedByUserId,
         PauseSlaRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        ValidateFeedbackId(feedbackId);
+        ValidateIncidentId(incidentId);
         ValidateUserId(pausedByUserId);
         ValidatePauseReason(request.ReasonCode);
 
-        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+        await ManagementAccessRules.EnsureManagerIncidentOperationAsync(
             _unitOfWork,
-            feedbackId,
+            incidentId,
             pausedByUserId);
 
         var entity =
-            await GetCurrentEntityAsync(feedbackId);
+            await GetCurrentEntityAsync(incidentId);
 
         if (entity.Status != SlaStatus.Running)
         {
@@ -728,8 +725,8 @@ public class SlaService : ISlaService
             .Entities
             .AsNoTracking()
             .AnyAsync(x =>
-                x.FeedbackSlaId ==
-                entity.FeedbackSlaId &&
+                x.IncidentSlaId ==
+                entity.IncidentSlaId &&
                 !x.ResumedAt.HasValue);
 
         if (hasOpenPause)
@@ -746,8 +743,8 @@ public class SlaService : ISlaService
 
         var pauseHistory = new SlaPauseHistory
         {
-            FeedbackSlaId =
-                entity.FeedbackSlaId,
+            IncidentSlaId =
+                entity.IncidentSlaId,
 
             ReasonCode =
                 NormalizePauseReason(
@@ -773,7 +770,7 @@ public class SlaService : ISlaService
             .AddAsync(pauseHistory);
 
         await AddEventAsync(
-            entity.FeedbackSlaId,
+            entity.IncidentSlaId,
             SlaEventType.Paused,
             oldStatus,
             SlaStatus.Paused,
@@ -785,32 +782,32 @@ public class SlaService : ISlaService
         await _unitOfWork.SaveAsync();
 
         await SendSlaRealtimeSafeAsync(
-            entity.FeedbackId,
-            entity.FeedbackSlaId,
+            entity.IncidentId,
+            entity.IncidentSlaId,
             SlaEventType.Paused);
 
 
         return await GetByIdAsync(
-            entity.FeedbackSlaId);
+            entity.IncidentSlaId);
     }
 
-    public async Task<FeedbackSlaDto> ResumeAsync(
-        Guid feedbackId,
+    public async Task<IncidentSlaDto> ResumeAsync(
+        Guid incidentId,
         Guid resumedByUserId,
         ResumeSlaRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        ValidateFeedbackId(feedbackId);
+        ValidateIncidentId(incidentId);
         ValidateUserId(resumedByUserId);
 
-        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+        await ManagementAccessRules.EnsureManagerIncidentOperationAsync(
             _unitOfWork,
-            feedbackId,
+            incidentId,
             resumedByUserId);
 
         var entity =
-            await GetCurrentEntityAsync(feedbackId);
+            await GetCurrentEntityAsync(incidentId);
 
         if (entity.Status != SlaStatus.Paused)
         {
@@ -822,8 +819,8 @@ public class SlaService : ISlaService
             .GetRepository<SlaPauseHistory>()
             .Entities
             .Where(x =>
-                x.FeedbackSlaId ==
-                entity.FeedbackSlaId &&
+                x.IncidentSlaId ==
+                entity.IncidentSlaId &&
                 !x.ResumedAt.HasValue)
             .OrderByDescending(x => x.PausedAt)
             .FirstOrDefaultAsync();
@@ -896,7 +893,7 @@ public class SlaService : ISlaService
          */
         var previousPausedDuration =
             await GetCompletedPausedDurationAsync(
-                entity.FeedbackSlaId);
+                entity.IncidentSlaId);
 
         var totalPausedDuration =
             previousPausedDuration +
@@ -909,7 +906,7 @@ public class SlaService : ISlaService
         entity.UpdatedAt = now;
 
         await AddEventAsync(
-            entity.FeedbackSlaId,
+            entity.IncidentSlaId,
             SlaEventType.Resumed,
             oldStatus,
             SlaStatus.Running,
@@ -921,28 +918,28 @@ public class SlaService : ISlaService
         await _unitOfWork.SaveAsync();
 
         await SendSlaRealtimeSafeAsync(
-            entity.FeedbackId,
-            entity.FeedbackSlaId,
+            entity.IncidentId,
+            entity.IncidentSlaId,
             SlaEventType.Resumed);
 
 
         return await GetByIdAsync(
-            entity.FeedbackSlaId);
+            entity.IncidentSlaId);
     }
 
-    public async Task<FeedbackSlaDto> CompleteAsync(
-        Guid feedbackId,
+    public async Task<IncidentSlaDto> CompleteAsync(
+        Guid incidentId,
         Guid completedByUserId,
         CompleteSlaRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        ValidateFeedbackId(feedbackId);
+        ValidateIncidentId(incidentId);
         ValidateUserId(completedByUserId);
 
-        var incident = await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+        var incident = await ManagementAccessRules.EnsureManagerIncidentOperationAsync(
             _unitOfWork,
-            feedbackId,
+            incidentId,
             completedByUserId);
         if (incident.Status != IncidentStatus.Approved)
         {
@@ -951,7 +948,7 @@ public class SlaService : ISlaService
         }
 
         var entity =
-            await GetCurrentEntityAsync(feedbackId);
+            await GetCurrentEntityAsync(incidentId);
 
         if (entity.Status == SlaStatus.Completed)
         {
@@ -1009,7 +1006,7 @@ public class SlaService : ISlaService
         entity.UpdatedAt = now;
 
         await AddEventAsync(
-            entity.FeedbackSlaId,
+            entity.IncidentSlaId,
             SlaEventType.Completed,
             oldStatus,
             SlaStatus.Completed,
@@ -1020,26 +1017,26 @@ public class SlaService : ISlaService
         await _unitOfWork.SaveAsync();
 
         await SendSlaRealtimeSafeAsync(
-            entity.FeedbackId,
-            entity.FeedbackSlaId,
+            entity.IncidentId,
+            entity.IncidentSlaId,
             SlaEventType.Completed);
 
 
         return await GetByIdAsync(
-            entity.FeedbackSlaId);
+            entity.IncidentSlaId);
     }
 
-    public async Task<FeedbackSlaDto> CancelAsync(
-        Guid feedbackId,
+    public async Task<IncidentSlaDto> CancelAsync(
+        Guid incidentId,
         Guid cancelledByUserId,
         string? note)
     {
-        ValidateFeedbackId(feedbackId);
+        ValidateIncidentId(incidentId);
         ValidateUserId(cancelledByUserId);
 
-        var incident = await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+        var incident = await ManagementAccessRules.EnsureManagerIncidentOperationAsync(
             _unitOfWork,
-            feedbackId,
+            incidentId,
             cancelledByUserId);
         if (incident.Status != IncidentStatus.Cancelled)
         {
@@ -1048,7 +1045,7 @@ public class SlaService : ISlaService
         }
 
         var entity =
-            await GetCurrentEntityAsync(feedbackId);
+            await GetCurrentEntityAsync(incidentId);
 
         if (entity.Status == SlaStatus.Completed)
         {
@@ -1069,7 +1066,7 @@ public class SlaService : ISlaService
         entity.UpdatedAt = now;
 
         await AddEventAsync(
-            entity.FeedbackSlaId,
+            entity.IncidentSlaId,
             SlaEventType.Cancelled,
             oldStatus,
             SlaStatus.Cancelled,
@@ -1080,33 +1077,33 @@ public class SlaService : ISlaService
         await _unitOfWork.SaveAsync();
 
         await SendSlaRealtimeSafeAsync(
-            entity.FeedbackId,
-            entity.FeedbackSlaId,
+            entity.IncidentId,
+            entity.IncidentSlaId,
             SlaEventType.Cancelled);
 
 
         return await GetByIdAsync(
-            entity.FeedbackSlaId);
+            entity.IncidentSlaId);
     }
 
-    public async Task<FeedbackSlaDto> RecalculateAsync(
-    Guid feedbackId,
+    public async Task<IncidentSlaDto> RecalculateAsync(
+    Guid incidentId,
     Guid recalculatedByUserId,
     RecalculateSlaRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        ValidateFeedbackId(feedbackId);
+        ValidateIncidentId(incidentId);
         ValidateUserId(recalculatedByUserId);
 
-        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+        await ManagementAccessRules.EnsureManagerIncidentOperationAsync(
             _unitOfWork,
-            feedbackId,
+            incidentId,
             recalculatedByUserId);
 
 
         var entity =
-            await GetCurrentEntityAsync(feedbackId);
+            await GetCurrentEntityAsync(incidentId);
 
 
         if (entity.Status == SlaStatus.Completed ||
@@ -1196,7 +1193,7 @@ public class SlaService : ISlaService
          */
         var completedPausedDuration =
             await GetCompletedPausedDurationAsync(
-                entity.FeedbackSlaId);
+                entity.IncidentSlaId);
 
         var startedAtUtc =
             SlaDateTimeHelper.AsUtc(
@@ -1303,7 +1300,7 @@ public class SlaService : ISlaService
 
 
         await AddEventAsync(
-            entity.FeedbackSlaId,
+            entity.IncidentSlaId,
             SlaEventType.Recalculated,
             entity.Status,
             entity.Status,
@@ -1316,47 +1313,45 @@ public class SlaService : ISlaService
         await _unitOfWork.SaveAsync();
 
         await SendSlaRealtimeSafeAsync(
-            entity.FeedbackId,
-            entity.FeedbackSlaId,
+            entity.IncidentId,
+            entity.IncidentSlaId,
             SlaEventType.Recalculated);
 
 
 
 
         return await GetByIdAsync(
-            entity.FeedbackSlaId);
+            entity.IncidentSlaId);
     }
 
     public async Task CheckViolationAsync(
-        long feedbackSlaId,
+        long incidentSlaId,
         Guid actorUserId)
     {
-        ValidateFeedbackSlaId(feedbackSlaId);
+        ValidateIncidentSlaId(incidentSlaId);
 
-        var feedbackId = await _unitOfWork
-            .GetRepository<FeedbackSla>()
+        var incidentId = await _unitOfWork
+            .GetRepository<IncidentSla>()
             .Entities
             .AsNoTracking()
-            .Where(sla => sla.FeedbackSlaId == feedbackSlaId)
-            .Select(sla => (Guid?)sla.FeedbackId)
+            .Where(sla => sla.IncidentSlaId == incidentSlaId)
+            .Select(sla => (Guid?)sla.IncidentId)
             .SingleOrDefaultAsync()
             ?? throw new KeyNotFoundException("Không tìm thấy SLA.");
-        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+        await ManagementAccessRules.EnsureManagerIncidentOperationAsync(
             _unitOfWork,
-            feedbackId,
+            incidentId,
             actorUserId);
 
         var entity = await _unitOfWork
-            .GetRepository<FeedbackSla>()
+            .GetRepository<IncidentSla>()
             .Entities
             .AsSplitQuery()
-            .Include(x => x.Feedback)
-                .ThenInclude(x => x.IncidentReportLinks)
-                    .ThenInclude(x => x.Incident)
-                        .ThenInclude(x => x.ProviderAssignments)
+            .Include(x => x.Incident)
+                .ThenInclude(x => x.ProviderAssignments)
                     .ThenInclude(x => x.Coordinator)
             .FirstOrDefaultAsync(x =>
-                x.FeedbackSlaId == feedbackSlaId);
+                x.IncidentSlaId == incidentSlaId);
 
         if (entity == null)
         {
@@ -1393,13 +1388,11 @@ public class SlaService : ISlaService
     public async Task<int> CheckAllRunningSlasAsync()
     {
         var runningSlas = await _unitOfWork
-            .GetRepository<FeedbackSla>()
+            .GetRepository<IncidentSla>()
             .Entities
             .AsSplitQuery()
-            .Include(x => x.Feedback)
-                .ThenInclude(x => x.IncidentReportLinks)
-                    .ThenInclude(x => x.Incident)
-                        .ThenInclude(x => x.ProviderAssignments)
+            .Include(x => x.Incident)
+                .ThenInclude(x => x.ProviderAssignments)
                     .ThenInclude(x => x.Coordinator)
             .Where(x =>
                 x.IsCurrent &&
@@ -1449,8 +1442,8 @@ public class SlaService : ISlaService
             {
                 _logger.LogError(
                     ex,
-                    "Không thể kiểm tra SLA {FeedbackSlaId}.",
-                    entity.FeedbackSlaId);
+                    "Không thể kiểm tra SLA {IncidentSlaId}.",
+                    entity.IncidentSlaId);
             }
         }
 
@@ -1463,7 +1456,7 @@ public class SlaService : ISlaService
 
     private async Task<SlaMonitoringCheckResult>
         ApplyMonitoringCheckAsync(
-            FeedbackSla entity)
+            IncidentSla entity)
     {
         var now = SlaDateTimeHelper.UtcNow;
 
@@ -1481,7 +1474,7 @@ public class SlaService : ISlaService
          */
         var completedPausedDuration =
             await GetCompletedPausedDurationAsync(
-                entity.FeedbackSlaId);
+                entity.IncidentSlaId);
 
         var completedPausedMinutes =
             completedPausedDuration.TotalMinutes;
@@ -1527,7 +1520,7 @@ public class SlaService : ISlaService
 
             var hasResponseWarning =
                 await HasSlaEventAsync(
-                    entity.FeedbackSlaId,
+                    entity.IncidentSlaId,
                     SlaEventType.ResponseWarning);
 
             if (remainingResponsePercent <= thresholdPercent &&
@@ -1536,7 +1529,7 @@ public class SlaService : ISlaService
                 entity.UpdatedAt = now;
 
                 await AddEventAsync(
-                    entity.FeedbackSlaId,
+                    entity.IncidentSlaId,
                     SlaEventType.ResponseWarning,
                     entity.Status,
                     entity.Status,
@@ -1588,7 +1581,7 @@ public class SlaService : ISlaService
 
             var hasResolutionWarning =
                 await HasSlaEventAsync(
-                    entity.FeedbackSlaId,
+                    entity.IncidentSlaId,
                     SlaEventType.ResolutionWarning);
 
             if (remainingResolutionPercent <= thresholdPercent &&
@@ -1597,7 +1590,7 @@ public class SlaService : ISlaService
                 entity.UpdatedAt = now;
 
                 await AddEventAsync(
-                    entity.FeedbackSlaId,
+                    entity.IncidentSlaId,
                     SlaEventType.ResolutionWarning,
                     entity.Status,
                     entity.Status,
@@ -1625,7 +1618,7 @@ public class SlaService : ISlaService
             entity.UpdatedAt = now;
 
             await AddEventAsync(
-                entity.FeedbackSlaId,
+                entity.IncidentSlaId,
                 SlaEventType.ResponseBreached,
                 entity.Status,
                 entity.Status,
@@ -1636,9 +1629,9 @@ public class SlaService : ISlaService
             result.ResponseJustBreached = true;
 
             _logger.LogWarning(
-                "SLA {FeedbackSlaId} của feedback {FeedbackId} đã quá hạn phản hồi.",
-                entity.FeedbackSlaId,
-                entity.FeedbackId);
+                "SLA {IncidentSlaId} của feedback {IncidentId} đã quá hạn phản hồi.",
+                entity.IncidentSlaId,
+                entity.IncidentId);
         }
 
         /*
@@ -1656,7 +1649,7 @@ public class SlaService : ISlaService
             entity.UpdatedAt = now;
 
             await AddEventAsync(
-                entity.FeedbackSlaId,
+                entity.IncidentSlaId,
                 SlaEventType.ResolutionBreached,
                 entity.Status,
                 entity.Status,
@@ -1667,16 +1660,136 @@ public class SlaService : ISlaService
             result.ResolutionJustBreached = true;
 
             _logger.LogWarning(
-                "SLA {FeedbackSlaId} của feedback {FeedbackId} đã quá hạn xử lý.",
-                entity.FeedbackSlaId,
-                entity.FeedbackId);
+                "SLA {IncidentSlaId} của feedback {IncidentId} đã quá hạn xử lý.",
+                entity.IncidentSlaId,
+                entity.IncidentId);
         }
 
         return result;
     }
 
+    /// <summary>
+    /// Đồng bộ vòng đời SLA theo trạng thái sự vụ.
+    ///
+    /// Chỉ được gọi SAU khi transaction đổi trạng thái Incident đã commit,
+    /// vì mỗi thao tác SLA tự mở transaction riêng.
+    /// </summary>
+    public async Task SynchronizeByIncidentStatusAsync(
+        Guid incidentId,
+        string oldStatus,
+        string newStatus,
+        Guid triggeredByUserId,
+        string? note)
+    {
+        if (string.Equals(
+                oldStatus,
+                newStatus,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        // Verified: bắt đầu SLA.
+        if (string.Equals(
+                newStatus,
+                IncidentStatus.Verified,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var hasCurrentSla = await _unitOfWork
+                .GetRepository<IncidentSla>()
+                .Entities
+                .AsNoTracking()
+                .AnyAsync(x =>
+                    x.IncidentId == incidentId &&
+                    x.IsCurrent);
+
+            if (!hasCurrentSla)
+            {
+                await StartAsync(
+                    incidentId,
+                    triggeredByUserId);
+            }
+
+            return;
+        }
+
+        // InProgress: phản hồi đầu tiên được ghi nhận.
+        if (string.Equals(
+                newStatus,
+                IncidentStatus.InProgress,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var currentSla = await _unitOfWork
+                .GetRepository<IncidentSla>()
+                .Entities
+                .AsNoTracking()
+                .Where(x =>
+                    x.IncidentId == incidentId &&
+                    x.IsCurrent)
+                .Select(x => new
+                {
+                    x.RespondedAt,
+                    x.Status
+                })
+                .FirstOrDefaultAsync();
+
+            if (currentSla != null &&
+                !currentSla.RespondedAt.HasValue &&
+                string.Equals(
+                    currentSla.Status,
+                    SlaStatus.Running,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                await MarkRespondedAsync(
+                    incidentId,
+                    triggeredByUserId,
+                    NormalizeOptionalText(note) ??
+                    "Sự vụ bắt đầu được xử lý.");
+            }
+
+            return;
+        }
+
+        // Approved: manager xác nhận kết quả xử lý, hoàn thành SLA.
+        if (string.Equals(
+                newStatus,
+                IncidentStatus.Approved,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var currentStatus = await _unitOfWork
+                .GetRepository<IncidentSla>()
+                .Entities
+                .AsNoTracking()
+                .Where(x =>
+                    x.IncidentId == incidentId &&
+                    x.IsCurrent)
+                .Select(x => x.Status)
+                .FirstOrDefaultAsync();
+
+            if (currentStatus != null &&
+                !string.Equals(
+                    currentStatus,
+                    SlaStatus.Completed,
+                    StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(
+                    currentStatus,
+                    SlaStatus.Cancelled,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                await CompleteAsync(
+                    incidentId,
+                    triggeredByUserId,
+                    new CompleteSlaRequest
+                    {
+                        Note = NormalizeOptionalText(note) ??
+                            "Manager đã xác nhận kết quả xử lý sự vụ."
+                    });
+            }
+        }
+    }
+
     private async Task SendMonitoringNotificationsAsync(
-        FeedbackSla entity,
+        IncidentSla entity,
         SlaMonitoringCheckResult result)
     {
         /*
@@ -1729,7 +1842,7 @@ public class SlaService : ISlaService
     }
 
     private async Task SendInternalSlaNotificationAsync(
-        FeedbackSla entity,
+        IncidentSla entity,
         string eventType)
     {
         /*
@@ -1804,10 +1917,10 @@ public class SlaService : ISlaService
 
         var message =
             isWarning
-                ? $"Feedback \"{entity.Feedback?.Title ?? entity.FeedbackId.ToString()}\" " +
+                ? $"Sự vụ \"{entity.Incident?.Title ?? entity.IncidentId.ToString()}\" " +
                   $"chỉ còn khoảng {Math.Clamp(_slaOptions.WarningThresholdPercent, 1, 99)}% " +
                   $"thời gian SLA {targetLabel}. Hạn: {deadlineDisplay}."
-                : $"Feedback \"{entity.Feedback?.Title ?? entity.FeedbackId.ToString()}\" " +
+                : $"Sự vụ \"{entity.Incident?.Title ?? entity.IncidentId.ToString()}\" " +
                   $"đã vi phạm thời hạn SLA {targetLabel}. Hạn: {deadlineDisplay}.";
 
         foreach (var userId in recipients.Distinct())
@@ -1819,7 +1932,7 @@ public class SlaService : ISlaService
                     title,
                     message,
                     NotificationType.TicketUpdated,
-                    $"/feedbacks/{entity.FeedbackId}");
+                    $"/incidents/{entity.IncidentId}");
             }
             catch (Exception ex)
             {
@@ -1829,24 +1942,24 @@ public class SlaService : ISlaService
                  */
                 _logger.LogError(
                     ex,
-                    "Không thể gửi SLA notification {EventType} đến user {UserId} cho feedback {FeedbackId}.",
+                    "Không thể gửi SLA notification {EventType} đến user {UserId} cho sự vụ {IncidentId}.",
                     eventType,
                     userId,
-                    entity.FeedbackId);
+                    entity.IncidentId);
             }
         }
     }
 
     private async Task SendSlaRealtimeSafeAsync(
-        Guid feedbackId,
-        long feedbackSlaId,
+        Guid incidentId,
+        long incidentSlaId,
         string eventType)
     {
         try
         {
             await _slaRealtimeSender.SendSlaUpdatedAsync(
-                feedbackId,
-                feedbackSlaId,
+                incidentId,
+                incidentSlaId,
                 eventType);
         }
         catch (Exception ex)
@@ -1858,60 +1971,60 @@ public class SlaService : ISlaService
             _logger.LogError(
                 ex,
                 "Không thể gửi SignalR SLA event {EventType}. " +
-                "FeedbackId: {FeedbackId}, FeedbackSlaId: {FeedbackSlaId}.",
+                "IncidentId: {IncidentId}, IncidentSlaId: {IncidentSlaId}.",
                 eventType,
-                feedbackId,
-                feedbackSlaId);
+                incidentId,
+                incidentSlaId);
         }
     }
 
     private async Task SendRealtimeMonitoringEventsAsync(
-        FeedbackSla entity,
+        IncidentSla entity,
         SlaMonitoringCheckResult result)
     {
         if (result.ResponseWarningCreated)
         {
             await SendSlaRealtimeSafeAsync(
-                entity.FeedbackId,
-                entity.FeedbackSlaId,
+                entity.IncidentId,
+                entity.IncidentSlaId,
                 SlaEventType.ResponseWarning);
         }
 
         if (result.ResolutionWarningCreated)
         {
             await SendSlaRealtimeSafeAsync(
-                entity.FeedbackId,
-                entity.FeedbackSlaId,
+                entity.IncidentId,
+                entity.IncidentSlaId,
                 SlaEventType.ResolutionWarning);
         }
 
         if (result.ResponseJustBreached)
         {
             await SendSlaRealtimeSafeAsync(
-                entity.FeedbackId,
-                entity.FeedbackSlaId,
+                entity.IncidentId,
+                entity.IncidentSlaId,
                 SlaEventType.ResponseBreached);
         }
 
         if (result.ResolutionJustBreached)
         {
             await SendSlaRealtimeSafeAsync(
-                entity.FeedbackId,
-                entity.FeedbackSlaId,
+                entity.IncidentId,
+                entity.IncidentSlaId,
                 SlaEventType.ResolutionBreached);
         }
     }
 
     private async Task<TimeSpan>
         GetCompletedPausedDurationAsync(
-            long feedbackSlaId)
+            long incidentSlaId)
     {
         var pauseItems = await _unitOfWork
             .GetRepository<SlaPauseHistory>()
             .Entities
             .AsNoTracking()
             .Where(x =>
-                x.FeedbackSlaId == feedbackSlaId &&
+                x.IncidentSlaId == incidentSlaId &&
                 x.ResumedAt.HasValue)
             .Select(x => new
             {
@@ -1976,7 +2089,7 @@ public class SlaService : ISlaService
     }
 
     private async Task<bool> HasSlaEventAsync(
-        long feedbackSlaId,
+        long incidentSlaId,
         string eventType)
     {
         return await _unitOfWork
@@ -1984,30 +2097,28 @@ public class SlaService : ISlaService
             .Entities
             .AsNoTracking()
             .AnyAsync(x =>
-                x.FeedbackSlaId == feedbackSlaId &&
+                x.IncidentSlaId == incidentSlaId &&
                 x.EventType == eventType);
     }
 
     private async Task SendWarningEmailToProviderAsync(
-        FeedbackSla entity,
+        IncidentSla entity,
         string warningType)
     {
-        if (entity.Feedback == null)
+        if (entity.Incident == null)
         {
             _logger.LogWarning(
-                "Không thể gửi SLA warning email vì chưa load feedback. SLA: {FeedbackSlaId}.",
-                entity.FeedbackSlaId);
+                "Không thể gửi SLA warning email vì chưa load sự vụ. SLA: {IncidentSlaId}.",
+                entity.IncidentSlaId);
 
             return;
         }
 
         /*
          * FeedbackProviderReport mới nhất được xem là assignment
-         * provider hiện tại của feedback.
+         * provider hiện tại của sự vụ.
          */
-        var providerReport = entity.Feedback.IncidentReportLinks
-            .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
-            .SelectMany(link => link.Incident.ProviderAssignments)
+        var providerReport = entity.Incident.ProviderAssignments
             .Where(x =>
                 x.Coordinator != null &&
                 x.Coordinator.IsActive)
@@ -2018,8 +2129,8 @@ public class SlaService : ISlaService
         if (providerReport == null)
         {
             _logger.LogWarning(
-                "Feedback {FeedbackId} chưa được gán cho provider coordinator.",
-                entity.FeedbackId);
+                "Sự vụ {IncidentId} chưa được gán cho provider coordinator.",
+                entity.IncidentId);
 
             return;
         }
@@ -2031,9 +2142,9 @@ public class SlaService : ISlaService
                 coordinator.Email))
         {
             _logger.LogWarning(
-                "Provider coordinator {CoordinatorId} của feedback {FeedbackId} chưa có email.",
+                "Provider coordinator {CoordinatorId} của feedback {IncidentId} chưa có email.",
                 coordinator.CoordinatorId,
-                entity.FeedbackId);
+                entity.IncidentId);
 
             return;
         }
@@ -2065,14 +2176,14 @@ public class SlaService : ISlaService
                 providerName:
                     WebUtility.HtmlEncode(
                         coordinator.ProviderName),
-                feedbackId:
-                    entity.FeedbackId.ToString(),
-                feedbackTitle:
+                incidentId:
+                    entity.IncidentId.ToString(),
+                incidentTitle:
                     WebUtility.HtmlEncode(
-                        entity.Feedback.Title),
+                        entity.Incident.Title),
                 locationText:
                     WebUtility.HtmlEncode(
-                        entity.Feedback.LocationText),
+                        entity.Incident.LocationText),
                 priority:
                     WebUtility.HtmlEncode(
                         entity.Priority),
@@ -2106,10 +2217,10 @@ public class SlaService : ISlaService
                 });
 
             _logger.LogInformation(
-                "Đã gửi {WarningType} email đến coordinator {CoordinatorId} cho feedback {FeedbackId}.",
+                "Đã gửi {WarningType} email đến coordinator {CoordinatorId} cho feedback {IncidentId}.",
                 warningType,
                 coordinator.CoordinatorId,
-                entity.FeedbackId);
+                entity.IncidentId);
         }
         catch (Exception ex)
         {
@@ -2118,16 +2229,16 @@ public class SlaService : ISlaService
              */
             _logger.LogError(
                 ex,
-                "Không thể gửi {WarningType} email đến coordinator {CoordinatorId}, email {Email}, feedback {FeedbackId}.",
+                "Không thể gửi {WarningType} email đến coordinator {CoordinatorId}, email {Email}, feedback {IncidentId}.",
                 warningType,
                 coordinator.CoordinatorId,
                 coordinator.Email,
-                entity.FeedbackId);
+                entity.IncidentId);
         }
     }
 
     private async Task SendBreachNotificationsSafeAsync(
-        FeedbackSla entity,
+        IncidentSla entity,
         bool responseJustBreached,
         bool resolutionJustBreached)
     {
@@ -2137,22 +2248,20 @@ public class SlaService : ISlaService
             return;
         }
 
-        if (entity.Feedback == null)
+        if (entity.Incident == null)
         {
             _logger.LogWarning(
-                "Không thể gửi email vi phạm SLA vì chưa load feedback. SLA: {FeedbackSlaId}.",
-                entity.FeedbackSlaId);
+                "Không thể gửi email vi phạm SLA vì chưa load sự vụ. SLA: {IncidentSlaId}.",
+                entity.IncidentSlaId);
 
             return;
         }
 
         /*
          * FeedbackProviderReport mới nhất được xem là assignment
-         * provider hiện tại của feedback.
+         * provider hiện tại của sự vụ.
          */
-        var providerReport = entity.Feedback.IncidentReportLinks
-            .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
-            .SelectMany(link => link.Incident.ProviderAssignments)
+        var providerReport = entity.Incident.ProviderAssignments
             .Where(x =>
                 x.Coordinator != null &&
                 x.Coordinator.IsActive)
@@ -2163,8 +2272,8 @@ public class SlaService : ISlaService
         if (providerReport == null)
         {
             _logger.LogWarning(
-                "Feedback {FeedbackId} chưa có provider coordinator để nhận email vi phạm SLA.",
-                entity.FeedbackId);
+                "Sự vụ {IncidentId} chưa có provider coordinator để nhận email vi phạm SLA.",
+                entity.IncidentId);
 
             return;
         }
@@ -2174,9 +2283,9 @@ public class SlaService : ISlaService
         if (string.IsNullOrWhiteSpace(coordinator.Email))
         {
             _logger.LogWarning(
-                "Provider coordinator {CoordinatorId} của feedback {FeedbackId} chưa có email.",
+                "Provider coordinator {CoordinatorId} của feedback {IncidentId} chưa có email.",
                 coordinator.CoordinatorId,
-                entity.FeedbackId);
+                entity.IncidentId);
 
             return;
         }
@@ -2199,7 +2308,7 @@ public class SlaService : ISlaService
     }
 
     private async Task SendBreachEmailToProviderAsync(
-        FeedbackSla entity,
+        IncidentSla entity,
         FeedbackProviderReport providerReport,
         string breachType)
     {
@@ -2236,14 +2345,14 @@ public class SlaService : ISlaService
                 providerName:
                     WebUtility.HtmlEncode(
                         coordinator.ProviderName),
-                feedbackId:
-                    entity.FeedbackId.ToString(),
-                feedbackTitle:
+                incidentId:
+                    entity.IncidentId.ToString(),
+                incidentTitle:
                     WebUtility.HtmlEncode(
-                        entity.Feedback.Title),
+                        entity.Incident.Title),
                 locationText:
                     WebUtility.HtmlEncode(
-                        entity.Feedback.LocationText),
+                        entity.Incident.LocationText),
                 priority:
                     WebUtility.HtmlEncode(
                         entity.Priority),
@@ -2275,10 +2384,10 @@ public class SlaService : ISlaService
                 });
 
             _logger.LogInformation(
-                "Đã gửi email {BreachType} đến coordinator {CoordinatorId} cho feedback {FeedbackId}.",
+                "Đã gửi email {BreachType} đến coordinator {CoordinatorId} cho feedback {IncidentId}.",
                 breachType,
                 coordinator.CoordinatorId,
-                entity.FeedbackId);
+                entity.IncidentId);
         }
         catch (Exception ex)
         {
@@ -2287,19 +2396,19 @@ public class SlaService : ISlaService
              */
             _logger.LogError(
                 ex,
-                "Không thể gửi email {BreachType} đến coordinator {CoordinatorId}, email {Email}, feedback {FeedbackId}.",
+                "Không thể gửi email {BreachType} đến coordinator {CoordinatorId}, email {Email}, feedback {IncidentId}.",
                 breachType,
                 coordinator.CoordinatorId,
                 coordinator.Email,
-                entity.FeedbackId);
+                entity.IncidentId);
         }
     }
 
     private static string BuildSlaBreachEmailHtml(
         string coordinatorName,
         string providerName,
-        string feedbackId,
-        string feedbackTitle,
+        string incidentId,
+        string incidentTitle,
         string locationText,
         string priority,
         string reportStatus,
@@ -2417,10 +2526,10 @@ public class SlaService : ISlaService
                                        margin-bottom:24px;">
                                 <tr>
                                     <td style="{{labelCellStyle}}">
-                                        Mã phản ánh
+                                        Mã sự vụ
                                     </td>
                                     <td style="{{valueCellStyle}}">
-                                        {{feedbackId}}
+                                        {{incidentId}}
                                     </td>
                                 </tr>
                                 <tr>
@@ -2428,7 +2537,7 @@ public class SlaService : ISlaService
                                         Tiêu đề
                                     </td>
                                     <td style="{{valueCellStyle}}">
-                                        {{feedbackTitle}}
+                                        {{incidentTitle}}
                                     </td>
                                 </tr>
                                 <tr>
@@ -2526,8 +2635,8 @@ public class SlaService : ISlaService
     private static string BuildSlaWarningEmailHtml(
         string coordinatorName,
         string providerName,
-        string feedbackId,
-        string feedbackTitle,
+        string incidentId,
+        string incidentTitle,
         string locationText,
         string priority,
         string reportStatus,
@@ -2646,10 +2755,10 @@ public class SlaService : ISlaService
                                        margin-bottom:24px;">
                                 <tr>
                                     <td style="{{labelCellStyle}}">
-                                        Mã phản ánh
+                                        Mã sự vụ
                                     </td>
                                     <td style="{{valueCellStyle}}">
-                                        {{feedbackId}}
+                                        {{incidentId}}
                                     </td>
                                 </tr>
                                 <tr>
@@ -2657,7 +2766,7 @@ public class SlaService : ISlaService
                                         Tiêu đề
                                     </td>
                                     <td style="{{valueCellStyle}}">
-                                        {{feedbackTitle}}
+                                        {{incidentTitle}}
                                     </td>
                                 </tr>
                                 <tr>
@@ -2812,30 +2921,30 @@ public class SlaService : ISlaService
         return policy;
     }
 
-    private async Task<FeedbackSla>
-        GetCurrentEntityAsync(Guid feedbackId)
+    private async Task<IncidentSla>
+        GetCurrentEntityAsync(Guid incidentId)
     {
         var entity = await _unitOfWork
-            .GetRepository<FeedbackSla>()
+            .GetRepository<IncidentSla>()
             .Entities
             .FirstOrDefaultAsync(x =>
-                x.FeedbackId == feedbackId &&
+                x.IncidentId == incidentId &&
                 x.IsCurrent);
 
         if (entity == null)
         {
             throw new KeyNotFoundException(
-                "Feedback chưa có SLA hiện tại.");
+                "Sự vụ chưa có SLA hiện tại.");
         }
 
         return entity;
     }
 
-    private async Task EnsureFeedbackReadAccessAsync(
-        Guid feedbackId,
+    private async Task EnsureIncidentReadAccessAsync(
+        Guid incidentId,
         Guid actorUserId)
     {
-        ValidateFeedbackId(feedbackId);
+        ValidateIncidentId(incidentId);
         ValidateUserId(actorUserId);
 
         var actorRole = await _unitOfWork
@@ -2850,30 +2959,36 @@ public class SlaService : ISlaService
 
         if (actorRole.ToUpperInvariant() == UserRole.SERVICEUSER)
         {
-            var isOwner = await _unitOfWork
-                .GetRepository<Feedback>()
+            /*
+             * Người dân chỉ được xem SLA của sự vụ mà họ có phản ánh
+             * đang được liên kết. Không dùng subscription vì người dân
+             * có thể theo dõi sự vụ do người khác gửi.
+             */
+            var isReporter = await _unitOfWork
+                .GetRepository<IncidentReportLink>()
                 .Entities
                 .AsNoTracking()
-                .AnyAsync(feedback =>
-                    feedback.FeedbackId == feedbackId &&
-                    feedback.UserId == actorUserId);
-            if (!isOwner)
+                .AnyAsync(link =>
+                    link.IncidentId == incidentId &&
+                    link.LinkStatus == IncidentLinkStatus.Active &&
+                    link.Feedback.UserId == actorUserId);
+            if (!isReporter)
             {
                 throw new ForbiddenAccessException(
-                    "Bạn không có quyền xem SLA của phản ánh này.");
+                    "Bạn không có quyền xem SLA của sự vụ này.");
             }
 
             return;
         }
 
-        await ManagementAccessRules.EnsureFeedbackReadAccessAsync(
+        await ManagementAccessRules.EnsureIncidentReadAccessAsync(
             _unitOfWork,
-            feedbackId,
+            incidentId,
             actorUserId);
     }
 
     private async Task AddEventAsync(
-        long feedbackSlaId,
+        long incidentSlaId,
         string eventType,
         string? oldStatus,
         string? newStatus,
@@ -2883,7 +2998,7 @@ public class SlaService : ISlaService
     {
         var entity = new SlaEvent
         {
-            FeedbackSlaId = feedbackSlaId,
+            IncidentSlaId = incidentSlaId,
             EventType = eventType,
             OldStatus = oldStatus,
             NewStatus = newStatus,
@@ -2916,8 +3031,8 @@ public class SlaService : ISlaService
         }
     }
 
-    private static FeedbackSlaDto MapToDto(
-        FeedbackSla entity)
+    private static IncidentSlaDto MapToDto(
+        IncidentSla entity)
     {
         var now = SlaDateTimeHelper.UtcNow;
 
@@ -2946,16 +3061,16 @@ public class SlaService : ISlaService
                     2);
         }
 
-        return new FeedbackSlaDto
+        return new IncidentSlaDto
         {
-            FeedbackSlaId =
-                entity.FeedbackSlaId,
+            IncidentSlaId =
+                entity.IncidentSlaId,
 
-            FeedbackId =
-                entity.FeedbackId,
+            IncidentId =
+                entity.IncidentId,
 
-            FeedbackTitle =
-                entity.Feedback?.Title,
+            IncidentTitle =
+                entity.Incident?.Title,
 
             SlaPolicyId =
                 entity.SlaPolicyId,
@@ -3053,8 +3168,8 @@ public class SlaService : ISlaService
                     SlaEventId =
                         x.SlaEventId,
 
-                    FeedbackSlaId =
-                        x.FeedbackSlaId,
+                    IncidentSlaId =
+                        x.IncidentSlaId,
 
                     EventType =
                         x.EventType,
@@ -3093,8 +3208,8 @@ public class SlaService : ISlaService
                             SlaPauseHistoryId =
                                 x.SlaPauseHistoryId,
 
-                            FeedbackSlaId =
-                                x.FeedbackSlaId,
+                            IncidentSlaId =
+                                x.IncidentSlaId,
 
                             ReasonCode =
                                 x.ReasonCode,
@@ -3137,23 +3252,23 @@ public class SlaService : ISlaService
         };
     }
 
-    private static void ValidateFeedbackId(
-            Guid feedbackId)
+    private static void ValidateIncidentId(
+            Guid incidentId)
     {
-        if (feedbackId == Guid.Empty)
+        if (incidentId == Guid.Empty)
         {
             throw new ArgumentException(
-                "Feedback ID không hợp lệ.");
+                "Incident ID không hợp lệ.");
         }
     }
 
-    private static void ValidateFeedbackSlaId(
-        long feedbackSlaId)
+    private static void ValidateIncidentSlaId(
+        long incidentSlaId)
     {
-        if (feedbackSlaId <= 0)
+        if (incidentSlaId <= 0)
         {
             throw new ArgumentException(
-                "Feedback SLA ID không hợp lệ.");
+                "Incident SLA ID không hợp lệ.");
         }
     }
 

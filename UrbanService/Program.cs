@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -72,8 +72,8 @@ builder.Services.AddScoped<
     ISlaDashboardService,
     SlaDashboardService>();
 builder.Services.AddScoped<
-    IFeedbackDashboardService,
-    FeedbackDashboardService>();
+    IIncidentDashboardService,
+    IncidentDashboardService>();
 
 builder.Services.AddScoped<
     ISlaPolicyService,

@@ -3,7 +3,7 @@
 public interface ISlaRealtimeSender
 {
     Task SendSlaUpdatedAsync(
-        Guid feedbackId,
-        long feedbackSlaId,
+        Guid incidentId,
+        long incidentSlaId,
         string eventType);
 }

@@ -1,6 +1,6 @@
-﻿namespace UrbanService.BLL.DTOs.Feedback.Dashboard;
+﻿namespace UrbanService.BLL.DTOs.Incident.Dashboard;
 
-public class FeedbackPriorityDistributionDto
+public class IncidentPriorityDistributionDto
 {
     public string Priority { get; set; } = null!;
 

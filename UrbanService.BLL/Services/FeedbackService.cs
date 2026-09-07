@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
@@ -29,7 +29,6 @@ public class FeedbackService : IFeedbackService
     private readonly IUnitOfWork _uow;
     private readonly INotificationService _notificationService;
     private readonly IAiFeedbackReviewQueue _aiFeedbackReviewQueue;
-    private readonly ISlaService _slaService;
     private readonly IIncidentService _incidentService;
 
 
@@ -38,13 +37,11 @@ public class FeedbackService : IFeedbackService
     INotificationService notificationService,
     IAiFeedbackReviewQueue aiFeedbackReviewQueue,
     IAiFeedbackDuplicateService aiFeedbackDuplicateService,
-    ISlaService slaService,
     IIncidentService incidentService)
     {
         _uow = uow;
         _notificationService = notificationService;
         _aiFeedbackReviewQueue = aiFeedbackReviewQueue;
-        _slaService = slaService;
         _incidentService = incidentService;
     }
 
@@ -908,32 +905,13 @@ public class FeedbackService : IFeedbackService
                 feedback.Priority,
                 StringComparison.OrdinalIgnoreCase);
 
-        if (categoryChanged || priorityChanged)
-        {
-            var hasCurrentSla = await _uow
-                .GetRepository<FeedbackSla>()
-                .Entities
-                .AsNoTracking()
-                .AnyAsync(x =>
-                    x.FeedbackId == feedback.FeedbackId &&
-                    x.IsCurrent);
-
-            if (hasCurrentSla)
-            {
-                await _slaService.RecalculateAsync(
-                    feedback.FeedbackId,
-                    currentUserId,
-                    new RecalculateSlaRequest
-                    {
-                        CategoryId = feedback.CategoryId,
-                        Priority = feedback.Priority,
-                        Note =
-                            $"Staff cập nhật SLA. " +
-                            $"Category: {oldCategoryId} -> {feedback.CategoryId}. " +
-                            $"Priority: {oldPriority} -> {feedback.Priority}."
-                    });
-            }
-        }
+        /*
+         * SLA đã chuyển sang Incident nên category/priority của Report
+         * không còn tự tính lại deadline. Việc recalculation được thực hiện
+         * khi Incident đổi category/priority trong IncidentService.
+         */
+        _ = categoryChanged;
+        _ = priorityChanged;
 
 
 
@@ -1024,29 +1002,11 @@ public class FeedbackService : IFeedbackService
         if (statusHistory != null &&
             oldStatus != null)
         {
-            await SynchronizeSlaByStatusAsync(
-                feedback.FeedbackId,
-                oldStatus,
-                feedback.Status,
-                currentUserId,
-                statusHistory.Note);
-
-
-
             await SendStatusUpdatedNotificationAsync(
                 feedback,
                 statusHistory);
         }
 
-        if (projectedStatusHistory != null)
-        {
-            await SynchronizeSlaByStatusAsync(
-                feedback.FeedbackId,
-                projectedStatusHistory.OldStatus ?? oldStatus ?? feedback.Status,
-                projectedStatusHistory.NewStatus,
-                currentUserId,
-                projectedStatusHistory.Note);
-        }
 
 
 
@@ -1193,13 +1153,6 @@ public class FeedbackService : IFeedbackService
                 },
                 currentUserId);
 
-            await SynchronizeSlaByStatusAsync(
-                feedbackId,
-                projectedHistory.OldStatus ?? feedback.Status,
-                projectedHistory.NewStatus,
-                currentUserId,
-                projectedHistory.Note);
-
             return projectedHistory;
         }
 
@@ -1221,13 +1174,6 @@ public class FeedbackService : IFeedbackService
         feedback.FeedbackStatusHistories.Add(history);
 
         await _uow.SaveAsync();
-
-        await SynchronizeSlaByStatusAsync(
-            feedback.FeedbackId,
-            oldStatus,
-            newStatus,
-            currentUserId,
-            history.Note);
 
         await SendStatusUpdatedNotificationAsync(
             feedback,
@@ -2189,13 +2135,6 @@ public class FeedbackService : IFeedbackService
             managerUserId,
             "Manager đã xác nhận phản ánh");
 
-        // SLA legacy vẫn bắt đầu theo Feedback cho tới Slice SLA cutover.
-        await SynchronizeSlaByStatusAsync(
-            feedback.FeedbackId,
-            history.OldStatus ?? feedback.Status,
-            history.NewStatus,
-            managerUserId,
-            history.Note);
     }
 
     public async Task<IncidentProviderAssignmentDto> AssignIncidentProviderAsync(
@@ -3014,15 +2953,6 @@ public class FeedbackService : IFeedbackService
             },
             managerId);
 
-        // Approved là thời điểm manager xác nhận việc xử lý đã hoàn tất.
-        // SLA resolution được hoàn thành tại đây, không chờ citizen review.
-        await SynchronizeSlaByStatusAsync(
-            feedback.FeedbackId,
-            oldStatus,
-            feedback.Status,
-            managerId,
-            note);
-
     }
 
 
@@ -3206,122 +3136,5 @@ public class FeedbackService : IFeedbackService
             .FirstAsync(r => r.ReviewId == review.ReviewId);
 
         return MapResolutionReview(saved);
-    }
-
-    private async Task SynchronizeSlaByStatusAsync(
-    Guid feedbackId,
-    string oldStatus,
-    string newStatus,
-    Guid triggeredByUserId,
-    string? note)
-    {
-        if (string.Equals(
-                oldStatus,
-                newStatus,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        // Verified: bắt đầu SLA.
-        if (string.Equals(
-                newStatus,
-                FeedbackStatus.Verified,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            var hasCurrentSla = await _uow
-                .GetRepository<FeedbackSla>()
-                .Entities
-                .AsNoTracking()
-                .AnyAsync(x =>
-                    x.FeedbackId == feedbackId &&
-                    x.IsCurrent);
-
-            if (!hasCurrentSla)
-            {
-                await _slaService.StartAsync(
-                    feedbackId,
-                    triggeredByUserId);
-            }
-
-            return;
-        }
-
-        // InProgress: phản hồi đầu tiên được ghi nhận.
-        if (string.Equals(
-                newStatus,
-                FeedbackStatus.InProgress,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            var currentSla = await _uow
-                .GetRepository<FeedbackSla>()
-                .Entities
-                .AsNoTracking()
-                .Where(x =>
-                    x.FeedbackId == feedbackId &&
-                    x.IsCurrent)
-                .Select(x => new
-                {
-                    x.RespondedAt,
-                    x.Status
-                })
-                .FirstOrDefaultAsync();
-
-            if (currentSla != null &&
-                !currentSla.RespondedAt.HasValue &&
-                string.Equals(
-                    currentSla.Status,
-                    SlaStatus.Running,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                await _slaService.MarkRespondedAsync(
-                    feedbackId,
-                    triggeredByUserId,
-                    NormalizeOptional(note) ??
-                    "Feedback bắt đầu được xử lý.");
-            }
-
-            return;
-        }
-
-        // Approved: manager xác nhận kết quả xử lý, hoàn thành SLA.
-        if (string.Equals(
-                newStatus,
-                FeedbackStatus.Approved,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            var currentSla = await _uow
-                .GetRepository<FeedbackSla>()
-                .Entities
-                .AsNoTracking()
-                .Where(x =>
-                    x.FeedbackId == feedbackId &&
-                    x.IsCurrent)
-                .Select(x => new
-                {
-                    x.Status
-                })
-                .FirstOrDefaultAsync();
-
-            if (currentSla != null &&
-                !string.Equals(
-                    currentSla.Status,
-                    SlaStatus.Completed,
-                    StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(
-                    currentSla.Status,
-                    SlaStatus.Cancelled,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                await _slaService.CompleteAsync(
-                    feedbackId,
-                    triggeredByUserId,
-                    new CompleteSlaRequest
-                    {
-                        Note = NormalizeOptional(note) ??
-                            "Manager đã xác nhận kết quả xử lý feedback."
-                    });
-            }
-        }
     }
 }

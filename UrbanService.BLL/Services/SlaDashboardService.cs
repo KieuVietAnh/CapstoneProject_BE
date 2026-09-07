@@ -45,7 +45,7 @@ public class SlaDashboardService : ISlaDashboardService
             _unitOfWork,
             actorUserId);
         var slaQuery = ApplySlaReadScope(
-            _unitOfWork.GetRepository<FeedbackSla>().Entities.AsNoTracking(),
+            _unitOfWork.GetRepository<IncidentSla>().Entities.AsNoTracking(),
             actor);
 
         var total = await slaQuery.CountAsync();
@@ -64,7 +64,7 @@ public class SlaDashboardService : ISlaDashboardService
          * Đếm số SLA hiện tại đang chạy đã phát sinh warning.
          *
          * Một SLA có thể có cả ResponseWarning và ResolutionWarning,
-         * vì vậy phải Distinct theo FeedbackSlaId.
+         * vì vậy phải Distinct theo IncidentSlaId.
          */
         var warning = await ApplySlaEventReadScope(
                 _unitOfWork.GetRepository<SlaEvent>().Entities.AsNoTracking(),
@@ -75,10 +75,10 @@ public class SlaDashboardService : ISlaDashboardService
                     x.EventType == SlaEventType.ResolutionWarning
                 )
                 &&
-                x.FeedbackSla.IsCurrent
+                x.IncidentSla.IsCurrent
                 &&
-                x.FeedbackSla.Status == SlaStatus.Running)
-            .Select(x => x.FeedbackSlaId)
+                x.IncidentSla.Status == SlaStatus.Running)
+            .Select(x => x.IncidentSlaId)
             .Distinct()
             .CountAsync();
 
@@ -221,7 +221,7 @@ public class SlaDashboardService : ISlaDashboardService
             ManagementActorScope actor)
     {
         var data = await ApplySlaReadScope(
-                _unitOfWork.GetRepository<FeedbackSla>().Entities.AsNoTracking(),
+                _unitOfWork.GetRepository<IncidentSla>().Entities.AsNoTracking(),
                 actor)
             .Where(x =>
                 x.CreatedAt >= from &&
@@ -261,7 +261,7 @@ public class SlaDashboardService : ISlaDashboardService
             _unitOfWork,
             actorUserId);
         var data = await ApplySlaReadScope(
-                _unitOfWork.GetRepository<FeedbackSla>().Entities.AsNoTracking(),
+                _unitOfWork.GetRepository<IncidentSla>().Entities.AsNoTracking(),
                 actor)
             .Where(x =>
                 x.Status == SlaStatus.Completed)
@@ -442,10 +442,10 @@ public class SlaDashboardService : ISlaDashboardService
                 99);
 
         var slas = await ApplySlaReadScope(
-                _unitOfWork.GetRepository<FeedbackSla>().Entities.AsNoTracking(),
+                _unitOfWork.GetRepository<IncidentSla>().Entities.AsNoTracking(),
                 actor)
             .Include(x =>
-                x.Feedback)
+                x.Incident)
             .Where(x =>
                 x.IsCurrent
                 &&
@@ -509,14 +509,14 @@ public class SlaDashboardService : ISlaDashboardService
             result.Add(
                 new SlaNearBreachDto
                 {
-                    FeedbackId =
-                        sla.FeedbackId,
+                    IncidentId =
+                        sla.IncidentId,
 
-                    FeedbackSlaId =
-                        sla.FeedbackSlaId,
+                    IncidentSlaId =
+                        sla.IncidentSlaId,
 
                     Title =
-                        sla.Feedback.Title,
+                        sla.Incident.Title,
 
                     Priority =
                         sla.Priority,
@@ -578,21 +578,21 @@ public class SlaDashboardService : ISlaDashboardService
             .Select(x =>
                 new
                 {
-                    x.FeedbackSlaId,
+                    x.IncidentSlaId,
                     x.EventType,
                     x.CreatedAt,
 
-                    FeedbackId =
-                        x.FeedbackSla.FeedbackId,
+                    IncidentId =
+                        x.IncidentSla.IncidentId,
 
                     Title =
-                        x.FeedbackSla.Feedback.Title,
+                        x.IncidentSla.Incident.Title,
 
                     ResponseDueAt =
-                        x.FeedbackSla.ResponseDueAt,
+                        x.IncidentSla.ResponseDueAt,
 
                     ResolutionDueAt =
-                        x.FeedbackSla.ResolutionDueAt
+                        x.IncidentSla.ResolutionDueAt
                 })
             .ToListAsync();
 
@@ -615,11 +615,11 @@ public class SlaDashboardService : ISlaDashboardService
 
                 return new RecentSlaBreachDto
                 {
-                    FeedbackId =
-                        x.FeedbackId,
+                    IncidentId =
+                        x.IncidentId,
 
-                    FeedbackSlaId =
-                        x.FeedbackSlaId,
+                    IncidentSlaId =
+                        x.IncidentSlaId,
 
                     Title =
                         x.Title,
@@ -640,23 +640,23 @@ public class SlaDashboardService : ISlaDashboardService
             .ToList();
     }
 
-    private static IQueryable<FeedbackSla> ApplySlaReadScope(
-        IQueryable<FeedbackSla> slas,
+    /*
+     * SLA thuộc về Incident nên scope đọc bám thẳng vào Incident,
+     * không còn phải đi vòng qua Feedback và IncidentReportLink.
+     */
+    private static IQueryable<IncidentSla> ApplySlaReadScope(
+        IQueryable<IncidentSla> slas,
         ManagementActorScope actor)
     {
         return actor.RoleName switch
         {
             UserRole.SYSTEMADMIN => slas,
             UserRole.SYSTEMSTAFF => slas.Where(sla =>
-                sla.Feedback.IncidentReportLinks.Any(link =>
-                    link.LinkStatus == IncidentLinkStatus.Active &&
-                    link.Incident.MergedIntoIncidentId == null &&
-                    link.Incident.AssignedStaffUserId == actor.UserId)),
+                sla.Incident.MergedIntoIncidentId == null &&
+                sla.Incident.AssignedStaffUserId == actor.UserId),
             UserRole.INTERACTIONMANAGER => slas.Where(sla =>
-                sla.Feedback.IncidentReportLinks.Any(link =>
-                    link.LinkStatus == IncidentLinkStatus.Active &&
-                    link.Incident.MergedIntoIncidentId == null &&
-                    actor.ManagerAreaIds.Contains(link.Incident.AreaId))),
+                sla.Incident.MergedIntoIncidentId == null &&
+                actor.ManagerAreaIds.Contains(sla.Incident.AreaId)),
             _ => slas.Where(_ => false)
         };
     }
@@ -669,15 +669,11 @@ public class SlaDashboardService : ISlaDashboardService
         {
             UserRole.SYSTEMADMIN => events,
             UserRole.SYSTEMSTAFF => events.Where(slaEvent =>
-                slaEvent.FeedbackSla.Feedback.IncidentReportLinks.Any(link =>
-                    link.LinkStatus == IncidentLinkStatus.Active &&
-                    link.Incident.MergedIntoIncidentId == null &&
-                    link.Incident.AssignedStaffUserId == actor.UserId)),
+                slaEvent.IncidentSla.Incident.MergedIntoIncidentId == null &&
+                slaEvent.IncidentSla.Incident.AssignedStaffUserId == actor.UserId),
             UserRole.INTERACTIONMANAGER => events.Where(slaEvent =>
-                slaEvent.FeedbackSla.Feedback.IncidentReportLinks.Any(link =>
-                    link.LinkStatus == IncidentLinkStatus.Active &&
-                    link.Incident.MergedIntoIncidentId == null &&
-                    actor.ManagerAreaIds.Contains(link.Incident.AreaId))),
+                slaEvent.IncidentSla.Incident.MergedIntoIncidentId == null &&
+                actor.ManagerAreaIds.Contains(slaEvent.IncidentSla.Incident.AreaId)),
             _ => events.Where(_ => false)
         };
     }

@@ -1,12 +1,12 @@
 ﻿namespace UrbanService.BLL.DTOs.SLA;
 
-public class FeedbackSlaDto
+public class IncidentSlaDto
 {
-    public long FeedbackSlaId { get; set; }
+    public long IncidentSlaId { get; set; }
 
-    public Guid FeedbackId { get; set; }
+    public Guid IncidentId { get; set; }
 
-    public string? FeedbackTitle { get; set; }
+    public string? IncidentTitle { get; set; }
 
     public int SlaPolicyId { get; set; }
 

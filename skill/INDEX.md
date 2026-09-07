@@ -57,7 +57,11 @@ Nguồn handoff ngắn gọn cho AI agent làm việc với UrbanService Backend
 - `Submitted` và `AiReviewed` là trạng thái nội bộ; master có feedback con phải giữ trạng thái công khai hợp lệ.
 - Schema `Incident` độc lập đã được apply vào database cấu hình ngày 2026-08-23.
 - Luồng tạo Report đã dual-write sang Incident; API staff list/detail/link/unlink đã có.
-- Workflow status/SLA/assignment vẫn dùng `Feedback`; `IsMasterTicket`/`ParentTicketId`
+- SLA đã cutover sang `Incident`: entity `IncidentSla`, bảng `incident_slas`, route
+  `/api/slas/incident/{incidentId}/*`, dashboard SLA scope theo Incident.
+- Dashboard vận hành là `IncidentDashboardService`, route `/api/incidents/dashboard/*`;
+  chỉ số xử lý đếm Incident, chỉ số tiếp nhận vẫn đếm Report.
+- Workflow status/assignment vẫn dùng `Feedback`; `IsMasterTicket`/`ParentTicketId`
   tiếp tục được giữ trong phase tương thích.
 
 ## Tài liệu

@@ -3,11 +3,11 @@ using System.Collections.Generic;
 
 namespace UrbanService.DAL.Entities;
 
-public partial class FeedbackSla
+public partial class IncidentSla
 {
-    public long FeedbackSlaId { get; set; }
+    public long IncidentSlaId { get; set; }
 
-    public Guid FeedbackId { get; set; }
+    public Guid IncidentId { get; set; }
 
     public int SlaPolicyId { get; set; }
 
@@ -27,7 +27,7 @@ public partial class FeedbackSla
     public string Priority { get; set; } = null!;
 
     /// <summary>
-    /// Thời điểm staff xác nhận feedback và SLA bắt đầu chạy.
+    /// Thời điểm sự vụ được xác minh và SLA bắt đầu chạy.
     /// </summary>
     public DateTime StartedAt { get; set; }
 
@@ -47,7 +47,7 @@ public partial class FeedbackSla
     public DateTime? RespondedAt { get; set; }
 
     /// <summary>
-    /// Thời điểm feedback được hoàn thành.
+    /// Thời điểm sự vụ được hoàn thành.
     /// </summary>
     public DateTime? ResolvedAt { get; set; }
 
@@ -76,7 +76,7 @@ public partial class FeedbackSla
     public bool IsResolutionBreached { get; set; }
 
     /// <summary>
-    /// Đánh dấu đây là SLA hiện tại của feedback.
+    /// Đánh dấu đây là SLA hiện tại của sự vụ.
     /// Các SLA cũ có IsCurrent = false.
     /// </summary>
     public bool IsCurrent { get; set; }
@@ -89,7 +89,7 @@ public partial class FeedbackSla
 
     public DateTime? UpdatedAt { get; set; }
 
-    public virtual Feedback Feedback { get; set; } = null!;
+    public virtual Incident Incident { get; set; } = null!;
 
     public virtual SlaPolicy SlaPolicy { get; set; } = null!;
 

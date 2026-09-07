@@ -1,5 +1,9 @@
-﻿namespace UrbanService.BLL.DTOs.Feedback.Dashboard;
+﻿namespace UrbanService.BLL.DTOs.Incident.Dashboard;
 
+/// <summary>
+/// Phản ánh người dân vừa gửi. DTO này cố ý giữ đơn vị Report, không phải
+/// Incident, vì đây là widget tiếp nhận của dashboard.
+/// </summary>
 public class RecentFeedbackDto
 {
     public Guid FeedbackId { get; set; }

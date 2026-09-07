@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using UrbanService.BLL.Common;
@@ -45,14 +45,14 @@ public class AdjacentWorkflowRbacTests
             isMaster: true,
             status: FeedbackStatus.Assigned);
         context.Feedbacks.Add(feedback);
-        context.TrackActiveIncident(
+        var link = context.TrackActiveIncident(
             feedback,
             assignedStaffUserId: staff.UserId,
             incidentStatus: IncidentStatus.Assigned);
         var service = CreateSlaService(context);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.MarkRespondedAsync(feedback.FeedbackId, staff.UserId, null));
+            service.MarkRespondedAsync(link.IncidentId, staff.UserId, null));
     }
 
     [Fact]
@@ -65,14 +65,14 @@ public class AdjacentWorkflowRbacTests
             isMaster: true,
             status: FeedbackStatus.SubmittedForApproval);
         context.Feedbacks.Add(feedback);
-        context.TrackActiveIncident(
+        var link = context.TrackActiveIncident(
             feedback,
             incidentStatus: IncidentStatus.SubmittedForApproval);
         var service = CreateSlaService(context);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.CompleteAsync(
-                feedback.FeedbackId,
+                link.IncidentId,
                 context.ManagerUserId,
                 new CompleteSlaRequest()));
     }
@@ -93,24 +93,24 @@ public class AdjacentWorkflowRbacTests
             isMaster: true,
             status: FeedbackStatus.InProgress);
         context.Feedbacks.AddRange([assignedFeedback, unassignedFeedback]);
-        context.TrackActiveIncident(
+        var assignedLink = context.TrackActiveIncident(
             assignedFeedback,
             assignedStaffUserId: staff.UserId,
             incidentStatus: IncidentStatus.InProgress);
-        context.TrackActiveIncident(
+        var unassignedLink = context.TrackActiveIncident(
             unassignedFeedback,
             incidentStatus: IncidentStatus.InProgress);
 
-        var slas = new List<FeedbackSla>
+        var slas = new List<IncidentSla>
         {
-            CreateSla(assignedFeedback),
-            CreateSla(unassignedFeedback)
+            CreateSla(assignedLink.Incident),
+            CreateSla(unassignedLink.Incident)
         };
-        var slaRepository = Substitute.For<IGenericRepository<FeedbackSla>>();
+        var slaRepository = Substitute.For<IGenericRepository<IncidentSla>>();
         slaRepository.Entities.Returns(_ => slas.AsAsyncQueryable());
         var eventRepository = Substitute.For<IGenericRepository<SlaEvent>>();
         eventRepository.Entities.Returns(_ => Array.Empty<SlaEvent>().AsAsyncQueryable());
-        context.UnitOfWork.GetRepository<FeedbackSla>().Returns(slaRepository);
+        context.UnitOfWork.GetRepository<IncidentSla>().Returns(slaRepository);
         context.UnitOfWork.GetRepository<SlaEvent>().Returns(eventRepository);
         var service = new SlaDashboardService(
             context.UnitOfWork,
@@ -134,17 +134,20 @@ public class AdjacentWorkflowRbacTests
             status: FeedbackStatus.InProgress);
         feedback.UserId = serviceUser.UserId;
         context.Feedbacks.Add(feedback);
+        var link = context.TrackActiveIncident(
+            feedback,
+            incidentStatus: IncidentStatus.InProgress);
 
-        var sla = CreateSla(feedback);
-        var slaRepository = Substitute.For<IGenericRepository<FeedbackSla>>();
+        var sla = CreateSla(link.Incident);
+        var slaRepository = Substitute.For<IGenericRepository<IncidentSla>>();
         slaRepository.Entities.Returns(_ => new[] { sla }.AsAsyncQueryable());
         var eventRepository = Substitute.For<IGenericRepository<SlaEvent>>();
         eventRepository.Entities.Returns(_ => Array.Empty<SlaEvent>().AsAsyncQueryable());
-        context.UnitOfWork.GetRepository<FeedbackSla>().Returns(slaRepository);
+        context.UnitOfWork.GetRepository<IncidentSla>().Returns(slaRepository);
         context.UnitOfWork.GetRepository<SlaEvent>().Returns(eventRepository);
 
         var result = await CreateSlaService(context).GetTimelineAsync(
-            feedback.FeedbackId,
+            link.IncidentId,
             serviceUser.UserId);
 
         Assert.Empty(result);
@@ -221,13 +224,13 @@ public class AdjacentWorkflowRbacTests
             Substitute.For<ISlaRealtimeSender>());
     }
 
-    private static FeedbackSla CreateSla(Feedback feedback)
+    private static IncidentSla CreateSla(Incident incident)
     {
-        return new FeedbackSla
+        return new IncidentSla
         {
-            FeedbackSlaId = Random.Shared.NextInt64(1, long.MaxValue),
-            FeedbackId = feedback.FeedbackId,
-            Feedback = feedback,
+            IncidentSlaId = Random.Shared.NextInt64(1, long.MaxValue),
+            IncidentId = incident.IncidentId,
+            Incident = incident,
             Status = SlaStatus.Running,
             ResponseStatus = SlaTargetStatus.Pending,
             ResolutionStatus = SlaTargetStatus.Pending,

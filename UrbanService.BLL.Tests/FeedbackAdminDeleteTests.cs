@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -191,7 +191,6 @@ public class FeedbackAdminDeleteTests
             Substitute.For<INotificationService>(),
             Substitute.For<IAiFeedbackReviewQueue>(),
             Substitute.For<IAiFeedbackDuplicateService>(),
-            Substitute.For<ISlaService>(),
             Substitute.For<IIncidentService>());
     }
 

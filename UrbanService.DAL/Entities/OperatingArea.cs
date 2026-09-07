@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace UrbanService.DAL.Entities;
@@ -60,8 +60,8 @@ public partial class OperatingArea
     public virtual ICollection<SlaPolicy> SlaPolicies { get; set; }
     = new List<SlaPolicy>();
 
-    public virtual ICollection<FeedbackSla> FeedbackSlas { get; set; }
-        = new List<FeedbackSla>();
+    public virtual ICollection<IncidentSla> IncidentSlas { get; set; }
+        = new List<IncidentSla>();
 
     public virtual ICollection<StaffAreaAssignment> StaffAreaAssignments { get; set; } = new List<StaffAreaAssignment>();
 
