@@ -1365,6 +1365,16 @@ public class SlaService : ISlaService
             return;
         }
 
+        /*
+         * Sự vụ đã kết thúc thì không tính vi phạm nữa, kể cả khi SLA còn sót
+         * lại ở trạng thái Running từ dữ liệu cũ.
+         */
+        if (entity.Incident.MergedIntoIncidentId.HasValue ||
+            IncidentStatus.IsTerminal(entity.Incident.Status))
+        {
+            return;
+        }
+
         var result =
             await ApplyMonitoringCheckAsync(entity);
 
@@ -1394,9 +1404,23 @@ public class SlaService : ISlaService
             .Include(x => x.Incident)
                 .ThenInclude(x => x.ProviderAssignments)
                     .ThenInclude(x => x.Coordinator)
+            /*
+             * Chỉ theo dõi SLA của sự vụ còn đang được xử lý. Sự vụ đã bị từ
+             * chối, hủy, đóng hoặc gộp thì không được tính vi phạm và không
+             * được gửi cảnh báo nữa.
+             *
+             * Viết bằng so sánh tường minh thay vì IncidentStatus.Terminal.Contains
+             * để chắc chắn EF dịch được thành mệnh đề SQL. Khi thêm trạng thái
+             * kết thúc mới, cập nhật cả IncidentStatus.Terminal lẫn chỗ này.
+             */
             .Where(x =>
                 x.IsCurrent &&
-                x.Status == SlaStatus.Running)
+                x.Status == SlaStatus.Running &&
+                x.Incident.MergedIntoIncidentId == null &&
+                x.Incident.Status != IncidentStatus.Rejected &&
+                x.Incident.Status != IncidentStatus.Cancelled &&
+                x.Incident.Status != IncidentStatus.Closed &&
+                x.Incident.Status != IncidentStatus.Merged)
             .ToListAsync();
 
         if (runningSlas.Count == 0)
@@ -1785,7 +1809,83 @@ public class SlaService : ISlaService
                             "Manager đã xác nhận kết quả xử lý sự vụ."
                     });
             }
+
+            return;
         }
+
+        /*
+         * Rejected, Cancelled hoặc Merged: sự vụ không còn được xử lý tiếp nên
+         * SLA phải dừng. Hủy chứ không hoàn thành, vì công việc chưa từng kết
+         * thúc theo nghĩa nghiệp vụ; đưa vào Completed sẽ làm sai tỷ lệ đạt SLA
+         * trên dashboard.
+         *
+         * Closed không nằm ở đây vì chỉ đến sau Approved, lúc đó SLA đã Completed.
+         */
+        if (IncidentStatus.IsTerminal(newStatus) &&
+            !string.Equals(
+                newStatus,
+                IncidentStatus.Closed,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            await CancelCurrentSlaForTerminatedIncidentAsync(
+                incidentId,
+                triggeredByUserId,
+                NormalizeOptionalText(note) ??
+                $"Sự vụ đã chuyển sang trạng thái {newStatus} nên SLA dừng theo dõi.");
+        }
+    }
+
+    /// <summary>
+    /// Hủy SLA hiện tại của một sự vụ đã kết thúc.
+    ///
+    /// Khác <see cref="CancelAsync"/> ở chỗ không kiểm tra lại quyền và không đòi
+    /// sự vụ phải đang ở trạng thái Cancelled: hàm này chỉ được gọi từ luồng đồng
+    /// bộ sau khi trạng thái sự vụ đã commit, nên quyền đã được kiểm tra ở thao
+    /// tác đổi trạng thái. Với sự vụ Merged thì guard theo Incident cũng không
+    /// dùng được nữa vì sự vụ nguồn đã có MergedIntoIncidentId.
+    ///
+    /// Không có SLA hiện tại, hoặc SLA đã kết thúc, thì bỏ qua trong im lặng.
+    /// </summary>
+    private async Task CancelCurrentSlaForTerminatedIncidentAsync(
+        Guid incidentId,
+        Guid triggeredByUserId,
+        string note)
+    {
+        var entity = await _unitOfWork
+            .GetRepository<IncidentSla>()
+            .Entities
+            .FirstOrDefaultAsync(x =>
+                x.IncidentId == incidentId &&
+                x.IsCurrent);
+
+        if (entity == null ||
+            entity.Status == SlaStatus.Completed ||
+            entity.Status == SlaStatus.Cancelled)
+        {
+            return;
+        }
+
+        var now = SlaDateTimeHelper.UtcNow;
+        var oldStatus = entity.Status;
+
+        entity.Status = SlaStatus.Cancelled;
+        entity.UpdatedAt = now;
+
+        await AddEventAsync(
+            entity.IncidentSlaId,
+            SlaEventType.Cancelled,
+            oldStatus,
+            SlaStatus.Cancelled,
+            note,
+            triggeredByUserId,
+            SlaTriggerSource.System);
+
+        await _unitOfWork.SaveAsync();
+
+        await SendSlaRealtimeSafeAsync(
+            entity.IncidentId,
+            entity.IncidentSlaId,
+            SlaEventType.Cancelled);
     }
 
     private async Task SendMonitoringNotificationsAsync(
