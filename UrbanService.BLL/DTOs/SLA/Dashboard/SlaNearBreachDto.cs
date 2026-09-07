@@ -8,9 +8,9 @@ namespace UrbanService.BLL.DTOs.SLA.Dashboard
 {
     public class SlaNearBreachDto
     {
-        public Guid FeedbackId { get; set; }
+        public Guid IncidentId { get; set; }
 
-        public long FeedbackSlaId { get; set; }
+        public long IncidentSlaId { get; set; }
 
         public string Title { get; set; } = null!;
 

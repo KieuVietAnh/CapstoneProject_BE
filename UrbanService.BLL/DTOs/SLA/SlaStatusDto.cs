@@ -2,9 +2,9 @@
 
 public class SlaStatusDto
 {
-    public Guid FeedbackId { get; set; }
+    public Guid IncidentId { get; set; }
 
-    public long FeedbackSlaId { get; set; }
+    public long IncidentSlaId { get; set; }
 
 
     public string Status { get; set; } = null!;

@@ -21,20 +21,20 @@ public class SlaController : ControllerBase
 
 
     /// <summary>
-    /// Manager/Admin bắt đầu SLA cho feedback sau khi xác minh.
+    /// Manager/Admin bắt đầu SLA cho sự vụ sau khi xác minh.
     /// </summary>
-    [HttpPost("feedback/{feedbackId:guid}/start")]
+    [HttpPost("incident/{incidentId:guid}/start")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
-    [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IncidentSlaDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Start(
-        Guid feedbackId)
+        Guid incidentId)
     {
         var result =
             await _slaService.StartAsync(
-                feedbackId,
+                incidentId,
                 GetCurrentUserId());
 
         return Ok(result);
@@ -43,17 +43,17 @@ public class SlaController : ControllerBase
 
 
     /// <summary>
-    /// Lấy SLA hiện tại của feedback.
+    /// Lấy SLA hiện tại của sự vụ.
     /// </summary>
-    [HttpGet("feedback/{feedbackId:guid}")]
+    [HttpGet("incident/{incidentId:guid}")]
     [Authorize]
-    [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IncidentSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrent(
-        Guid feedbackId)
+        Guid incidentId)
     {
         var result =
-            await _slaService.GetCurrentByFeedbackIdAsync(
-                feedbackId,
+            await _slaService.GetCurrentByIncidentIdAsync(
+                incidentId,
                 GetCurrentUserId());
 
         return Ok(result);
@@ -64,16 +64,16 @@ public class SlaController : ControllerBase
     /// <summary>
     /// Nhân viên ghi nhận phản hồi đầu tiên.
     /// </summary>
-    [HttpPatch("feedback/{feedbackId:guid}/responded")]
+    [HttpPatch("incident/{incidentId:guid}/responded")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]
-    [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IncidentSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> MarkResponded(
-        Guid feedbackId,
+        Guid incidentId,
         [FromBody] string? note)
     {
         var result =
             await _slaService.MarkRespondedAsync(
-                feedbackId,
+                incidentId,
                 GetCurrentUserId(),
                 note);
 
@@ -85,16 +85,16 @@ public class SlaController : ControllerBase
     /// <summary>
     /// Manager/Admin tạm dừng SLA.
     /// </summary>
-    [HttpPost("feedback/{feedbackId:guid}/pause")]
+    [HttpPost("incident/{incidentId:guid}/pause")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
-    [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IncidentSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Pause(
-        Guid feedbackId,
+        Guid incidentId,
         [FromBody] PauseSlaRequest request)
     {
         var result =
             await _slaService.PauseAsync(
-                feedbackId,
+                incidentId,
                 GetCurrentUserId(),
                 request);
 
@@ -106,16 +106,16 @@ public class SlaController : ControllerBase
     /// <summary>
     /// Manager/Admin tiếp tục SLA.
     /// </summary>
-    [HttpPost("feedback/{feedbackId:guid}/resume")]
+    [HttpPost("incident/{incidentId:guid}/resume")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
-    [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IncidentSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Resume(
-        Guid feedbackId,
+        Guid incidentId,
         [FromBody] ResumeSlaRequest request)
     {
         var result =
             await _slaService.ResumeAsync(
-                feedbackId,
+                incidentId,
                 GetCurrentUserId(),
                 request);
 
@@ -127,16 +127,16 @@ public class SlaController : ControllerBase
     /// <summary>
     /// Hoàn thành SLA sau khi xử lý xong.
     /// </summary>
-    [HttpPost("feedback/{feedbackId:guid}/complete")]
+    [HttpPost("incident/{incidentId:guid}/complete")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
-    [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IncidentSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Complete(
-        Guid feedbackId,
+        Guid incidentId,
         [FromBody] CompleteSlaRequest request)
     {
         var result =
             await _slaService.CompleteAsync(
-                feedbackId,
+                incidentId,
                 GetCurrentUserId(),
                 request);
 
@@ -148,16 +148,16 @@ public class SlaController : ControllerBase
     /// <summary>
     /// Manager/Admin tính lại SLA khi thay đổi Category/Priority.
     /// </summary>
-    [HttpPost("feedback/{feedbackId:guid}/recalculate")]
+    [HttpPost("incident/{incidentId:guid}/recalculate")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
-    [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IncidentSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Recalculate(
-        Guid feedbackId,
+        Guid incidentId,
         [FromBody] RecalculateSlaRequest request)
     {
         var result =
             await _slaService.RecalculateAsync(
-                feedbackId,
+                incidentId,
                 GetCurrentUserId(),
                 request);
 
@@ -169,16 +169,16 @@ public class SlaController : ControllerBase
     /// <summary>
     /// Hủy SLA.
     /// </summary>
-    [HttpPost("feedback/{feedbackId:guid}/cancel")]
+    [HttpPost("incident/{incidentId:guid}/cancel")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
-    [ProducesResponseType(typeof(FeedbackSlaDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(IncidentSlaDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Cancel(
-        Guid feedbackId,
+        Guid incidentId,
         [FromBody] string? note)
     {
         var result =
             await _slaService.CancelAsync(
-                feedbackId,
+                incidentId,
                 GetCurrentUserId(),
                 note);
 
@@ -191,17 +191,17 @@ public class SlaController : ControllerBase
     /// Kiểm tra vi phạm SLA thủ công.
     /// </summary>
     /// <remarks>Chỉ `INTERACTIONMANAGER`; cập nhật trạng thái vi phạm dựa trên thời điểm hiện tại.</remarks>
-    [HttpPost("{feedbackSlaId:long}/check")]
+    [HttpPost("{incidentSlaId:long}/check")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CheckViolation(
-        long feedbackSlaId)
+        long incidentSlaId)
     {
         await _slaService.CheckViolationAsync(
-            feedbackSlaId,
+            incidentSlaId,
             GetCurrentUserId());
 
         return Ok();
@@ -212,15 +212,15 @@ public class SlaController : ControllerBase
     /// <summary>
     /// Lấy trạng thái SLA.
     /// </summary>
-    [HttpGet("feedback/{feedbackId:guid}/status")]
+    [HttpGet("incident/{incidentId:guid}/status")]
     [Authorize]
     [ProducesResponseType(typeof(SlaStatusDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetStatus(
-        Guid feedbackId)
+        Guid incidentId)
     {
         var result =
             await _slaService.GetStatusAsync(
-                feedbackId,
+                incidentId,
                 GetCurrentUserId());
 
         return Ok(result);
@@ -231,15 +231,15 @@ public class SlaController : ControllerBase
     /// <summary>
     /// Lấy timeline SLA.
     /// </summary>
-    [HttpGet("feedback/{feedbackId:guid}/timeline")]
+    [HttpGet("incident/{incidentId:guid}/timeline")]
     [Authorize]
     [ProducesResponseType(typeof(List<SlaTimelineDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetTimeline(
-        Guid feedbackId)
+        Guid incidentId)
     {
         var result =
             await _slaService.GetTimelineAsync(
-                feedbackId,
+                incidentId,
                 GetCurrentUserId());
 
         return Ok(result);

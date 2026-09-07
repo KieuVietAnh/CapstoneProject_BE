@@ -6,7 +6,7 @@ public partial class SlaPauseHistory
 {
     public long SlaPauseHistoryId { get; set; }
 
-    public long FeedbackSlaId { get; set; }
+    public long IncidentSlaId { get; set; }
 
     /// <summary>
     /// WaitingCitizen, ForceMajeure, ExternalDependency,
@@ -34,7 +34,7 @@ public partial class SlaPauseHistory
 
     public DateTime? UpdatedAt { get; set; }
 
-    public virtual FeedbackSla FeedbackSla { get; set; } = null!;
+    public virtual IncidentSla IncidentSla { get; set; } = null!;
 
     public virtual User PausedByUser { get; set; } = null!;
 

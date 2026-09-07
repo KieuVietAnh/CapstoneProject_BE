@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace UrbanService.DAL.Entities;
@@ -60,6 +60,8 @@ public partial class Incident
     public virtual ICollection<FeedbackProviderReport> ProviderAssignments { get; set; } = new List<FeedbackProviderReport>();
 
     public virtual ICollection<FeedbackResolution> Resolutions { get; set; } = new List<FeedbackResolution>();
+
+    public virtual ICollection<IncidentSla> IncidentSlas { get; set; } = new List<IncidentSla>();
 
     public virtual ICollection<CompletionDocument> CompletionDocuments { get; set; } = new List<CompletionDocument>();
 

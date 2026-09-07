@@ -4,7 +4,7 @@ public class SlaEventDto
 {
     public long SlaEventId { get; set; }
 
-    public long FeedbackSlaId { get; set; }
+    public long IncidentSlaId { get; set; }
 
     public string EventType { get; set; } = null!;
 

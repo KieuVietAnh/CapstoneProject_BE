@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using UrbanService.DAL.Entities;
 
 namespace UrbanService.DAL.Data;
@@ -99,7 +99,7 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<SlaPolicy> SlaPolicies { get; set; }
 
-    public virtual DbSet<FeedbackSla> FeedbackSlas { get; set; }
+    public virtual DbSet<IncidentSla> IncidentSlas { get; set; }
 
     public virtual DbSet<SlaEvent> SlaEvents { get; set; }
 
@@ -1594,18 +1594,18 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasConstraintName("fk_sla_policies_updated_by_user");
         });
 
-        modelBuilder.Entity<FeedbackSla>(entity =>
+        modelBuilder.Entity<IncidentSla>(entity =>
         {
-            entity.HasKey(e => e.FeedbackSlaId)
-                .HasName("feedback_slas_pkey");
+            entity.HasKey(e => e.IncidentSlaId)
+                .HasName("incident_slas_pkey");
 
-            entity.ToTable("feedback_slas");
+            entity.ToTable("incident_slas");
 
-            entity.Property(e => e.FeedbackSlaId)
-                .HasColumnName("feedback_sla_id");
+            entity.Property(e => e.IncidentSlaId)
+                .HasColumnName("incident_sla_id");
 
-            entity.Property(e => e.FeedbackId)
-                .HasColumnName("feedback_id");
+            entity.Property(e => e.IncidentId)
+                .HasColumnName("incident_id");
 
             entity.Property(e => e.SlaPolicyId)
                 .HasColumnName("sla_policy_id");
@@ -1682,8 +1682,8 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
 
-            entity.HasIndex(e => e.FeedbackId)
-                .HasDatabaseName("ix_feedback_slas_feedback_id");
+            entity.HasIndex(e => e.IncidentId)
+                .HasDatabaseName("ix_incident_slas_incident_id");
 
             entity.HasIndex(e => new
             {
@@ -1691,48 +1691,48 @@ public partial class UrbanServiceDbContext : DbContext
                 e.ResponseDueAt,
                 e.ResolutionDueAt
             })
-            .HasDatabaseName("ix_feedback_slas_monitoring");
+            .HasDatabaseName("ix_incident_slas_monitoring");
 
-            entity.HasIndex(e => e.FeedbackId)
+            entity.HasIndex(e => e.IncidentId)
                 .IsUnique()
                 .HasFilter("is_current = true")
-                .HasDatabaseName("ux_feedback_slas_current_feedback");
+                .HasDatabaseName("ux_incident_slas_current_incident");
 
-            entity.HasOne(d => d.Feedback)
-                .WithMany(p => p.FeedbackSlas)
-                .HasForeignKey(d => d.FeedbackId)
+            entity.HasOne(d => d.Incident)
+                .WithMany(p => p.IncidentSlas)
+                .HasForeignKey(d => d.IncidentId)
                 .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_feedback_slas_feedbacks");
+                .HasConstraintName("fk_incident_slas_incidents");
 
             entity.HasOne(d => d.SlaPolicy)
-                .WithMany(p => p.FeedbackSlas)
+                .WithMany(p => p.IncidentSlas)
                 .HasForeignKey(d => d.SlaPolicyId)
                 .OnDelete(DeleteBehavior.Restrict)
-                .HasConstraintName("fk_feedback_slas_sla_policies");
+                .HasConstraintName("fk_incident_slas_sla_policies");
 
             entity.HasOne(d => d.Area)
-                .WithMany(p => p.FeedbackSlas)
+                .WithMany(p => p.IncidentSlas)
                 .HasForeignKey(d => d.AreaId)
                 .OnDelete(DeleteBehavior.Restrict)
-                .HasConstraintName("fk_feedback_slas_operating_areas");
+                .HasConstraintName("fk_incident_slas_operating_areas");
 
             entity.HasOne(d => d.Category)
-                .WithMany(p => p.FeedbackSlas)
+                .WithMany(p => p.IncidentSlas)
                 .HasForeignKey(d => d.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict)
-                .HasConstraintName("fk_feedback_slas_categories");
+                .HasConstraintName("fk_incident_slas_categories");
 
             entity.HasOne(d => d.StartedByUser)
-                .WithMany(p => p.StartedFeedbackSlas)
+                .WithMany(p => p.StartedIncidentSlas)
                 .HasForeignKey(d => d.StartedByUserId)
                 .OnDelete(DeleteBehavior.Restrict)
-                .HasConstraintName("fk_feedback_slas_started_by_user");
+                .HasConstraintName("fk_incident_slas_started_by_user");
 
             entity.HasOne(d => d.CompletedByUser)
-                .WithMany(p => p.CompletedFeedbackSlas)
+                .WithMany(p => p.CompletedIncidentSlas)
                 .HasForeignKey(d => d.CompletedByUserId)
                 .OnDelete(DeleteBehavior.Restrict)
-                .HasConstraintName("fk_feedback_slas_completed_by_user");
+                .HasConstraintName("fk_incident_slas_completed_by_user");
         });
 
         modelBuilder.Entity<SlaEvent>(entity =>
@@ -1745,8 +1745,8 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.SlaEventId)
                 .HasColumnName("sla_event_id");
 
-            entity.Property(e => e.FeedbackSlaId)
-                .HasColumnName("feedback_sla_id");
+            entity.Property(e => e.IncidentSlaId)
+                .HasColumnName("incident_sla_id");
 
             entity.Property(e => e.EventType)
                 .HasMaxLength(50)
@@ -1777,16 +1777,16 @@ public partial class UrbanServiceDbContext : DbContext
 
             entity.HasIndex(e => new
             {
-                e.FeedbackSlaId,
+                e.IncidentSlaId,
                 e.CreatedAt
             })
-            .HasDatabaseName("ix_sla_events_feedback_sla_created_at");
+            .HasDatabaseName("ix_sla_events_incident_sla_created_at");
 
-            entity.HasOne(d => d.FeedbackSla)
+            entity.HasOne(d => d.IncidentSla)
                 .WithMany(p => p.SlaEvents)
-                .HasForeignKey(d => d.FeedbackSlaId)
+                .HasForeignKey(d => d.IncidentSlaId)
                 .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_sla_events_feedback_slas");
+                .HasConstraintName("fk_sla_events_incident_slas");
 
             entity.HasOne(d => d.TriggeredByUser)
                 .WithMany(p => p.TriggeredSlaEvents)
@@ -1805,8 +1805,8 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.SlaPauseHistoryId)
                 .HasColumnName("sla_pause_history_id");
 
-            entity.Property(e => e.FeedbackSlaId)
-                .HasColumnName("feedback_sla_id");
+            entity.Property(e => e.IncidentSlaId)
+                .HasColumnName("incident_sla_id");
 
             entity.Property(e => e.ReasonCode)
                 .HasMaxLength(50)
@@ -1841,14 +1841,14 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
 
-            entity.HasIndex(e => e.FeedbackSlaId)
-                .HasDatabaseName("ix_sla_pause_histories_feedback_sla_id");
+            entity.HasIndex(e => e.IncidentSlaId)
+                .HasDatabaseName("ix_sla_pause_histories_incident_sla_id");
 
-            entity.HasOne(d => d.FeedbackSla)
+            entity.HasOne(d => d.IncidentSla)
                 .WithMany(p => p.SlaPauseHistories)
-                .HasForeignKey(d => d.FeedbackSlaId)
+                .HasForeignKey(d => d.IncidentSlaId)
                 .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_sla_pause_histories_feedback_slas");
+                .HasConstraintName("fk_sla_pause_histories_incident_slas");
 
             entity.HasOne(d => d.PausedByUser)
                 .WithMany(p => p.PausedSlaHistories)

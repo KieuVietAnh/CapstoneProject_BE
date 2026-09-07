@@ -89,11 +89,11 @@ public partial class User
     public virtual ICollection<SlaPolicy> UpdatedSlaPolicies { get; set; }
         = new List<SlaPolicy>();
 
-    public virtual ICollection<FeedbackSla> StartedFeedbackSlas { get; set; }
-        = new List<FeedbackSla>();
+    public virtual ICollection<IncidentSla> StartedIncidentSlas { get; set; }
+        = new List<IncidentSla>();
 
-    public virtual ICollection<FeedbackSla> CompletedFeedbackSlas { get; set; }
-        = new List<FeedbackSla>();
+    public virtual ICollection<IncidentSla> CompletedIncidentSlas { get; set; }
+        = new List<IncidentSla>();
 
     public virtual ICollection<SlaEvent> TriggeredSlaEvents { get; set; }
         = new List<SlaEvent>();

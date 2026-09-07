@@ -75,9 +75,6 @@ public partial class Feedback
 
     public virtual ICollection<FeedbackSupport> FeedbackSupports { get; set; } = new List<FeedbackSupport>();
 
-    public virtual ICollection<FeedbackSla> FeedbackSlas { get; set; }
-    = new List<FeedbackSla>();
-
     public virtual ICollection<InteractionMessage> InteractionMessages { get; set; } = new List<InteractionMessage>();
 
     public virtual ICollection<IncidentEvent> IncidentEvents { get; set; } = new List<IncidentEvent>();

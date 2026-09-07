@@ -1,4 +1,4 @@
-using NSubstitute;
+﻿using NSubstitute;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
@@ -58,6 +58,7 @@ internal sealed class DuplicateTestContext
             _ => ManagerAreaAssignments.AsAsyncQueryable());
         IncidentReportLinkRepository.Entities.Returns(
             _ => IncidentReportLinks.AsAsyncQueryable());
+        IncidentRepository.Entities.Returns(_ => Incidents.AsAsyncQueryable());
 
         CandidateRepository.AddAsync(Arg.Any<FeedbackDuplicateCandidate>())
             .Returns(call =>
@@ -82,6 +83,7 @@ internal sealed class DuplicateTestContext
             .Returns(ManagerAreaAssignmentRepository);
         UnitOfWork.GetRepository<IncidentReportLink>()
             .Returns(IncidentReportLinkRepository);
+        UnitOfWork.GetRepository<Incident>().Returns(IncidentRepository);
         UnitOfWork.SaveAsync().Returns(Task.CompletedTask);
         UnitOfWork.AcquireTransactionAdvisoryLockAsync(Arg.Any<long>())
             .Returns(Task.CompletedTask);
@@ -96,6 +98,8 @@ internal sealed class DuplicateTestContext
     public List<ManagerAreaAssignment> ManagerAreaAssignments { get; } = [];
 
     public List<IncidentReportLink> IncidentReportLinks { get; } = [];
+
+    public List<Incident> Incidents { get; } = [];
 
     public Guid ManagerUserId { get; }
 
@@ -138,6 +142,9 @@ internal sealed class DuplicateTestContext
 
     public IGenericRepository<IncidentReportLink> IncidentReportLinkRepository { get; } =
         Substitute.For<IGenericRepository<IncidentReportLink>>();
+
+    public IGenericRepository<Incident> IncidentRepository { get; } =
+        Substitute.For<IGenericRepository<Incident>>();
 
     public static Feedback Feedback(
         Guid id,
@@ -238,6 +245,7 @@ internal sealed class DuplicateTestContext
         feedback.IncidentReportLinks.Add(link);
         incident.IncidentReportLinks.Add(link);
         IncidentReportLinks.Add(link);
+        Incidents.Add(incident);
         return link;
     }
 }

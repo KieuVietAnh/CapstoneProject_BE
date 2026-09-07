@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using NSubstitute;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
@@ -204,8 +204,7 @@ public class FeedbackWorkflowRbacTests
                 Substitute.For<INotificationService>(),
                 Substitute.For<IAiFeedbackReviewQueue>(),
                 Substitute.For<IAiFeedbackDuplicateService>(),
-                Substitute.For<ISlaService>(),
-                IncidentService);
+                    IncidentService);
         }
 
         public IUnitOfWork UnitOfWork { get; } = Substitute.For<IUnitOfWork>();

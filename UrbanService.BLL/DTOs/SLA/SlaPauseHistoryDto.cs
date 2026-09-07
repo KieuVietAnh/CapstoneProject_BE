@@ -4,7 +4,7 @@ public class SlaPauseHistoryDto
 {
     public long SlaPauseHistoryId { get; set; }
 
-    public long FeedbackSlaId { get; set; }
+    public long IncidentSlaId { get; set; }
 
     public string ReasonCode { get; set; } = null!;
 

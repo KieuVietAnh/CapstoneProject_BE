@@ -1,6 +1,6 @@
-﻿namespace UrbanService.BLL.DTOs.Feedback.Dashboard;
+﻿namespace UrbanService.BLL.DTOs.Incident.Dashboard;
 
-public class FeedbackStatusDistributionDto
+public class IncidentStatusDistributionDto
 {
     public string Status { get; set; } = null!;
 

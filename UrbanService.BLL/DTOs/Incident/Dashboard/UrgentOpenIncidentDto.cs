@@ -1,8 +1,8 @@
-﻿namespace UrbanService.BLL.DTOs.Feedback.Dashboard;
+﻿namespace UrbanService.BLL.DTOs.Incident.Dashboard;
 
-public class UrgentOpenFeedbackDto
+public class UrgentOpenIncidentDto
 {
-    public Guid FeedbackId { get; set; }
+    public Guid IncidentId { get; set; }
 
     public string Title { get; set; } = null!;
 
@@ -19,6 +19,11 @@ public class UrgentOpenFeedbackDto
     public string? CategoryName { get; set; }
 
     public string LocationText { get; set; } = null!;
+
+    /// <summary>
+    /// Số phản ánh đang được liên kết vào sự vụ này.
+    /// </summary>
+    public int ReportCount { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

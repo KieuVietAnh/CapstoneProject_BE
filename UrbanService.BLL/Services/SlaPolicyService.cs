@@ -415,7 +415,7 @@ public class SlaPolicyService : ISlaPolicyService
         }
 
         var hasBeenUsed = await _unitOfWork
-            .GetRepository<FeedbackSla>()
+            .GetRepository<IncidentSla>()
             .Entities
             .AsNoTracking()
             .AnyAsync(x =>

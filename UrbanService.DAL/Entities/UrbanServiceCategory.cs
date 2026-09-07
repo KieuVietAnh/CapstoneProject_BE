@@ -28,8 +28,8 @@ public partial class UrbanServiceCategory
     public virtual ICollection<SlaPolicy> SlaPolicies { get; set; }
     = new List<SlaPolicy>();
 
-    public virtual ICollection<FeedbackSla> FeedbackSlas { get; set; }
-        = new List<FeedbackSla>();
+    public virtual ICollection<IncidentSla> IncidentSlas { get; set; }
+        = new List<IncidentSla>();
 
     public virtual ICollection<Feedback> Feedbacks { get; set; } = new List<Feedback>();
 

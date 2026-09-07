@@ -1,4 +1,4 @@
-using NSubstitute;
+﻿using NSubstitute;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
@@ -40,7 +40,6 @@ public class FeedbackMasterStatusTests
             Substitute.For<INotificationService>(),
             reviewQueue,
             Substitute.For<IAiFeedbackDuplicateService>(),
-            Substitute.For<ISlaService>(),
             incidentService);
         var userId = Guid.NewGuid();
 
@@ -193,7 +192,7 @@ public class FeedbackMasterStatusTests
     }
 
     [Fact]
-    public async Task Verify_UnlinkedReportCreatesVerifiedIncidentAndStartsLegacySla()
+    public async Task Verify_UnlinkedReportDelegatesToIncidentServiceWithoutTouchingSla()
     {
         var context = new DuplicateTestContext();
         var feedback = DuplicateTestContext.Feedback(
@@ -218,11 +217,10 @@ public class FeedbackMasterStatusTests
                 Note = "Verified by staff",
                 ChangedAt = DateTime.UtcNow
             });
-        var slaRepository = Substitute.For<IGenericRepository<FeedbackSla>>();
-        slaRepository.Entities.Returns(Array.Empty<FeedbackSla>().AsAsyncQueryable());
-        context.UnitOfWork.GetRepository<FeedbackSla>().Returns(slaRepository);
-        var slaService = Substitute.For<ISlaService>();
-        var service = CreateService(context, incidentService, slaService);
+        var slaRepository = Substitute.For<IGenericRepository<IncidentSla>>();
+        slaRepository.Entities.Returns(Array.Empty<IncidentSla>().AsAsyncQueryable());
+        context.UnitOfWork.GetRepository<IncidentSla>().Returns(slaRepository);
+        var service = CreateService(context, incidentService);
 
         await service.VerifyFeedbackAsync(feedback.FeedbackId, actorUserId);
 
@@ -231,21 +229,25 @@ public class FeedbackMasterStatusTests
             actorUserId,
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());
-        await slaService.Received(1).StartAsync(feedback.FeedbackId, actorUserId);
+
+        /*
+         * SLA đã thuộc về Incident, nên FeedbackService không còn tự khởi
+         * tạo SLA. Việc đó do IncidentService thực hiện sau khi trạng thái
+         * sự vụ được commit.
+         */
+        context.UnitOfWork.DidNotReceive().GetRepository<IncidentSla>();
         await context.UnitOfWork.DidNotReceive().SaveAsync();
     }
 
     private static FeedbackService CreateService(
         DuplicateTestContext context,
-        IIncidentService? incidentService = null,
-        ISlaService? slaService = null)
+        IIncidentService? incidentService = null)
     {
         return new FeedbackService(
             context.UnitOfWork,
             Substitute.For<INotificationService>(),
             Substitute.For<IAiFeedbackReviewQueue>(),
             Substitute.For<IAiFeedbackDuplicateService>(),
-            slaService ?? Substitute.For<ISlaService>(),
             incidentService ?? Substitute.For<IIncidentService>());
     }
 }

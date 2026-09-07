@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
@@ -17,11 +17,16 @@ public sealed class IncidentService : IIncidentService
 
     private readonly IUnitOfWork _uow;
     private readonly INotificationService? _notificationService;
+    private readonly ISlaService? _slaService;
 
-    public IncidentService(IUnitOfWork uow, INotificationService? notificationService = null)
+    public IncidentService(
+        IUnitOfWork uow,
+        INotificationService? notificationService = null,
+        ISlaService? slaService = null)
     {
         _uow = uow;
         _notificationService = notificationService;
+        _slaService = slaService;
     }
 
     private async Task<Incident> StageNewReportIncidentCoreAsync(
@@ -190,6 +195,14 @@ public sealed class IncidentService : IIncidentService
             await _uow.SaveAsync();
             _uow.CommitTransaction();
             transactionCompleted = true;
+
+            await SynchronizeSlaAsync(
+                incident.IncidentId,
+                IncidentStatus.New,
+                IncidentStatus.Verified,
+                managerUserId,
+                normalizedNote);
+
             return MapFeedbackStatusHistory(history);
         }
         catch
@@ -1230,6 +1243,8 @@ public sealed class IncidentService : IIncidentService
             incident.AreaId = request.AreaId.Value;
         }
 
+        var oldCategoryId = incident.CategoryId;
+        var oldPriority = incident.Priority;
         if (request.CategoryId.HasValue)
         {
             var categoryExists = await _uow.GetRepository<UrbanServiceCategory>().Entities.AsNoTracking()
@@ -1256,6 +1271,45 @@ public sealed class IncidentService : IIncidentService
             incident.Severity
         });
         await _uow.SaveAsync();
+
+        /*
+         * Category và Priority là đầu vào chọn SLA Policy, nên khi chúng đổi
+         * thì deadline của SLA đang chạy phải được tính lại.
+         */
+        var categoryChanged = oldCategoryId != incident.CategoryId;
+        var priorityChanged = !string.Equals(
+            oldPriority,
+            incident.Priority,
+            StringComparison.OrdinalIgnoreCase);
+
+        if (_slaService is not null &&
+            incident.CategoryId.HasValue &&
+            !string.IsNullOrWhiteSpace(incident.Priority) &&
+            (categoryChanged || priorityChanged))
+        {
+            var hasCurrentSla = await _uow.GetRepository<IncidentSla>().Entities
+                .AsNoTracking()
+                .AnyAsync(
+                    sla => sla.IncidentId == incidentId && sla.IsCurrent,
+                    cancellationToken);
+
+            if (hasCurrentSla)
+            {
+                await _slaService.RecalculateAsync(
+                    incidentId,
+                    actorUserId,
+                    new DTOs.SLA.RecalculateSlaRequest
+                    {
+                        CategoryId = incident.CategoryId,
+                        Priority = incident.Priority,
+                        Note =
+                            $"Manager cập nhật sự vụ. " +
+                            $"Category: {oldCategoryId} -> {incident.CategoryId}. " +
+                            $"Priority: {oldPriority} -> {incident.Priority}."
+                    });
+            }
+        }
+
         return await GetIncidentDetailCoreAsync(incidentId, cancellationToken);
     }
 
@@ -1338,6 +1392,7 @@ public sealed class IncidentService : IIncidentService
         var histories = new List<FeedbackStatusHistory>();
         Incident incident;
         var statusChanged = false;
+        var previousStatus = string.Empty;
         _uow.BeginTransaction();
         try
         {
@@ -1358,6 +1413,7 @@ public sealed class IncidentService : IIncidentService
                 statusChanged = true;
                 var now = DateTime.UtcNow;
                 var oldStatus = incident.Status;
+                previousStatus = oldStatus;
                 var note = NormalizeOptional(request.Note);
                 var feedbackStatus = MapIncidentStatusToFeedbackStatus(status);
                 if (feedbackStatus != null)
@@ -1428,6 +1484,13 @@ public sealed class IncidentService : IIncidentService
                 "Sự vụ đã cập nhật trạng thái",
                 $"Sự vụ \"{incident.Title}\" đã chuyển sang trạng thái {status}.",
                 cancellationToken);
+
+            await SynchronizeSlaAsync(
+                incidentId,
+                previousStatus,
+                status,
+                actorUserId,
+                NormalizeOptional(request.Note));
         }
         return new IncidentStatusUpdateResult(
             await GetIncidentDetailCoreAsync(incidentId, cancellationToken),
@@ -1709,6 +1772,32 @@ public sealed class IncidentService : IIncidentService
             "Sự vụ bạn theo dõi đã được hợp nhất với một sự vụ liên quan.",
             cancellationToken);
         return await GetIncidentDetailCoreAsync(request.TargetIncidentId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Đồng bộ SLA sau khi trạng thái sự vụ đã commit.
+    ///
+    /// SLA tự mở transaction riêng nên chỉ được gọi ngoài transaction của
+    /// Incident. Lỗi SLA không được làm hỏng việc đổi trạng thái đã lưu.
+    /// </summary>
+    private async Task SynchronizeSlaAsync(
+        Guid incidentId,
+        string oldStatus,
+        string newStatus,
+        Guid actorUserId,
+        string? note)
+    {
+        if (_slaService is null)
+        {
+            return;
+        }
+
+        await _slaService.SynchronizeByIncidentStatusAsync(
+            incidentId,
+            oldStatus,
+            newStatus,
+            actorUserId,
+            note);
     }
 
     private async Task EnsureSubscriptionAsync(
