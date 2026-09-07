@@ -1649,6 +1649,8 @@ public sealed class IncidentService : IIncidentService
         await EnsureManagerIncidentAccessAsync(actor, sourceIncidentId, cancellationToken);
         await EnsureManagerIncidentAccessAsync(actor, request.TargetIncidentId, cancellationToken);
 
+        var sourceStatusBeforeMerge = string.Empty;
+
         _uow.BeginTransaction();
         try
         {
@@ -1743,6 +1745,7 @@ public sealed class IncidentService : IIncidentService
                 }
             }
 
+            sourceStatusBeforeMerge = source.Status;
             source.Status = IncidentStatus.Merged;
             source.MergedIntoIncidentId = request.TargetIncidentId;
             source.UpdatedAt = now;
@@ -1771,6 +1774,20 @@ public sealed class IncidentService : IIncidentService
             "Sự vụ đã được hợp nhất",
             "Sự vụ bạn theo dõi đã được hợp nhất với một sự vụ liên quan.",
             cancellationToken);
+
+        /*
+         * Merge đổi trạng thái sự vụ nguồn trực tiếp chứ không đi qua
+         * UpdateStatusCoreAsync, nên phải tự gọi đồng bộ SLA ở đây. Không làm
+         * thì SLA của sự vụ nguồn chạy mãi và tiếp tục bắn cảnh báo vi phạm
+         * dù công việc đã chuyển sang sự vụ đích.
+         */
+        await SynchronizeSlaAsync(
+            sourceIncidentId,
+            sourceStatusBeforeMerge,
+            IncidentStatus.Merged,
+            actorUserId,
+            NormalizeOptional(request.Reason));
+
         return await GetIncidentDetailCoreAsync(request.TargetIncidentId, cancellationToken);
     }
 

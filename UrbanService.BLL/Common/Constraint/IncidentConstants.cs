@@ -1,4 +1,4 @@
-namespace UrbanService.BLL.Common.Constraint;
+﻿namespace UrbanService.BLL.Common.Constraint;
 
 public static class IncidentLinkStatus
 {
@@ -84,4 +84,27 @@ public static class IncidentStatus
         Closed,
         Cancelled
     ];
+
+    /// <summary>
+    /// Các trạng thái mà sự vụ không còn được xử lý tiếp.
+    ///
+    /// SLA của những sự vụ này phải dừng theo dõi: không tính vi phạm và không
+    /// gửi cảnh báo nữa. Khi thêm giá trị vào đây, nhớ cập nhật cả bộ lọc
+    /// tương ứng trong <c>SlaService.CheckAllRunningSlasAsync</c>; bộ lọc đó
+    /// viết bằng so sánh tường minh để bảo đảm dịch được sang SQL.
+    /// </summary>
+    public static readonly IReadOnlySet<string> Terminal =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            Rejected,
+            Cancelled,
+            Closed,
+            Merged
+        };
+
+    public static bool IsTerminal(string? status)
+    {
+        return !string.IsNullOrWhiteSpace(status) &&
+            Terminal.Contains(status);
+    }
 }
