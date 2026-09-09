@@ -23,9 +23,17 @@ public partial class FeedbackResolution
 
     public string Status { get; set; } = null!;
 
+    public string? ReviewReason { get; set; }
+
+    public Guid? ReviewedByManagerId { get; set; }
+
+    public DateTime? ReviewedAt { get; set; }
+
     public virtual Incident Incident { get; set; } = null!;
 
     public virtual FeedbackProviderReport? ProviderReport { get; set; }
 
     public virtual User CreatedByStaffUser { get; set; } = null!;
+
+    public virtual User? ReviewedByManager { get; set; }
 }

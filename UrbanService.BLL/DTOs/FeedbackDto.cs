@@ -77,6 +77,9 @@ public class FeedbackUpdateRequest
 
 public class StaffFeedbackUpdateRequest : FeedbackUpdateRequest
 {
+    /// <summary>Mức độ nghiêm trọng: Low, Medium, High hoặc Critical.</summary>
+    public string? Severity { get; set; }
+
     /// <summary>
     /// Trạng thái mới. Giá trị hợp lệ: Submitted, AiReviewed, Verified, Assigned, InProgress,
     /// Resolved, SubmittedForApproval, Approved, Rejected, NeedRework, Closed, Cancelled.

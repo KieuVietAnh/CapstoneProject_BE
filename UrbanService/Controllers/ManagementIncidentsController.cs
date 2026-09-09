@@ -169,6 +169,15 @@ public sealed class ManagementIncidentsController : ControllerBase
             incidentId,
             GetCurrentUserId()));
 
+    /// <summary>Lấy kết quả xử lý hiện tại của Incident.</summary>
+    [HttpGet("{incidentId:guid}/resolution")]
+    [HttpGet("{incidentId:guid}/resolutions/latest")]
+    [ProducesResponseType(typeof(FeedbackResolutionDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCurrentResolution(Guid incidentId)
+        => Ok(await _feedbackService.GetCurrentIncidentResolutionAsync(
+            incidentId,
+            GetCurrentUserId()));
+
     /// <summary>Staff gửi kết quả xử lý của Incident để Manager duyệt.</summary>
     [HttpPost("{incidentId:guid}/resolutions")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]
@@ -178,12 +187,41 @@ public sealed class ManagementIncidentsController : ControllerBase
         Guid incidentId,
         [FromBody] SubmitResolutionRequest request)
     {
-        await _feedbackService.SubmitIncidentResolutionAsync(
+        var resolution = await _feedbackService.SubmitIncidentResolutionAsync(
             incidentId,
             GetCurrentUserId(),
             request);
-        return Ok(new { Message = "Resolution submitted successfully." });
+        resolution.Message = "Resolution submitted successfully.";
+        return Ok(resolution);
     }
+
+    /// <summary>Manager phê duyệt kết quả xử lý hiện tại của Incident.</summary>
+    [HttpPost("{incidentId:guid}/resolutions/{resolutionId:int}/approve")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
+    [ProducesResponseType(typeof(FeedbackResolutionDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ApproveResolution(
+        Guid incidentId,
+        int resolutionId,
+        [FromQuery] string? note)
+        => Ok(await _feedbackService.ApproveIncidentResolutionAsync(
+            incidentId,
+            resolutionId,
+            GetCurrentUserId(),
+            note));
+
+    /// <summary>Manager yêu cầu làm lại kết quả xử lý hiện tại của Incident.</summary>
+    [HttpPost("{incidentId:guid}/resolutions/{resolutionId:int}/need-rework")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
+    [ProducesResponseType(typeof(FeedbackResolutionDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> NeedRework(
+        Guid incidentId,
+        int resolutionId,
+        [FromBody] NeedReworkResolutionRequest request)
+        => Ok(await _feedbackService.RequireIncidentResolutionReworkAsync(
+            incidentId,
+            resolutionId,
+            GetCurrentUserId(),
+            request.Reason));
 
     /// <summary>Merge Incident nguồn vào Incident đích.</summary>
     [HttpPost("{incidentId:guid}/merge")]

@@ -106,6 +106,10 @@ public interface IFeedbackService
         Guid incidentId,
         Guid currentUserId);
 
+    Task<FeedbackResolutionDto> GetCurrentIncidentResolutionAsync(
+        Guid incidentId,
+        Guid currentUserId);
+
     Task<FeedbackResolutionDto> GetResolutionAsync(
         int resolutionId,
         Guid currentUserId);
@@ -115,10 +119,22 @@ public interface IFeedbackService
         Guid currentUserId,
         NotifyProviderResultRequest request);
 
-    Task SubmitIncidentResolutionAsync(
+    Task<FeedbackResolutionDto> SubmitIncidentResolutionAsync(
         Guid incidentId,
         Guid staffUserId,
         SubmitResolutionRequest request);
+
+    Task<FeedbackResolutionDto> ApproveIncidentResolutionAsync(
+        Guid incidentId,
+        int? resolutionId,
+        Guid managerId,
+        string? note);
+
+    Task<FeedbackResolutionDto> RequireIncidentResolutionReworkAsync(
+        Guid incidentId,
+        int? resolutionId,
+        Guid managerId,
+        string reason);
 
     Task ApproveResolutionAsync(
         Guid feedbackId,

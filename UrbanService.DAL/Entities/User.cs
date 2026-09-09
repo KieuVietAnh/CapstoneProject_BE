@@ -53,6 +53,8 @@ public partial class User
 
     public virtual ICollection<FeedbackResolution> FeedbackResolutions { get; set; } = new List<FeedbackResolution>();
 
+    public virtual ICollection<FeedbackResolution> ReviewedFeedbackResolutions { get; set; } = new List<FeedbackResolution>();
+
     public virtual ICollection<FeedbackStatusHistory> FeedbackStatusHistories { get; set; } = new List<FeedbackStatusHistory>();
 
     public virtual ICollection<FeedbackSupport> FeedbackSupports { get; set; } = new List<FeedbackSupport>();

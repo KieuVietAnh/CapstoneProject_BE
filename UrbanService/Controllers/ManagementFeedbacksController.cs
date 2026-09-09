@@ -187,7 +187,8 @@ public class ManagementFeedbacksController : ControllerBase
 
     /// <summary>Manager chỉnh sửa dữ liệu phân loại của phản ánh trong phường phụ trách.</summary>
     /// <remarks>
-    /// Chỉ Manager phụ trách phường được sửa category, priority và nội dung.
+    /// Chỉ Manager phụ trách phường được sửa category, priority, severity và nội dung.
+    /// Phản ánh Submitted/AiReviewed chưa có Incident được chỉnh sửa trước khi verify.
     /// Trạng thái không được thay đổi qua request này; phải dùng endpoint workflow riêng.
     /// </remarks>
     [HttpPut("{feedbackId:guid}")]

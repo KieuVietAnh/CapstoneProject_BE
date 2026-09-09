@@ -738,15 +738,35 @@ public class FeedbackService : IFeedbackService
     Guid feedbackId,
     StaffFeedbackUpdateRequest request)
     {
-        await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
-            _uow,
-            feedbackId,
-            currentUserId);
+        var isUnlinkedPreVerification = await _uow.GetRepository<Feedback>().Entities
+            .AsNoTracking()
+            .AnyAsync(feedback =>
+                feedback.FeedbackId == feedbackId &&
+                (feedback.Status == FeedbackStatus.Submitted || feedback.Status == FeedbackStatus.AiReviewed) &&
+                !feedback.IncidentReportLinks.Any(link => link.LinkStatus == IncidentLinkStatus.Active));
+
+        if (isUnlinkedPreVerification)
+        {
+            await ManagementAccessRules.EnsureManagerFeedbackReviewAccessAsync(
+                _uow, feedbackId, currentUserId);
+        }
+        else
+        {
+            await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
+                _uow, feedbackId, currentUserId);
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             throw new Exception(
                 "Không cập nhật trạng thái qua API chỉnh sửa phản ánh. Hãy dùng thao tác duyệt chuyên biệt.");
         }
+
+        var severity = request.Severity == null
+            ? null
+            : IncidentSeverity.All.FirstOrDefault(value =>
+                string.Equals(value, request.Severity.Trim(), StringComparison.OrdinalIgnoreCase))
+                ?? throw new Exception("Severity chỉ nhận Low, Medium, High hoặc Critical.");
 
         if (request.AreaId.HasValue)
         {
@@ -776,6 +796,7 @@ public class FeedbackService : IFeedbackService
             request.LocationAccuracyMeters.HasValue ||
             request.GeoSource != null ||
             !string.IsNullOrWhiteSpace(request.Priority) ||
+            request.Severity != null ||
             request.DueDate.HasValue;
 
 
@@ -881,6 +902,8 @@ public class FeedbackService : IFeedbackService
         }
 
 
+
+        feedback.Severity = severity ?? feedback.Severity;
 
         feedback.DueDate =
             request.DueDate ??
@@ -1972,6 +1995,16 @@ public class FeedbackService : IFeedbackService
             ResultNote = resolution.ResultNote,
             ResolvedAt = resolution.ResolvedAt,
             Status = resolution.Status,
+            IncidentStatus = resolution.Incident.Status,
+            ReviewReason = resolution.ReviewReason,
+            ReviewedBy = resolution.ReviewedByManager == null
+                ? null
+                : new ResolutionReviewerDto
+                {
+                    UserId = resolution.ReviewedByManager.UserId,
+                    Name = resolution.ReviewedByManager.FullName
+                },
+            ReviewedAt = resolution.ReviewedAt,
 
             CompletionDocuments =
                 resolution.ProviderReport?.CompletionDocuments?
@@ -2577,19 +2610,61 @@ public class FeedbackService : IFeedbackService
     private async Task<IReadOnlyCollection<FeedbackResolutionDto>> GetIncidentResolutionsCoreAsync(
         Guid incidentId)
     {
-
         var resolutions = await _uow.GetRepository<FeedbackResolution>().Entities
-    .AsNoTracking()
-    .Include(r => r.CreatedByStaffUser)
-    .Include(r => r.ProviderReport)
-        .ThenInclude(r => r!.CompletionDocuments)
-    .Where(r => r.IncidentId == incidentId)
-    .OrderByDescending(r => r.ResolvedAt)
-    .ToListAsync();
+            .AsNoTracking()
+            .Include(r => r.Incident)
+            .Include(r => r.CreatedByStaffUser)
+            .Include(r => r.ReviewedByManager)
+            .Include(r => r.ProviderReport)
+                .ThenInclude(r => r!.CompletionDocuments)
+            .Where(r => r.IncidentId == incidentId)
+            .OrderByDescending(r => r.ResolvedAt)
+            .ToListAsync();
 
         return resolutions
             .Select(MapResolution)
             .ToList();
+    }
+
+    public async Task<FeedbackResolutionDto> GetCurrentIncidentResolutionAsync(
+        Guid incidentId,
+        Guid currentUserId)
+    {
+        await ManagementAccessRules.EnsureIncidentReadAccessAsync(_uow, incidentId, currentUserId);
+        var resolution = await GetCurrentIncidentResolutionCoreAsync(incidentId, asNoTracking: true);
+        return MapResolution(resolution);
+    }
+
+    private async Task<FeedbackResolution> GetCurrentIncidentResolutionCoreAsync(
+        Guid incidentId,
+        bool asNoTracking,
+        int? expectedResolutionId = null)
+    {
+        var query = _uow.GetRepository<FeedbackResolution>().Entities
+            .Include(r => r.Incident)
+            .Include(r => r.CreatedByStaffUser)
+            .Include(r => r.ReviewedByManager)
+            .Include(r => r.ProviderReport)
+                .ThenInclude(r => r!.CompletionDocuments)
+            .Where(r => r.IncidentId == incidentId);
+
+        if (asNoTracking)
+        {
+            query = query.AsNoTracking();
+        }
+
+        var resolution = await query
+            .OrderByDescending(r => r.ResolvedAt)
+            .FirstOrDefaultAsync()
+            ?? throw new Exception("Không tìm thấy resolution của Incident.");
+
+        if (expectedResolutionId.HasValue &&
+            resolution.ResolutionId != expectedResolutionId.Value)
+        {
+            throw new ConflictException("Resolution không phải kết quả hiện tại của Incident.");
+        }
+
+        return resolution;
     }
 
     public async Task<FeedbackResolutionDto> GetResolutionAsync(
@@ -2605,7 +2680,11 @@ public class FeedbackService : IFeedbackService
         await ManagementAccessRules.EnsureIncidentReadAccessAsync(_uow, incidentId, currentUserId);
         var resolution = await _uow.GetRepository<FeedbackResolution>().Entities
             .AsNoTracking()
+            .Include(r => r.Incident)
             .Include(r => r.CreatedByStaffUser)
+            .Include(r => r.ReviewedByManager)
+            .Include(r => r.ProviderReport)
+                .ThenInclude(r => r!.CompletionDocuments)
             .FirstOrDefaultAsync(r => r.ResolutionId == resolutionId)
             ?? throw new Exception("Khong tim thay resolution.");
 
@@ -2646,7 +2725,7 @@ public class FeedbackService : IFeedbackService
                 : request.TargetUrl.Trim());
     }
 
-    public async Task SubmitIncidentResolutionAsync(
+    public async Task<FeedbackResolutionDto> SubmitIncidentResolutionAsync(
         Guid incidentId,
         Guid staffUserId,
         SubmitResolutionRequest request)
@@ -2780,6 +2859,11 @@ public class FeedbackService : IFeedbackService
             resolution.Status =
                 FeedbackStatus.SubmittedForApproval;
 
+            resolution.ReviewReason = null;
+            resolution.ReviewedByManagerId = null;
+            resolution.ReviewedByManager = null;
+            resolution.ReviewedAt = null;
+
             resolution.ResolvedAt =
                 now;
         }
@@ -2903,129 +2987,137 @@ public class FeedbackService : IFeedbackService
                     : "Staff đã gửi kết quả xử lý để chờ Manager phê duyệt."
             },
             staffUserId);
+
+        return MapResolution(await GetCurrentIncidentResolutionCoreAsync(
+            incidentId,
+            asNoTracking: true));
     }
 
     public async Task ApproveResolutionAsync(
-    Guid feedbackId,
-    Guid managerId,
-    string? note)
+        Guid feedbackId,
+        Guid managerId,
+        string? note)
     {
         var incident = await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
             _uow,
             feedbackId,
             managerId);
-        var feedback = await GetFeedbackWithDetailsAsync(
-            feedbackId,
-            false);
+        await ApproveIncidentResolutionAsync(
+            incident.IncidentId,
+            resolutionId: null,
+            managerId,
+            note);
+    }
 
-        var resolution = (await _uow
-                .GetRepository<FeedbackResolution>()
-                .GetAllAsync(x =>
-                    x.IncidentId == incident.IncidentId))
-            .OrderByDescending(x => x.ResolvedAt)
-            .FirstOrDefault()
-            ?? throw new Exception(
-                "Không tìm thấy resolution để phê duyệt.");
+    public async Task<FeedbackResolutionDto> ApproveIncidentResolutionAsync(
+        Guid incidentId,
+        int? resolutionId,
+        Guid managerId,
+        string? note)
+    {
+        var incident = await ManagementAccessRules.EnsureManagerIncidentOperationAsync(
+            _uow,
+            incidentId,
+            managerId);
+        EnsureIncidentAwaitingResolutionReview(incident.Status);
 
-        if (feedback.Status != FeedbackStatus.SubmittedForApproval ||
-            incident.Status != IncidentStatus.SubmittedForApproval)
+        var resolution = await GetCurrentIncidentResolutionCoreAsync(
+            incidentId,
+            asNoTracking: false,
+            resolutionId);
+        EnsureResolutionAwaitingReview(resolution.Status);
+
+        var manager = await _uow.GetRepository<User>().Entities
+            .FirstAsync(user => user.UserId == managerId);
+        var now = DateTime.UtcNow;
+        resolution.Status = FeedbackStatus.Approved;
+        resolution.ReviewReason = null;
+        resolution.ReviewedByManagerId = managerId;
+        resolution.ReviewedByManager = manager;
+        resolution.ReviewedAt = now;
+
+        var activeLinks = await _uow.GetRepository<IncidentReportLink>().Entities
+            .Include(link => link.Feedback)
+            .Where(link =>
+                link.IncidentId == incidentId &&
+                link.LinkStatus == IncidentLinkStatus.Active)
+            .ToListAsync();
+        foreach (var feedback in activeLinks
+            .Select(link => link.Feedback)
+            .DistinctBy(feedback => feedback.FeedbackId))
         {
-            throw new Exception("Feedback must be SubmittedForApproval before approval.");
+            feedback.ApprovedByManagerId = managerId;
+            feedback.ApprovedAt = now;
         }
 
-        var oldStatus = feedback.Status;
-
-        resolution.Status =
-            FeedbackStatus.Approved;
-
-        feedback.ApprovedByManagerId =
-            managerId;
-
-        feedback.ApprovedAt =
-            DateTime.UtcNow;
-
-        var history = await _incidentService.UpdateStatusFromFeedbackAsync(
-            feedbackId,
+        var updatedIncident = await _incidentService.UpdateStatusAsync(
+            incidentId,
             new UpdateIncidentStatusRequest
             {
                 Status = IncidentStatus.Approved,
-                Note = note
+                Note = NormalizeOptional(note)
             },
             managerId);
 
+        var result = MapResolution(resolution);
+        result.IncidentStatus = updatedIncident.Status;
+        return result;
     }
 
-
     public async Task RequireReworkAsync(
-    Guid feedbackId,
-    Guid managerId,
-    string reason)
+        Guid feedbackId,
+        Guid managerId,
+        string reason)
     {
-        if (string.IsNullOrWhiteSpace(reason))
-        {
-            throw new Exception(
-                "Lý do yêu cầu làm lại là bắt buộc.");
-        }
-
         var incident = await ManagementAccessRules.EnsureManagerFeedbackOperationAsync(
             _uow,
             feedbackId,
             managerId);
+        await RequireIncidentResolutionReworkAsync(
+            incident.IncidentId,
+            resolutionId: null,
+            managerId,
+            reason);
+    }
 
-        var feedback =
-            await GetFeedbackWithDetailsAsync(
-                feedbackId,
-                false);
-
-        if (!string.Equals(
-                feedback.Status,
-                FeedbackStatus.SubmittedForApproval,
-                StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(
-                incident.Status,
-                IncidentStatus.SubmittedForApproval,
-                StringComparison.OrdinalIgnoreCase))
+    public async Task<FeedbackResolutionDto> RequireIncidentResolutionReworkAsync(
+        Guid incidentId,
+        int? resolutionId,
+        Guid managerId,
+        string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
         {
-            throw new Exception(
-                "Feedback must be SubmittedForApproval before requiring rework.");
+            throw new Exception("Lý do yêu cầu làm lại là bắt buộc.");
         }
 
-        var resolution = await _uow
-            .GetRepository<FeedbackResolution>()
-            .Entities
-            .Where(x =>
-                x.IncidentId == incident.IncidentId)
-            .OrderByDescending(x =>
-                x.ResolvedAt)
-            .FirstOrDefaultAsync()
-            ?? throw new Exception(
-                "Không tìm thấy resolution để yêu cầu làm lại.");
-
-        if (!string.Equals(
-                resolution.Status,
-                FeedbackStatus.SubmittedForApproval,
-                StringComparison.OrdinalIgnoreCase))
+        if (reason.Trim().Length > 500)
         {
-            throw new Exception(
-                "Resolution hiện tại không ở trạng thái chờ phê duyệt.");
+            throw new Exception("Lý do yêu cầu làm lại không được vượt quá 500 ký tự.");
         }
 
-        /*
-         * Chỉ đổi status của resolution.
-         *
-         * KHÔNG ghi đè:
-         * resolution.ResultNote = reason;
-         *
-         * ResultNote là dữ liệu do staff nhập.
-         */
-        resolution.Status =
-            FeedbackStatus.NeedRework;
+        var incident = await ManagementAccessRules.EnsureManagerIncidentOperationAsync(
+            _uow,
+            incidentId,
+            managerId);
+        EnsureIncidentAwaitingResolutionReview(incident.Status);
 
-        /*
-         * Mở lại đúng Provider Report đang gắn với resolution.
-         */
+        var resolution = await GetCurrentIncidentResolutionCoreAsync(
+            incidentId,
+            asNoTracking: false,
+            resolutionId);
+        EnsureResolutionAwaitingReview(resolution.Status);
+
+        var manager = await _uow.GetRepository<User>().Entities
+            .FirstAsync(user => user.UserId == managerId);
+        var now = DateTime.UtcNow;
+        resolution.Status = FeedbackStatus.NeedRework;
+        resolution.ReviewReason = reason.Trim();
+        resolution.ReviewedByManagerId = managerId;
+        resolution.ReviewedByManager = manager;
+        resolution.ReviewedAt = now;
+
         FeedbackProviderReport? providerReport = null;
-
         if (resolution.ProviderReportId.HasValue)
         {
             providerReport = await _uow
@@ -3034,19 +3126,15 @@ public class FeedbackService : IFeedbackService
                 .FirstOrDefaultAsync(x =>
                     x.ProviderReportId ==
                         resolution.ProviderReportId.Value &&
-                    x.IncidentId == incident.IncidentId);
+                    x.IncidentId == incidentId);
         }
 
-        /*
-         * Fallback cho dữ liệu cũ nếu resolution
-         * chưa có ProviderReportId.
-         */
         providerReport ??=
             await _uow
                 .GetRepository<FeedbackProviderReport>()
                 .Entities
                 .Where(x =>
-                    x.IncidentId == incident.IncidentId)
+                    x.IncidentId == incidentId)
                 .OrderByDescending(x =>
                     x.ReportedAt)
                 .FirstOrDefaultAsync();
@@ -3057,20 +3145,43 @@ public class FeedbackService : IFeedbackService
                 "InProgress";
 
             providerReport.UpdatedAt =
-                DateTime.UtcNow;
+                now;
         }
 
-        /*
-         * Manager reason được lưu ở history.
-         */
-        await _incidentService.UpdateStatusFromFeedbackAsync(
-            feedbackId,
+        var updatedIncident = await _incidentService.UpdateStatusAsync(
+            incidentId,
             new UpdateIncidentStatusRequest
             {
                 Status = IncidentStatus.NeedRework,
                 Note = reason.Trim()
             },
             managerId);
+
+        var result = MapResolution(resolution);
+        result.IncidentStatus = updatedIncident.Status;
+        return result;
+    }
+
+    private static void EnsureIncidentAwaitingResolutionReview(string status)
+    {
+        if (!string.Equals(
+                status,
+                IncidentStatus.SubmittedForApproval,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception("Incident phải ở trạng thái SubmittedForApproval trước khi review.");
+        }
+    }
+
+    private static void EnsureResolutionAwaitingReview(string status)
+    {
+        if (!string.Equals(
+                status,
+                FeedbackStatus.SubmittedForApproval,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception("Resolution hiện tại không ở trạng thái chờ phê duyệt.");
+        }
     }
 
     public async Task<FeedbackResolutionReviewDto> CitizenReviewAsync(

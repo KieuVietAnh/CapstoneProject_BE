@@ -896,6 +896,9 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.ResultNote).HasColumnName("result_note");
             entity.Property(e => e.ResolvedAt).HasDefaultValueSql("now()").HasColumnName("resolved_at");
             entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValueSql("'SubmittedForApproval'::character varying").HasColumnName("status");
+            entity.Property(e => e.ReviewReason).HasMaxLength(1000).HasColumnName("review_reason");
+            entity.Property(e => e.ReviewedByManagerId).HasColumnName("reviewed_by_manager_id");
+            entity.Property(e => e.ReviewedAt).HasColumnName("reviewed_at");
 
             entity.HasIndex(e => e.IncidentId, "ux_feedback_resolutions_incident_id")
                 .IsUnique();
@@ -914,6 +917,11 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.CreatedByStaffUserId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_feedback_resolution_user");
+
+            entity.HasOne(d => d.ReviewedByManager).WithMany(p => p.ReviewedFeedbackResolutions)
+                .HasForeignKey(d => d.ReviewedByManagerId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_feedback_resolution_reviewer");
         });
 
         modelBuilder.Entity<FeedbackStatusHistory>(entity =>

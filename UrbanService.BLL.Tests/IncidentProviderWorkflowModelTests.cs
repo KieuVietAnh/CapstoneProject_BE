@@ -26,6 +26,14 @@ public sealed class IncidentProviderWorkflowModelTests
 
         var resolution = dbContext.Model.FindEntityType(typeof(FeedbackResolution))!;
         Assert.NotNull(resolution.FindProperty(nameof(FeedbackResolution.IncidentId)));
+        Assert.NotNull(resolution.FindProperty(nameof(FeedbackResolution.ReviewReason)));
+        Assert.NotNull(resolution.FindProperty(nameof(FeedbackResolution.ReviewedAt)));
+        Assert.NotNull(resolution.FindProperty(nameof(FeedbackResolution.ReviewedByManagerId)));
+        Assert.Contains(
+            resolution.GetForeignKeys(),
+            foreignKey =>
+                foreignKey.Properties.Single().Name == nameof(FeedbackResolution.ReviewedByManagerId) &&
+                foreignKey.DeleteBehavior == DeleteBehavior.Restrict);
 
         var document = dbContext.Model.FindEntityType(typeof(CompletionDocument))!;
         Assert.NotNull(document.FindProperty(nameof(CompletionDocument.IncidentId)));

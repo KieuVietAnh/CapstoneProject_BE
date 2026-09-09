@@ -321,6 +321,8 @@ public class CompletionDocumentDto
 
 public class FeedbackResolutionDto
 {
+    public string? Message { get; set; }
+
     public int ResolutionId { get; set; }
 
     public Guid IncidentId { get; set; }
@@ -341,8 +343,28 @@ public class FeedbackResolutionDto
 
     public string Status { get; set; } = null!;
 
+    public string IncidentStatus { get; set; } = null!;
+
+    public string? ReviewReason { get; set; }
+
+    public ResolutionReviewerDto? ReviewedBy { get; set; }
+
+    public DateTime? ReviewedAt { get; set; }
+
     public IReadOnlyCollection<CompletionDocumentDto> CompletionDocuments { get; set; }
     = Array.Empty<CompletionDocumentDto>();
+}
+
+public sealed class ResolutionReviewerDto
+{
+    public Guid UserId { get; set; }
+
+    public string Name { get; set; } = null!;
+}
+
+public sealed class NeedReworkResolutionRequest
+{
+    public string Reason { get; set; } = null!;
 }
 
 public class FeedbackResolutionReviewDto

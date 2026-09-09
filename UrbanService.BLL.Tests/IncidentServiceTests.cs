@@ -13,6 +13,26 @@ namespace UrbanService.BLL.Tests;
 public sealed class IncidentServiceTests
 {
     [Fact]
+    public async Task VerifyReport_CopiesManagerClassificationIntoNewIncident()
+    {
+        var context = new IncidentTestContext();
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow);
+        feedback.Status = FeedbackStatus.AiReviewed;
+        feedback.CategoryId = 10;
+        feedback.Priority = "High";
+        feedback.Severity = IncidentSeverity.Critical;
+        context.Feedbacks.Add(feedback);
+
+        await new IncidentService(context.UnitOfWork).VerifyReportAsync(feedback.FeedbackId, Guid.NewGuid());
+
+        var incident = Assert.Single(context.Incidents);
+        Assert.Equal(10, incident.CategoryId);
+        Assert.Equal("High", incident.Priority);
+        Assert.Equal(IncidentSeverity.Critical, incident.Severity);
+        Assert.Equal(IncidentLinkRole.Primary, Assert.Single(context.Links).LinkRole);
+    }
+
+    [Fact]
     public async Task VerifyReport_CreatesVerifiedIncidentLinkSubscriptionAndEvents()
     {
         var context = new IncidentTestContext();
