@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Reflection;
@@ -146,6 +147,23 @@ builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
 {
     client.BaseAddress = new Uri("https://api.brevo.com/v3/");
     client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+builder.Services
+    .AddOptions<TwilioOptions>()
+    .Bind(builder.Configuration.GetSection(TwilioOptions.SectionName))
+    .Validate(
+        options => options.TimeoutSeconds >= 1,
+        "Twilio:TimeoutSeconds phải lớn hơn hoặc bằng 1.");
+
+builder.Services.AddHttpClient<ISmsSender, TwilioSmsSender>((provider, client) =>
+{
+    var twilioOptions = provider
+        .GetRequiredService<IOptions<TwilioOptions>>()
+        .Value;
+
+    client.BaseAddress = new Uri("https://api.twilio.com/");
+    client.Timeout = TimeSpan.FromSeconds(twilioOptions.TimeoutSeconds);
 });
 builder.Services.AddScoped<IRealtimeNotificationSender, SignalRNotificationSender>();
 builder.Services.AddScoped<

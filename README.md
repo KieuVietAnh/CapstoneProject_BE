@@ -119,6 +119,7 @@ database thay cho `host.docker.internal`.
 | --- | --- |
 | Upload ảnh | `Cloudinary` |
 | Email | `Brevo` |
+| SMS OTP đăng ký | `Twilio` |
 | Google login | `GoogleAuth` |
 | AI | `AI`, `OpenRouter` |
 | Messenger bot | `Messenger` |
@@ -126,6 +127,23 @@ database thay cho `host.docker.internal`.
 | Theo dõi SLA | `SlaMonitoring` |
 
 Xem tên biến môi trường Docker trong [docker-compose.yml](docker-compose.yml).
+
+Đăng ký tài khoản xác thực bằng OTP gửi qua SMS. Cần `Twilio:AccountSid`,
+`Twilio:AuthToken` và `Twilio:FromNumber` (dạng E.164). `Twilio:DefaultCountryCode`
+mặc định `+84`, dùng khi người dùng nhập số nội địa bắt đầu bằng `0`.
+
+Luồng đăng ký gồm hai bước và `POST /api/auth/register` **không** trả về token:
+
+```text
+POST /api/auth/register              -> tạo tài khoản, gửi OTP qua SMS
+POST /api/auth/phone-verification/verify  -> trả JWT và refresh token
+POST /api/auth/phone-verification/send-otp -> gửi lại OTP
+```
+
+Tài khoản chưa xác thực số điện thoại không đăng nhập được.
+
+Tài khoản Twilio dùng thử chỉ gửi được tới số đã verify trong Twilio Console và
+có hạn mức tin nhắn miễn phí. Muốn gửi tới số bất kỳ phải nâng cấp tài khoản.
 
 Messenger cần `PageAccessToken`, `VerifyToken`, `AppSecret`, `SubmissionUserId`
 và `GraphApiVersion`. Ảnh minh chứng tùy chọn được giới hạn bởi
