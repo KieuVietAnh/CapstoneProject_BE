@@ -132,15 +132,24 @@ Xem tên biến môi trường Docker trong [docker-compose.yml](docker-compose.
 `Twilio:AuthToken` và `Twilio:FromNumber` (dạng E.164). `Twilio:DefaultCountryCode`
 mặc định `+84`, dùng khi người dùng nhập số nội địa bắt đầu bằng `0`.
 
-Luồng đăng ký gồm hai bước và `POST /api/auth/register` **không** trả về token:
+Xác thực số điện thoại **không** phải điều kiện để đăng nhập, mà là điều kiện để
+gửi phản ánh. Người dùng chưa xác thực vẫn đăng nhập, xem sự vụ và nhận thông báo
+bình thường; chỉ khi gửi phản ánh từ web mới bị chặn với lỗi `403`.
 
 ```text
-POST /api/auth/register              -> tạo tài khoản, gửi OTP qua SMS
-POST /api/auth/phone-verification/verify  -> trả JWT và refresh token
-POST /api/auth/phone-verification/send-otp -> gửi lại OTP
+POST /api/auth/register                    -> tạo tài khoản, gửi OTP, trả JWT (isVerified=false)
+POST /api/auth/google-login                -> lần đầu tự tạo tài khoản, trả JWT (isVerified=false)
+POST /api/auth/phone-verification/attach   -> [Authorize] bổ sung SĐT rồi gửi OTP
+POST /api/auth/phone-verification/send-otp -> gửi lại OTP theo số điện thoại
+POST /api/auth/phone-verification/verify   -> xác thực OTP, isVerified=true, trả JWT mới
 ```
 
-Tài khoản chưa xác thực số điện thoại không đăng nhập được.
+Đăng ký bằng email và mật khẩu bắt buộc nhập số điện thoại và gửi OTP ngay. Đăng
+nhập Google lần đầu tạo tài khoản chưa có số điện thoại, người dùng bổ sung sau qua
+`phone-verification/attach`.
+
+Phản ánh từ Messenger và Zalo đi qua tài khoản dịch vụ dùng chung nên không áp ràng
+buộc này.
 
 Tài khoản Twilio dùng thử chỉ gửi được tới số đã verify trong Twilio Console và
 có hạn mức tin nhắn miễn phí. Muốn gửi tới số bất kỳ phải nâng cấp tài khoản.

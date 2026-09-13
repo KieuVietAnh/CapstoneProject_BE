@@ -41,7 +41,10 @@ public class FeedbackMasterStatusTests
             reviewQueue,
             Substitute.For<IAiFeedbackDuplicateService>(),
             incidentService);
-        var userId = Guid.NewGuid();
+
+        // Gửi phản ánh từ web yêu cầu tài khoản đã xác thực số điện thoại.
+        var resident = context.AddActor(UserRole.SERVICEUSER, "Resident");
+        var userId = resident.UserId;
 
         var result = await service.CreateAsync(
             userId,

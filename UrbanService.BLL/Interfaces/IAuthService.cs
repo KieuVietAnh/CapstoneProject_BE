@@ -1,15 +1,28 @@
-using UrbanService.BLL.Dtos;
+﻿using UrbanService.BLL.Dtos;
 
 namespace UrbanService.BLL.Interfaces
 {
     public interface IAuthService
     {
         /// <summary>
-        /// Tạo tài khoản chưa xác thực và gửi OTP qua SMS.
-        /// Không cấp token; token chỉ được cấp sau khi xác thực OTP.
+        /// Tạo tài khoản và gửi OTP xác thực số điện thoại qua SMS.
+        ///
+        /// Trả về token ngay: đăng nhập không đòi tài khoản đã xác thực. Client
+        /// đọc <c>IsVerified</c> để biết có cần nhắc người dùng xác thực OTP hay
+        /// không; chưa xác thực thì vẫn dùng được hệ thống nhưng không gửi được
+        /// phản ánh.
         /// </summary>
-        Task<RegisterResultDto> RegisterAsync(
+        Task<AuthResultDto> RegisterAsync(
             RegisterRequest req,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Bổ sung số điện thoại cho tài khoản đã đăng nhập nhưng chưa xác thực,
+        /// rồi gửi OTP. Dùng cho người đăng nhập bằng Google.
+        /// </summary>
+        Task AttachPhoneAsync(
+            Guid userId,
+            SendPhoneOtpRequest req,
             CancellationToken cancellationToken = default);
 
         /// <summary>
