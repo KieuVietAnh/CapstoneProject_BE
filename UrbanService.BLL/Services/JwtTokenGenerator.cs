@@ -21,9 +21,16 @@ namespace UrbanService.BLL.Services
             var audience = _cfg["Jwt:Audience"];
             var expireMinutes = int.TryParse(_cfg["Jwt:ExpireMinutes"], out var m) ? m : 60;
 
-            var roleName = acc.IsVerified
-                ? acc.Role?.RoleName ?? UserRole.SERVICEUSER
-                : "EMAIL_VERIFICATION";
+            /*
+             * Token luôn mang role thật, kể cả khi tài khoản chưa xác thực số
+             * điện thoại. Việc xác thực SĐT không còn là điều kiện để đăng nhập
+             * mà là điều kiện để gửi phản ánh, và chốt đó nằm ở FeedbackService.
+             *
+             * Trước đây role bị thay bằng "EMAIL_VERIFICATION" khi chưa xác thực,
+             * nhưng role đó vẫn qua được mọi endpoint dùng [Authorize] trần nên
+             * không thực sự giới hạn được gì.
+             */
+            var roleName = acc.Role?.RoleName ?? UserRole.SERVICEUSER;
 
             var claims = new List<Claim>
             {

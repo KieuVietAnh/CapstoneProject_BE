@@ -85,20 +85,15 @@ namespace UrbanService.BLL.Services
             }
 
             /*
-             * Tài khoản chưa xác thực số điện thoại thì không được cấp token.
-             * Thiếu chặn ở đây thì cổng OTP lúc đăng ký trở thành vô nghĩa vì
-             * người dùng chỉ cần gọi thẳng login.
+             * Không chặn tài khoản chưa xác thực SĐT ở đây. Đăng nhập là tự do;
+             * xác thực SĐT chỉ là điều kiện để gửi phản ánh, và chốt đó nằm ở
+             * FeedbackService. Client đọc AuthResultDto.IsVerified để biết có
+             * cần nhắc người dùng xác thực hay không.
              */
-            if (!user.IsVerified)
-            {
-                throw new UnauthorizedAccessException(
-                    "Tài khoản chưa xác thực số điện thoại. Vui lòng xác thực OTP trước khi đăng nhập.");
-            }
-
             return await IssueAuthResultAsync(user);
         }
 
-        public async Task<RegisterResultDto> RegisterAsync(
+        public async Task<AuthResultDto> RegisterAsync(
             RegisterRequest req,
             CancellationToken cancellationToken = default)
         {
@@ -140,7 +135,7 @@ namespace UrbanService.BLL.Services
 
                 await SendPhoneVerificationOtpAsync(existingUser, phoneNumber, cancellationToken);
 
-                return BuildRegisterResult(existingUser, phoneNumber);
+                return await IssueAuthResultAsync(existingUser);
             }
 
             var role = await GetOrCreateDefaultRoleAsync();
@@ -166,20 +161,7 @@ namespace UrbanService.BLL.Services
 
             await SendPhoneVerificationOtpAsync(user, phoneNumber, cancellationToken);
 
-            return BuildRegisterResult(user, phoneNumber);
-        }
-
-        private RegisterResultDto BuildRegisterResult(User user, string phoneNumber)
-        {
-            return new RegisterResultDto
-            {
-                UserId = user.UserId,
-                Email = user.Email,
-                PhoneNumber = MaskPhoneNumber(phoneNumber),
-                OtpExpiresInMinutes = VerificationOtpMinutes,
-                Message = "Mã OTP đã được gửi tới số điện thoại. " +
-                    "Xác thực OTP để hoàn tất đăng ký."
-            };
+            return await IssueAuthResultAsync(user);
         }
 
         public async Task<AuthResultDto> GoogleLoginAsync(GoogleLoginRequest req)
@@ -220,14 +202,15 @@ namespace UrbanService.BLL.Services
                 u => u.Email.ToLower() == email,
                 q => q.Include(u => u.Role));
 
+            /*
+             * Google đăng nhập lần đầu thì tạo luôn tài khoản. Email đã được
+             * Google xác thực nên không cần OTP email; tài khoản vào được hệ
+             * thống ngay với IsVerified = false và sẽ bị chặn ở bước gửi phản
+             * ánh cho tới khi bổ sung và xác thực số điện thoại.
+             */
             if (user == null)
             {
-                throw new UnauthorizedAccessException("Tài khoản chưa tồn tại trong UrbanService.");
-            }
-
-            if (!user.IsVerified)
-            {
-                throw new UnauthorizedAccessException("Tài khoản UrbanService chưa xác thực email.");
+                user = await CreateGoogleUserAsync(email, payload.Name);
             }
 
             if (!user.IsActive)
@@ -592,6 +575,73 @@ namespace UrbanService.BLL.Services
 
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Tạo tài khoản cho người dùng đăng nhập Google lần đầu.
+        ///
+        /// Tài khoản chưa có số điện thoại và IsVerified = false. Mật khẩu được
+        /// đặt bằng một chuỗi ngẫu nhiên không ai biết, nên đường đăng nhập bằng
+        /// mật khẩu coi như bị khóa; người dùng muốn dùng mật khẩu thì phải đi
+        /// qua luồng quên mật khẩu.
+        /// </summary>
+        private async Task<User> CreateGoogleUserAsync(string email, string? displayName)
+        {
+            var role = await GetOrCreateDefaultRoleAsync();
+            var now = DateTime.UtcNow;
+            var user = new User
+            {
+                UserId = Guid.NewGuid(),
+                RoleId = role.RoleId,
+                FullName = string.IsNullOrWhiteSpace(displayName) ? email : displayName.Trim(),
+                Email = email,
+                PasswordHash = PasswordHasher.Hash(
+                    Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))),
+                PhoneNumber = null,
+                IsActive = true,
+                IsVerified = false,
+                IsRefreshTokenRevoked = false,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Role = role
+            };
+
+            await _uow.GetRepository<User>().AddAsync(user);
+            await _uow.SaveAsync();
+
+            return user;
+        }
+
+        public async Task AttachPhoneAsync(
+            Guid userId,
+            SendPhoneOtpRequest req,
+            CancellationToken cancellationToken = default)
+        {
+            var phoneNumber = NormalizePhoneNumber(req.Phone);
+
+            var user = await _uow.GetRepository<User>().GetByIdAsync(userId)
+                ?? throw new Exception("Không tìm thấy người dùng.");
+
+            if (!user.IsActive)
+            {
+                throw new UnauthorizedAccessException("Tài khoản đã bị khóa.");
+            }
+
+            /*
+             * Đã xác thực rồi thì không cho đổi số qua đường này. Đổi số điện
+             * thoại của tài khoản đã xác thực là nghiệp vụ khác, cần luồng riêng
+             * để không biến đây thành cách chiếm tài khoản.
+             */
+            if (user.IsVerified)
+            {
+                throw new Exception("Tài khoản đã xác thực số điện thoại.");
+            }
+
+            user.PhoneNumber = phoneNumber;
+            user.UpdatedAt = DateTime.UtcNow;
+            await _uow.SaveAsync();
+
+            await SendPhoneVerificationOtpAsync(user, phoneNumber, cancellationToken);
         }
 
         private async Task<Role> GetOrCreateDefaultRoleAsync()

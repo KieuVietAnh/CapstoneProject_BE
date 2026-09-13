@@ -23,17 +23,20 @@ namespace UrbanService.Controllers
         /// API công khai, không yêu cầu JWT. Role mặc định được lấy từ cấu hình
         /// `Auth:DefaultRole`, thông thường là `SERVICEUSER`.
         ///
-        /// `phone` là bắt buộc và được chuẩn hóa về E.164. Endpoint này **không**
-        /// trả về token: hệ thống gửi OTP qua SMS, client phải gọi
-        /// `phone-verification/verify` để nhận token.
+        /// `phone` là bắt buộc và được chuẩn hóa về E.164. Hệ thống gửi OTP qua
+        /// SMS và trả về token ngay, với `isVerified = false`.
+        ///
+        /// Tài khoản chưa xác thực vẫn đăng nhập và xem được dữ liệu, nhưng
+        /// **không gửi được phản ánh** cho tới khi xác thực OTP qua
+        /// `phone-verification/verify`.
         ///
         /// Nếu email đã tồn tại nhưng chưa xác thực thì thông tin được cập nhật
         /// và OTP được gửi lại, thay vì báo trùng email.
         /// </remarks>
-        /// <response code="200">Đã tạo tài khoản và gửi OTP. Chưa cấp token.</response>
+        /// <response code="200">Đã tạo tài khoản, gửi OTP và trả về JWT với `isVerified = false`.</response>
         /// <response code="400">Dữ liệu không hợp lệ, tài khoản đã tồn tại hoặc không gửi được SMS.</response>
         [HttpPost("register")]
-        [ProducesResponseType(typeof(RegisterResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Register(
             [FromBody] RegisterRequest req,
@@ -147,6 +150,29 @@ namespace UrbanService.Controllers
             CancellationToken cancellationToken)
         {
             await _auth.RequestPhoneVerificationOtpAsync(req, cancellationToken);
+            return NoContent();
+        }
+
+        /// <summary>Bổ sung số điện thoại cho tài khoản đã đăng nhập.</summary>
+        /// <remarks>
+        /// Dùng cho người đăng nhập bằng Google: tài khoản được tạo tự động và
+        /// chưa có số điện thoại. Endpoint lưu số rồi gửi OTP qua SMS.
+        ///
+        /// Sau đó gọi `phone-verification/verify` với chính số vừa nhập để hoàn
+        /// tất và bật quyền gửi phản ánh.
+        ///
+        /// Tài khoản đã xác thực thì không đổi số qua đây được.
+        /// </remarks>
+        [HttpPost("phone-verification/attach")]
+        [Authorize]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> AttachPhone(
+            [FromBody] SendPhoneOtpRequest req,
+            CancellationToken cancellationToken)
+        {
+            await _auth.AttachPhoneAsync(GetCurrentUserId(), req, cancellationToken);
             return NoContent();
         }
 
