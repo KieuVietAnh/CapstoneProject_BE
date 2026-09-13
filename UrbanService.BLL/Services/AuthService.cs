@@ -1,15 +1,18 @@
-using Google.Apis.Auth;
+﻿using Google.Apis.Auth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Net.Mail;
+using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.Text;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Common.Securities;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
+using UrbanService.BLL.Options;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
 
@@ -21,10 +24,15 @@ namespace UrbanService.BLL.Services
         private readonly IConfiguration _cfg;
         private readonly IJwtTokenGenerator _jwt;
         private readonly IEmailSender _emailSender;
+        private readonly ISmsSender _smsSender;
+        private readonly TwilioOptions _twilioOptions;
         private readonly IMemoryCache _cache;
         private readonly ILogger<AuthService> _logger;
         private const int VerificationOtpMinutes = 5;
         private const int VerificationOtpCooldownSeconds = 60;
+        private const int VerificationOtpMaxAttempts = 5;
+        private const string InvalidPhoneOtpMessage = "OTP không đúng hoặc đã hết hạn.";
+        private static readonly object PhoneVerificationCacheSync = new();
         private const int PasswordResetOtpMinutes = 5;
         private const int PasswordResetOtpCooldownSeconds = 60;
         private const int PasswordResetOtpMaxAttempts = 5;
@@ -37,6 +45,8 @@ namespace UrbanService.BLL.Services
             IConfiguration cfg,
             IJwtTokenGenerator jwt,
             IEmailSender emailSender,
+            ISmsSender smsSender,
+            IOptions<TwilioOptions> twilioOptions,
             IMemoryCache cache,
             ILogger<AuthService> logger)
         {
@@ -44,6 +54,8 @@ namespace UrbanService.BLL.Services
             _cfg = cfg;
             _jwt = jwt;
             _emailSender = emailSender;
+            _smsSender = smsSender;
+            _twilioOptions = twilioOptions.Value;
             _cache = cache;
             _logger = logger;
         }
@@ -72,31 +84,63 @@ namespace UrbanService.BLL.Services
                 throw new UnauthorizedAccessException("Tài khoản đã bị khóa.");
             }
 
+            /*
+             * Tài khoản chưa xác thực số điện thoại thì không được cấp token.
+             * Thiếu chặn ở đây thì cổng OTP lúc đăng ký trở thành vô nghĩa vì
+             * người dùng chỉ cần gọi thẳng login.
+             */
+            if (!user.IsVerified)
+            {
+                throw new UnauthorizedAccessException(
+                    "Tài khoản chưa xác thực số điện thoại. Vui lòng xác thực OTP trước khi đăng nhập.");
+            }
+
             return await IssueAuthResultAsync(user);
         }
 
-        public async Task<AuthResultDto> RegisterAsync(RegisterRequest req)
+        public async Task<RegisterResultDto> RegisterAsync(
+            RegisterRequest req,
+            CancellationToken cancellationToken = default)
         {
-            var email =  req.Email.Trim();
+            var email = NormalizeEmail(req.Email);
 
-            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(req.Password))
+            if (string.IsNullOrWhiteSpace(req.Password))
             {
-                throw new Exception("Email và mật khẩu là bắt buộc.");
+                throw new Exception("Mật khẩu là bắt buộc.");
             }
-
-            var fullName = string.IsNullOrWhiteSpace(req.Fullname) ? email : req.Fullname.Trim();
 
             if (req.Password.Length < 6)
             {
                 throw new Exception("Mật khẩu phải có ít nhất 6 ký tự.");
             }
 
+            var phoneNumber = NormalizePhoneNumber(req.Phone);
+            var fullName = string.IsNullOrWhiteSpace(req.Fullname) ? email : req.Fullname.Trim();
+
             var userRepo = _uow.GetRepository<User>();
-            var existingUser = await userRepo.FindAsync(u => u.Email.ToLower() == email.ToLower(), include: null);
+            var existingUser = await userRepo.FindAsync(u => u.Email.ToLower() == email, include: null);
 
             if (existingUser != null)
             {
-                throw new Exception("Email đã được sử dụng.");
+                /*
+                 * Tài khoản đã tồn tại nhưng chưa xác thực thì cho đăng ký lại:
+                 * cập nhật thông tin mới và gửi lại OTP. Nếu không, người dùng
+                 * lỡ mất OTP sẽ bị kẹt vĩnh viễn với một email không dùng được.
+                 */
+                if (existingUser.IsVerified)
+                {
+                    throw new Exception("Email đã được sử dụng.");
+                }
+
+                existingUser.FullName = fullName;
+                existingUser.PasswordHash = PasswordHasher.Hash(req.Password);
+                existingUser.PhoneNumber = phoneNumber;
+                existingUser.UpdatedAt = DateTime.UtcNow;
+                await _uow.SaveAsync();
+
+                await SendPhoneVerificationOtpAsync(existingUser, phoneNumber, cancellationToken);
+
+                return BuildRegisterResult(existingUser, phoneNumber);
             }
 
             var role = await GetOrCreateDefaultRoleAsync();
@@ -108,7 +152,7 @@ namespace UrbanService.BLL.Services
                 FullName = fullName,
                 Email = email,
                 PasswordHash = PasswordHasher.Hash(req.Password),
-                PhoneNumber = req.Phone,
+                PhoneNumber = phoneNumber,
                 IsActive = true,
                 IsVerified = false,
                 IsRefreshTokenRevoked = false,
@@ -118,8 +162,24 @@ namespace UrbanService.BLL.Services
             };
 
             await userRepo.AddAsync(user);
+            await _uow.SaveAsync();
 
-            return await IssueAuthResultAsync(user);
+            await SendPhoneVerificationOtpAsync(user, phoneNumber, cancellationToken);
+
+            return BuildRegisterResult(user, phoneNumber);
+        }
+
+        private RegisterResultDto BuildRegisterResult(User user, string phoneNumber)
+        {
+            return new RegisterResultDto
+            {
+                UserId = user.UserId,
+                Email = user.Email,
+                PhoneNumber = MaskPhoneNumber(phoneNumber),
+                OtpExpiresInMinutes = VerificationOtpMinutes,
+                Message = "Mã OTP đã được gửi tới số điện thoại. " +
+                    "Xác thực OTP để hoàn tất đăng ký."
+            };
         }
 
         public async Task<AuthResultDto> GoogleLoginAsync(GoogleLoginRequest req)
@@ -213,42 +273,144 @@ namespace UrbanService.BLL.Services
             return await IssueAuthResultAsync(user);
         }
 
-        public async Task RequestEmailVerificationOtpAsync(Guid userId)
+        public async Task RequestPhoneVerificationOtpAsync(
+            SendPhoneOtpRequest req,
+            CancellationToken cancellationToken = default)
         {
-            var user = await _uow.GetRepository<User>().GetByIdAsync(userId)
-                ?? throw new Exception("Không tìm thấy người dùng.");
+            var phoneNumber = NormalizePhoneNumber(req.Phone);
 
-            if (user.IsVerified)
+            var user = await _uow.GetRepository<User>().Entities
+                .FirstOrDefaultAsync(
+                    candidate => candidate.IsActive && candidate.PhoneNumber == phoneNumber,
+                    cancellationToken);
+
+            /*
+             * Không tiết lộ số nào đã đăng ký: trả về im lặng khi không tìm thấy
+             * tài khoản hoặc tài khoản đã xác thực.
+             */
+            if (user == null || user.IsVerified)
             {
-                throw new Exception("Email đã được xác thực.");
+                return;
             }
 
-            if (_cache.TryGetValue(GetVerificationOtpCooldownKey(userId), out _))
+            await SendPhoneVerificationOtpAsync(user, phoneNumber, cancellationToken);
+        }
+
+        /// <summary>
+        /// Sinh OTP, lưu bản băm vào cache rồi gửi SMS.
+        ///
+        /// OTP chỉ lưu dạng băm để log hay dump cache cũng không lộ mã. Nếu gửi
+        /// SMS thất bại thì gỡ luôn OTP và cooldown, để người dùng thử lại ngay
+        /// thay vì bị khóa chờ vô ích.
+        /// </summary>
+        private async Task SendPhoneVerificationOtpAsync(
+            User user,
+            string phoneNumber,
+            CancellationToken cancellationToken)
+        {
+            var otpKey = GetPhoneOtpKey(phoneNumber);
+            var cooldownKey = GetPhoneOtpCooldownKey(phoneNumber);
+
+            lock (PhoneVerificationCacheSync)
             {
-                throw new Exception($"Vui lòng chờ {VerificationOtpCooldownSeconds} giây trước khi gửi lại OTP.");
+                if (_cache.TryGetValue(cooldownKey, out _))
+                {
+                    throw new Exception(
+                        $"Vui lòng chờ {VerificationOtpCooldownSeconds} giây trước khi gửi lại OTP.");
+                }
             }
 
             var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-
-            var body = $"""
-                <h2>Xác thực email UrbanService</h2>
-                <p>Xin chào {System.Net.WebUtility.HtmlEncode(user.FullName)},</p>
-                <p>Mã OTP xác thực email của bạn là:</p>
-                <h1 style="letter-spacing: 6px">{otp}</h1>
-                <p>Mã có hiệu lực trong {VerificationOtpMinutes} phút.</p>
-                """;
-
-            await _emailSender.SendAsync(new EmailMessageDto
+            var state = new PhoneVerificationOtpState
             {
-                To = [user.Email],
-                Subject = "Mã OTP xác thực email UrbanService",
-                Body = body
-            });
-            _cache.Set(GetVerificationOtpKey(userId), otp, TimeSpan.FromMinutes(VerificationOtpMinutes));
-            _cache.Set(
-                GetVerificationOtpCooldownKey(userId),
-                true,
-                TimeSpan.FromSeconds(VerificationOtpCooldownSeconds));
+                UserId = user.UserId,
+                OtpHash = PasswordHasher.Hash(otp)
+            };
+
+            lock (PhoneVerificationCacheSync)
+            {
+                _cache.Set(cooldownKey, true, TimeSpan.FromSeconds(VerificationOtpCooldownSeconds));
+                _cache.Set(otpKey, state, TimeSpan.FromMinutes(VerificationOtpMinutes));
+            }
+
+            try
+            {
+                await _smsSender.SendAsync(
+                    phoneNumber,
+                    $"UrbanService: ma OTP xac thuc cua ban la {otp}. " +
+                    $"Ma co hieu luc trong {VerificationOtpMinutes} phut. Khong chia se ma nay voi ai.",
+                    cancellationToken);
+            }
+            catch (Exception)
+            {
+                RemovePhoneOtpIssuance(otpKey, cooldownKey, state);
+                throw;
+            }
+        }
+
+        public async Task<AuthResultDto> VerifyPhoneAsync(
+            VerifyPhoneRequest req,
+            CancellationToken cancellationToken = default)
+        {
+            var phoneNumber = NormalizePhoneNumber(req.Phone);
+            var otp = req.Otp?.Trim();
+
+            if (string.IsNullOrWhiteSpace(otp) || otp.Length != 6 || !otp.All(char.IsDigit))
+            {
+                throw new Exception(InvalidPhoneOtpMessage);
+            }
+
+            var otpKey = GetPhoneOtpKey(phoneNumber);
+            if (!_cache.TryGetValue<PhoneVerificationOtpState>(otpKey, out var state) || state == null)
+            {
+                throw new Exception(InvalidPhoneOtpMessage);
+            }
+
+            var user = await _uow.GetRepository<User>().FindAsync(
+                candidate => candidate.UserId == state.UserId,
+                q => q.Include(candidate => candidate.Role));
+
+            if (user == null || !user.IsActive || user.PhoneNumber != phoneNumber)
+            {
+                throw new Exception(InvalidPhoneOtpMessage);
+            }
+
+            lock (state.SyncRoot)
+            {
+                if (!_cache.TryGetValue<PhoneVerificationOtpState>(otpKey, out var currentState) ||
+                    !ReferenceEquals(currentState, state))
+                {
+                    throw new Exception(InvalidPhoneOtpMessage);
+                }
+
+                if (!PasswordHasher.Verify(otp, state.OtpHash))
+                {
+                    /*
+                     * Đếm số lần sai để chặn dò OTP. Hết lượt thì hủy mã, người
+                     * dùng phải yêu cầu gửi lại.
+                     */
+                    state.FailedAttempts++;
+                    if (state.FailedAttempts >= VerificationOtpMaxAttempts)
+                    {
+                        _cache.Remove(otpKey);
+                    }
+
+                    throw new Exception(InvalidPhoneOtpMessage);
+                }
+            }
+
+            if (!user.IsVerified)
+            {
+                user.IsVerified = true;
+                user.UpdatedAt = DateTime.UtcNow;
+            }
+
+            var result = await IssueAuthResultAsync(user);
+
+            _cache.Remove(otpKey);
+            _cache.Remove(GetPhoneOtpCooldownKey(phoneNumber));
+
+            return result;
         }
 
         public async Task RequestForgotPasswordOtpAsync(
@@ -432,33 +594,6 @@ namespace UrbanService.BLL.Services
             }
         }
 
-        public async Task VerifyEmailAsync(Guid userId, VerifyEmailRequest req)
-        {
-            if (string.IsNullOrWhiteSpace(req.Otp))
-            {
-                throw new Exception("OTP là bắt buộc.");
-            }
-
-            var user = await _uow.GetRepository<User>().GetByIdAsync(userId)
-                ?? throw new Exception("Không tìm thấy người dùng.");
-
-            if (user.IsVerified)
-            {
-                return;
-            }
-
-            if (!_cache.TryGetValue<string>(GetVerificationOtpKey(userId), out var otp) ||
-                !string.Equals(otp, req.Otp.Trim(), StringComparison.Ordinal))
-            {
-                throw new Exception("OTP không đúng hoặc đã hết hạn.");
-            }
-
-            user.IsVerified = true;
-            user.UpdatedAt = DateTime.UtcNow;
-            await _uow.SaveAsync();
-            _cache.Remove(GetVerificationOtpKey(userId));
-        }
-
         private async Task<Role> GetOrCreateDefaultRoleAsync()
         {
             var defaultRole = _cfg["Auth:DefaultRole"] ?? UserRole.SERVICEUSER;
@@ -554,10 +689,117 @@ namespace UrbanService.BLL.Services
             return true;
         }
 
-        private static string GetVerificationOtpKey(Guid userId) => $"email-verification:{userId}";
+        private static string GetPhoneOtpKey(string phoneNumber) =>
+            $"phone-verification:{HashCacheSubject(phoneNumber)}";
 
-        private static string GetVerificationOtpCooldownKey(Guid userId) =>
-            $"email-verification-cooldown:{userId}";
+        private static string GetPhoneOtpCooldownKey(string phoneNumber) =>
+            $"phone-verification-cooldown:{HashCacheSubject(phoneNumber)}";
+
+        private void RemovePhoneOtpIssuance(
+            string otpKey,
+            string cooldownKey,
+            PhoneVerificationOtpState state)
+        {
+            lock (PhoneVerificationCacheSync)
+            {
+                if (_cache.TryGetValue<PhoneVerificationOtpState>(otpKey, out var currentState) &&
+                    ReferenceEquals(currentState, state))
+                {
+                    _cache.Remove(otpKey);
+                    _cache.Remove(cooldownKey);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Chuẩn hóa số điện thoại về dạng E.164 để Twilio nhận.
+        ///
+        /// Chấp nhận số đã có mã quốc gia (+84..., 84...) và số nội địa bắt đầu
+        /// bằng 0. Ký tự phân cách như khoảng trắng, dấu chấm, gạch ngang và
+        /// ngoặc đơn được bỏ đi trước khi kiểm tra.
+        /// </summary>
+        private string NormalizePhoneNumber(string? phone)
+        {
+            const string invalidMessage = "Số điện thoại không hợp lệ.";
+
+            if (string.IsNullOrWhiteSpace(phone))
+            {
+                throw new Exception("Số điện thoại là bắt buộc.");
+            }
+
+            var hasPlusPrefix = phone.TrimStart().StartsWith('+');
+            var digits = Regex.Replace(phone, @"[^0-9]", string.Empty);
+
+            if (digits.Length == 0)
+            {
+                throw new Exception(invalidMessage);
+            }
+
+            var countryCode = string.IsNullOrWhiteSpace(_twilioOptions.DefaultCountryCode)
+                ? "+84"
+                : _twilioOptions.DefaultCountryCode.Trim();
+            var countryDigits = Regex.Replace(countryCode, @"[^0-9]", string.Empty);
+
+            string e164;
+            if (hasPlusPrefix)
+            {
+                e164 = $"+{digits}";
+            }
+            else if (digits.StartsWith('0'))
+            {
+                e164 = $"+{countryDigits}{digits.TrimStart('0')}";
+            }
+            else if (countryDigits.Length > 0 && digits.StartsWith(countryDigits, StringComparison.Ordinal))
+            {
+                e164 = $"+{digits}";
+            }
+            else
+            {
+                e164 = $"+{countryDigits}{digits}";
+            }
+
+            /*
+             * E.164 cho phép tối đa 15 chữ số kể cả mã quốc gia, tối thiểu 8 chữ
+             * số là ngưỡng thực tế để loại các số rõ ràng sai.
+             */
+            var normalizedDigits = e164[1..];
+            if (normalizedDigits.Length < 8 || normalizedDigits.Length > 15)
+            {
+                throw new Exception(invalidMessage);
+            }
+
+            return e164;
+        }
+
+        /// <summary>
+        /// Che bớt số điện thoại khi trả về cho client, chỉ giữ mã quốc gia và
+        /// 3 chữ số cuối để người dùng nhận ra số của mình.
+        /// </summary>
+        private static string MaskPhoneNumber(string e164PhoneNumber)
+        {
+            if (e164PhoneNumber.Length <= 5)
+            {
+                return e164PhoneNumber;
+            }
+
+            var visibleTail = e164PhoneNumber[^3..];
+            var hiddenLength = e164PhoneNumber.Length - 3 - 3;
+
+            return hiddenLength <= 0
+                ? e164PhoneNumber
+                : $"{e164PhoneNumber[..3]}{new string('*', hiddenLength)}{visibleTail}";
+        }
+
+        private sealed class PhoneVerificationOtpState
+        {
+            public Guid UserId { get; init; }
+
+            public string OtpHash { get; init; } = null!;
+
+            public int FailedAttempts { get; set; }
+
+            public object SyncRoot { get; } = new();
+        }
 
         private static string NormalizeEmail(string? email)
         {

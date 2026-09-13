@@ -14,8 +14,35 @@
         public string Otp { get; set; } = "";
     }
 
-    public class VerifyEmailRequest
+    /// <summary>
+    /// Kết quả của bước đăng ký. Không có token: tài khoản chỉ được cấp token
+    /// sau khi xác thực OTP gửi qua SMS.
+    /// </summary>
+    public class RegisterResultDto
     {
+        public Guid UserId { get; set; }
+
+        public string Email { get; set; } = "";
+
+        /// <summary>
+        /// Số điện thoại đã chuẩn hóa về E.164, che bớt để không lộ toàn bộ số.
+        /// </summary>
+        public string PhoneNumber { get; set; } = "";
+
+        public int OtpExpiresInMinutes { get; set; }
+
+        public string Message { get; set; } = "";
+    }
+
+    public class SendPhoneOtpRequest
+    {
+        public string Phone { get; set; } = "";
+    }
+
+    public class VerifyPhoneRequest
+    {
+        public string Phone { get; set; } = "";
+
         public string Otp { get; set; } = "";
     }
 

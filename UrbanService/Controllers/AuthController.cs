@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using UrbanService.BLL.Common;
@@ -22,15 +22,24 @@ namespace UrbanService.Controllers
         /// <remarks>
         /// API công khai, không yêu cầu JWT. Role mặc định được lấy từ cấu hình
         /// `Auth:DefaultRole`, thông thường là `SERVICEUSER`.
+        ///
+        /// `phone` là bắt buộc và được chuẩn hóa về E.164. Endpoint này **không**
+        /// trả về token: hệ thống gửi OTP qua SMS, client phải gọi
+        /// `phone-verification/verify` để nhận token.
+        ///
+        /// Nếu email đã tồn tại nhưng chưa xác thực thì thông tin được cập nhật
+        /// và OTP được gửi lại, thay vì báo trùng email.
         /// </remarks>
-        /// <response code="200">Đăng ký thành công, trả về JWT và thông tin tài khoản.</response>
-        /// <response code="400">Dữ liệu không hợp lệ hoặc tài khoản đã tồn tại.</response>
+        /// <response code="200">Đã tạo tài khoản và gửi OTP. Chưa cấp token.</response>
+        /// <response code="400">Dữ liệu không hợp lệ, tài khoản đã tồn tại hoặc không gửi được SMS.</response>
         [HttpPost("register")]
-        [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(RegisterResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> Register([FromBody] RegisterRequest req)
+        public async Task<IActionResult> Register(
+            [FromBody] RegisterRequest req,
+            CancellationToken cancellationToken)
         {
-            var result = await _auth.RegisterAsync(req);
+            var result = await _auth.RegisterAsync(req, cancellationToken);
             return Ok(result);
         }
 
@@ -120,36 +129,46 @@ namespace UrbanService.Controllers
             return NoContent();
         }
 
-        /// <summary>Gửi OTP xác thực email tới email của người dùng hiện tại.</summary>
+        /// <summary>Gửi lại OTP xác thực số điện thoại.</summary>
         /// <remarks>
-        /// Yêu cầu JWT hợp lệ. OTP có hiệu lực trong 5 phút. Brevo API phải được
-        /// cấu hình trong section `Brevo`.
+        /// API công khai, không yêu cầu JWT, vì tài khoản chưa xác thực thì chưa
+        /// có token. Có cooldown giữa hai lần gửi.
+        ///
+        /// Để tránh dò xem số nào đã đăng ký, endpoint luôn trả `204` kể cả khi
+        /// số không tồn tại hoặc tài khoản đã xác thực.
+        ///
+        /// Yêu cầu cấu hình section `Twilio`.
         /// </remarks>
-        [HttpPost("email-verification/send-otp")]
-        [Authorize]
+        [HttpPost("phone-verification/send-otp")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        public async Task<IActionResult> SendEmailVerificationOtp()
+        public async Task<IActionResult> SendPhoneVerificationOtp(
+            [FromBody] SendPhoneOtpRequest req,
+            CancellationToken cancellationToken)
         {
-            await _auth.RequestEmailVerificationOtpAsync(GetCurrentUserId());
+            await _auth.RequestPhoneVerificationOtpAsync(req, cancellationToken);
             return NoContent();
         }
 
-        /// <summary>Xác thực email bằng OTP.</summary>
+        /// <summary>Xác thực số điện thoại bằng OTP và nhận token.</summary>
         /// <remarks>
-        /// Yêu cầu JWT hợp lệ. Sau khi OTP đúng, trường `isVerified` của người
-        /// dùng được cập nhật thành `true`.
+        /// API công khai, không yêu cầu JWT. OTP đúng thì `isVerified` được đặt
+        /// thành `true` và response trả về JWT cùng refresh token, hoàn tất
+        /// đăng ký mà không cần gọi thêm `login`.
+        ///
+        /// Nhập sai quá số lần cho phép thì OTP bị hủy, phải yêu cầu gửi lại.
         /// </remarks>
-        [HttpPost("email-verification/verify")]
-        [Authorize]
-        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        /// <response code="200">Xác thực thành công, trả về JWT và thông tin tài khoản.</response>
+        /// <response code="400">OTP không đúng hoặc đã hết hạn.</response>
+        [HttpPost("phone-verification/verify")]
+        [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailRequest req)
+        public async Task<IActionResult> VerifyPhone(
+            [FromBody] VerifyPhoneRequest req,
+            CancellationToken cancellationToken)
         {
-            await _auth.VerifyEmailAsync(GetCurrentUserId(), req);
-            return NoContent();
+            var result = await _auth.VerifyPhoneAsync(req, cancellationToken);
+            return Ok(result);
         }
 
         private Guid GetCurrentUserId()
