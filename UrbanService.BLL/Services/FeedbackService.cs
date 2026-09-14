@@ -3089,7 +3089,7 @@ public class FeedbackService : IFeedbackService
             feedback.ApprovedAt = now;
         }
 
-        var updatedIncident = await _incidentService.UpdateStatusAsync(
+        var updatedIncident = await _incidentService.UpdateStatusFromResolutionReviewAsync(
             incidentId,
             new UpdateIncidentStatusRequest
             {
@@ -3187,7 +3187,7 @@ public class FeedbackService : IFeedbackService
                 now;
         }
 
-        var updatedIncident = await _incidentService.UpdateStatusAsync(
+        var updatedIncident = await _incidentService.UpdateStatusFromResolutionReviewAsync(
             incidentId,
             new UpdateIncidentStatusRequest
             {

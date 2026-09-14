@@ -107,6 +107,12 @@ public interface IIncidentService
         Guid actorUserId,
         CancellationToken cancellationToken = default);
 
+    Task<IncidentDetailDto> UpdateStatusFromResolutionReviewAsync(
+        Guid incidentId,
+        UpdateIncidentStatusRequest request,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default);
+
     Task<IncidentDetailDto> AssignAsync(
         Guid incidentId,
         AssignIncidentRequest request,

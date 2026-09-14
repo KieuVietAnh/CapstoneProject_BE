@@ -339,7 +339,7 @@ public class FeedbackWorkflowRbacTests
                 Substitute.For<IAiFeedbackDuplicateService>(),
                     IncidentService);
 
-            IncidentService.UpdateStatusAsync(
+            IncidentService.UpdateStatusFromResolutionReviewAsync(
                     Arg.Any<Guid>(),
                     Arg.Any<UpdateIncidentStatusRequest>(),
                     Arg.Any<Guid>(),

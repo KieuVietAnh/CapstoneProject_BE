@@ -433,6 +433,80 @@ public sealed class IncidentServiceTests
         Assert.Empty(context.StatusHistories);
     }
 
+    [Theory]
+    [InlineData(IncidentStatus.Approved, FeedbackStatus.Approved)]
+    [InlineData(IncidentStatus.NeedRework, FeedbackStatus.NeedRework)]
+    public async Task UpdateStatusFromResolutionReview_AllowsReviewTransitions(
+        string incidentStatus,
+        string feedbackStatus)
+    {
+        var context = new IncidentTestContext();
+        var service = new IncidentService(context.UnitOfWork);
+        var now = DateTime.UtcNow;
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        feedback.Status = FeedbackStatus.SubmittedForApproval;
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        incident.Status = IncidentStatus.SubmittedForApproval;
+        context.Incidents.Add(incident);
+        context.Feedbacks.Add(feedback);
+        context.Links.Add(IncidentTestContext.Link(
+            incident,
+            feedback,
+            IncidentLinkRole.Primary,
+            now));
+        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Ward manager");
+        context.AddManagerAreaAssignment(manager, incident.Area);
+
+        var result = await service.UpdateStatusFromResolutionReviewAsync(
+            incident.IncidentId,
+            new UrbanService.BLL.Dtos.UpdateIncidentStatusRequest
+            {
+                Status = incidentStatus,
+                Note = "Resolution reviewed"
+            },
+            manager.UserId);
+
+        Assert.Equal(incidentStatus, result.Status);
+        Assert.Equal(incidentStatus, incident.Status);
+        Assert.Equal(feedbackStatus, feedback.Status);
+        var history = Assert.Single(context.StatusHistories);
+        Assert.Equal(FeedbackStatus.SubmittedForApproval, history.OldStatus);
+        Assert.Equal(feedbackStatus, history.NewStatus);
+    }
+
+    [Fact]
+    public async Task UpdateStatusFromResolutionReview_RejectsNonReviewTransition()
+    {
+        var context = new IncidentTestContext();
+        var service = new IncidentService(context.UnitOfWork);
+        var now = DateTime.UtcNow;
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        feedback.Status = FeedbackStatus.SubmittedForApproval;
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        incident.Status = IncidentStatus.SubmittedForApproval;
+        context.Incidents.Add(incident);
+        context.Feedbacks.Add(feedback);
+        context.Links.Add(IncidentTestContext.Link(
+            incident,
+            feedback,
+            IncidentLinkRole.Primary,
+            now));
+        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Ward manager");
+        context.AddManagerAreaAssignment(manager, incident.Area);
+
+        await Assert.ThrowsAsync<Exception>(() => service.UpdateStatusFromResolutionReviewAsync(
+            incident.IncidentId,
+            new UrbanService.BLL.Dtos.UpdateIncidentStatusRequest
+            {
+                Status = IncidentStatus.InProgress
+            },
+            manager.UserId));
+
+        Assert.Equal(IncidentStatus.SubmittedForApproval, incident.Status);
+        Assert.Equal(FeedbackStatus.SubmittedForApproval, feedback.Status);
+        Assert.Empty(context.StatusHistories);
+    }
+
     [Fact]
     public async Task GetIncidents_StaffSeesOnlyIncidentsAssignedToSelf()
     {
