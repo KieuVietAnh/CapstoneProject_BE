@@ -1382,6 +1382,33 @@ public sealed class IncidentService : IIncidentService
         await UpdateStatusCoreAsync(incidentId, request, actorUserId, cancellationToken);
     }
 
+    public async Task<IncidentDetailDto> UpdateStatusFromResolutionReviewAsync(
+        Guid incidentId,
+        UpdateIncidentStatusRequest request,
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await ManagementAccessRules.GetActorScopeAsync(
+            _uow,
+            actorUserId,
+            cancellationToken);
+        await EnsureManagerIncidentAccessAsync(actor, incidentId, cancellationToken);
+        var requestedStatus = NormalizeIncidentStatus(request.Status);
+        if (requestedStatus != IncidentStatus.Approved &&
+            requestedStatus != IncidentStatus.NeedRework)
+        {
+            throw new Exception(
+                "Review kết quả xử lý chỉ được chuyển Incident sang Approved hoặc NeedRework.");
+        }
+
+        var result = await UpdateStatusCoreAsync(
+            incidentId,
+            request,
+            actorUserId,
+            cancellationToken);
+        return result.Detail;
+    }
+
     private async Task<IncidentStatusUpdateResult> UpdateStatusCoreAsync(
         Guid incidentId,
         UpdateIncidentStatusRequest request,
