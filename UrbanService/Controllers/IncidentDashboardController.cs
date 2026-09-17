@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using UrbanService.BLL.Common.Constraint;
@@ -144,6 +144,79 @@ public class IncidentDashboardController
                 .GetAreaDistributionAsync(
                     GetCurrentUserId(),
                     maxPointsPerArea);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy phân bố sự vụ theo danh mục kết hợp phường, kèm tọa độ.
+    /// </summary>
+    /// <remarks>
+    /// Lọc được ba chiều, tất cả đều tùy chọn:
+    ///
+    /// - `categoryId`: chỉ lấy một danh mục. Bỏ trống để lấy mọi danh mục.
+    /// - `areaId`: chỉ lấy một phường. Bỏ trống để lấy mọi phường.
+    /// - `range`: khoảng thời gian theo ngày tạo sự vụ, nhận `all`, `7d`, `1m`,
+    ///   `6m` hoặc `1y`. Bỏ trống tương đương `all`.
+    ///
+    /// Không truyền gì thì trả về toàn bộ sự vụ trong phạm vi đọc của tài khoản.
+    /// Truyền cả `categoryId` lẫn `areaId` thì lọc đồng thời cả hai.
+    ///
+    /// Mỗi danh mục trả về danh sách phường có sự vụ thuộc danh mục đó, kèm số
+    /// đang mở, số đã hoàn thành, tỷ lệ trong nội bộ danh mục, và `points` là
+    /// tọa độ các sự vụ đúng cặp danh mục - phường để chấm lên bản đồ.
+    ///
+    /// Mỗi sự vụ chỉ thuộc đúng một ô (danh mục, phường) nên tổng số đếm của
+    /// các ô bằng `totalCount`, cộng dồn không bị đếm trùng.
+    ///
+    /// `mappedCount` là số sự vụ có tọa độ; nếu lớn hơn số phần tử trong
+    /// `points` thì danh sách đã bị cắt theo `maxPointsPerArea`.
+    ///
+    /// `filter` phản chiếu lại tiêu chí đã áp dụng kèm tên danh mục và tên
+    /// phường, để client hiển thị đúng bộ lọc đang có hiệu lực.
+    ///
+    /// Mốc thời gian tính theo giờ Việt Nam.
+    /// </remarks>
+    [HttpGet("distribution")]
+    [ProducesResponseType(
+        typeof(IncidentDistributionReportDto),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult>
+        GetDistribution(
+            [FromQuery] IncidentDistributionQueryParameters query)
+    {
+        var result =
+            await _incidentDashboardService
+                .GetDistributionAsync(
+                    GetCurrentUserId(),
+                    query);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy tình hình tiếp nhận và xử lý trong ngày hôm nay.
+    /// </summary>
+    /// <remarks>
+    /// Trả về số phản ánh người dân gửi trong hôm nay, số sự vụ mới phát sinh,
+    /// số sự vụ xử lý xong, kèm chia nhỏ theo danh mục và theo phường.
+    ///
+    /// Ranh giới ngày tính theo giờ Việt Nam chứ không theo UTC.
+    /// `StartOfDayUtc` và `EndOfDayUtc` được trả ra để client đối chiếu được vì
+    /// sao một bản ghi rơi vào hôm nay hay hôm qua.
+    ///
+    /// Dùng cho thẻ KPI trong ngày trên dashboard.
+    /// </remarks>
+    [HttpGet("today")]
+    [ProducesResponseType(
+        typeof(IncidentTodaySummaryDto),
+        StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTodaySummary()
+    {
+        var result =
+            await _incidentDashboardService
+                .GetTodaySummaryAsync(GetCurrentUserId());
 
         return Ok(result);
     }

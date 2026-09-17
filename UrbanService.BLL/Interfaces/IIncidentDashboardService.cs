@@ -1,4 +1,4 @@
-﻿using UrbanService.BLL.DTOs.Incident.Dashboard;
+using UrbanService.BLL.DTOs.Incident.Dashboard;
 
 namespace UrbanService.BLL.Interfaces;
 
@@ -33,6 +33,25 @@ public interface IIncidentDashboardService
         GetAreaDistributionAsync(
             Guid actorUserId,
             int maxPointsPerArea = 500);
+
+    /// <summary>
+    /// Phân bố sự vụ theo danh mục, tách tiếp theo từng phường, kèm tọa độ từng
+    /// sự vụ để vẽ bản đồ.
+    ///
+    /// Lọc được theo danh mục, theo phường và theo khoảng thời gian; tiêu chí nào
+    /// bỏ trống thì tiêu chí đó không lọc.
+    /// </summary>
+    Task<IncidentDistributionReportDto>
+        GetDistributionAsync(
+            Guid actorUserId,
+            IncidentDistributionQueryParameters? parameters = null);
+
+    /// <summary>
+    /// Tình hình tiếp nhận và xử lý trong ngày hôm nay, ranh giới ngày tính theo
+    /// giờ Việt Nam.
+    /// </summary>
+    Task<IncidentTodaySummaryDto>
+        GetTodaySummaryAsync(Guid actorUserId);
 
     Task<List<IncidentMonthlyTrendDto>>
         GetMonthlyTrendAsync(
