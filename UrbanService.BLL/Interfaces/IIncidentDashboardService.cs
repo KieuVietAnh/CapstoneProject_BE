@@ -41,10 +41,10 @@ public interface IIncidentDashboardService
     /// Lọc được theo danh mục, theo phường và theo khoảng thời gian; tiêu chí nào
     /// bỏ trống thì tiêu chí đó không lọc.
     /// </summary>
-    Task<IncidentCategoryAreaReportDto>
-        GetCategoryAreaDistributionAsync(
+    Task<IncidentDistributionReportDto>
+        GetDistributionAsync(
             Guid actorUserId,
-            IncidentCategoryAreaQueryParameters? parameters = null);
+            IncidentDistributionQueryParameters? parameters = null);
 
     /// <summary>
     /// Tình hình tiếp nhận và xử lý trong ngày hôm nay, ranh giới ngày tính theo

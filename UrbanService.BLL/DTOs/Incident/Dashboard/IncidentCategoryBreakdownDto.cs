@@ -8,7 +8,7 @@ namespace UrbanService.BLL.DTOs.Incident.Dashboard;
 /// `area-distribution` chỉ gom theo phường: ở đây một sự vụ được quy về đúng một
 /// ô (danh mục, phường), nên tổng số đếm của các ô bằng tổng số sự vụ.
 /// </summary>
-public class IncidentCategoryAreaDistributionDto
+public class IncidentCategoryBreakdownDto
 {
     public int? CategoryId { get; set; }
 

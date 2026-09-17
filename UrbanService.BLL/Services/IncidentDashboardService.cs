@@ -396,12 +396,12 @@ public class IncidentDashboardService
     /// Mỗi sự vụ được quy về đúng một ô (danh mục, phường) nên tổng số đếm của
     /// các ô bằng tổng số sự vụ; có thể cộng dồn mà không sợ đếm trùng.
     /// </summary>
-    public async Task<IncidentCategoryAreaReportDto>
-        GetCategoryAreaDistributionAsync(
+    public async Task<IncidentDistributionReportDto>
+        GetDistributionAsync(
             Guid actorUserId,
-            IncidentCategoryAreaQueryParameters? parameters = null)
+            IncidentDistributionQueryParameters? parameters = null)
     {
-        parameters ??= new IncidentCategoryAreaQueryParameters();
+        parameters ??= new IncidentDistributionQueryParameters();
 
         var maxPointsPerArea = Math.Clamp(
             parameters.MaxPointsPerArea,
@@ -462,7 +462,7 @@ public class IncidentDashboardService
 
         if (total == 0)
         {
-            return new IncidentCategoryAreaReportDto
+            return new IncidentDistributionReportDto
             {
                 Filter = filter
             };
@@ -588,7 +588,7 @@ public class IncidentDashboardService
                     })
                     .ToList();
 
-                return new IncidentCategoryAreaDistributionDto
+                return new IncidentCategoryBreakdownDto
                 {
                     CategoryId = categoryGroup.Key.CategoryId,
 
@@ -614,7 +614,7 @@ public class IncidentDashboardService
             .OrderByDescending(x => x.Count)
             .ToList();
 
-        return new IncidentCategoryAreaReportDto
+        return new IncidentDistributionReportDto
         {
             Filter = filter,
 

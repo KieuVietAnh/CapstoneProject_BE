@@ -177,18 +177,18 @@ public class IncidentDashboardController
     ///
     /// Mốc thời gian tính theo giờ Việt Nam.
     /// </remarks>
-    [HttpGet("category-area-distribution")]
+    [HttpGet("distribution")]
     [ProducesResponseType(
-        typeof(IncidentCategoryAreaReportDto),
+        typeof(IncidentDistributionReportDto),
         StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult>
-        GetCategoryAreaDistribution(
-            [FromQuery] IncidentCategoryAreaQueryParameters query)
+        GetDistribution(
+            [FromQuery] IncidentDistributionQueryParameters query)
     {
         var result =
             await _incidentDashboardService
-                .GetCategoryAreaDistributionAsync(
+                .GetDistributionAsync(
                     GetCurrentUserId(),
                     query);
 

@@ -6,7 +6,7 @@ namespace UrbanService.BLL.DTOs.Incident.Dashboard;
 /// Các số đếm ở cấp này là tổng của toàn bộ kết quả sau khi lọc, dùng cho thẻ
 /// tóm tắt phía trên bản đồ mà không cần client tự cộng lại.
 /// </summary>
-public class IncidentCategoryAreaReportDto
+public class IncidentDistributionReportDto
 {
     public IncidentDistributionFilterDto Filter { get; set; } = new();
 
@@ -25,6 +25,6 @@ public class IncidentCategoryAreaReportDto
     /// <summary>
     /// Các danh mục có sự vụ, nhiều nhất trước.
     /// </summary>
-    public IReadOnlyCollection<IncidentCategoryAreaDistributionDto> Categories { get; set; }
-        = Array.Empty<IncidentCategoryAreaDistributionDto>();
+    public IReadOnlyCollection<IncidentCategoryBreakdownDto> Categories { get; set; }
+        = Array.Empty<IncidentCategoryBreakdownDto>();
 }

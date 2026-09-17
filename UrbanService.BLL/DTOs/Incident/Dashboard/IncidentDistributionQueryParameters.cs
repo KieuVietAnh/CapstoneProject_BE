@@ -6,7 +6,7 @@ namespace UrbanService.BLL.DTOs.Incident.Dashboard;
 /// Mọi tiêu chí đều tùy chọn. Bỏ trống hết thì lấy toàn bộ sự vụ trong phạm vi
 /// đọc của người dùng.
 /// </summary>
-public class IncidentCategoryAreaQueryParameters
+public class IncidentDistributionQueryParameters
 {
     /// <summary>
     /// Chỉ lấy sự vụ thuộc danh mục này. Bỏ trống để lấy mọi danh mục.
