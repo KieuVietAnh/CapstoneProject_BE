@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using UrbanService.BLL.Common.Constraint;
@@ -144,6 +144,68 @@ public class IncidentDashboardController
                 .GetAreaDistributionAsync(
                     GetCurrentUserId(),
                     maxPointsPerArea);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy phân bố sự vụ theo danh mục kết hợp phường, kèm tọa độ.
+    /// </summary>
+    /// <remarks>
+    /// Mỗi danh mục trả về danh sách phường có sự vụ thuộc danh mục đó, kèm số
+    /// đang mở, số đã hoàn thành, tỷ lệ trong nội bộ danh mục, và `Points` là
+    /// tọa độ các sự vụ đúng cặp danh mục - phường để chấm lên bản đồ.
+    ///
+    /// Mỗi sự vụ chỉ thuộc đúng một ô (danh mục, phường) nên tổng số đếm của
+    /// các ô bằng tổng số sự vụ, cộng dồn không bị đếm trùng.
+    ///
+    /// `MappedCount` là số sự vụ có tọa độ; nếu lớn hơn số phần tử trong
+    /// `Points` thì danh sách đã bị cắt theo `maxPointsPerArea`.
+    ///
+    /// Dùng cho bản đồ phân bố theo loại sự cố và biểu đồ chồng theo danh mục.
+    /// </remarks>
+    /// <param name="maxPointsPerArea">
+    /// Số điểm tối đa mỗi cặp danh mục - phường, mặc định 500, tối đa 5000.
+    /// </param>
+    [HttpGet("category-area-distribution")]
+    [ProducesResponseType(
+        typeof(List<IncidentCategoryAreaDistributionDto>),
+        StatusCodes.Status200OK)]
+    public async Task<IActionResult>
+        GetCategoryAreaDistribution(
+            [FromQuery] int maxPointsPerArea = 500)
+    {
+        var result =
+            await _incidentDashboardService
+                .GetCategoryAreaDistributionAsync(
+                    GetCurrentUserId(),
+                    maxPointsPerArea);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy tình hình tiếp nhận và xử lý trong ngày hôm nay.
+    /// </summary>
+    /// <remarks>
+    /// Trả về số phản ánh người dân gửi trong hôm nay, số sự vụ mới phát sinh,
+    /// số sự vụ xử lý xong, kèm chia nhỏ theo danh mục và theo phường.
+    ///
+    /// Ranh giới ngày tính theo giờ Việt Nam chứ không theo UTC.
+    /// `StartOfDayUtc` và `EndOfDayUtc` được trả ra để client đối chiếu được vì
+    /// sao một bản ghi rơi vào hôm nay hay hôm qua.
+    ///
+    /// Dùng cho thẻ KPI trong ngày trên dashboard.
+    /// </remarks>
+    [HttpGet("today")]
+    [ProducesResponseType(
+        typeof(IncidentTodaySummaryDto),
+        StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTodaySummary()
+    {
+        var result =
+            await _incidentDashboardService
+                .GetTodaySummaryAsync(GetCurrentUserId());
 
         return Ok(result);
     }

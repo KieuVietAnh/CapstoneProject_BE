@@ -10,6 +10,12 @@ public class IncidentMapPointDto
 {
     public Guid IncidentId { get; set; }
 
+    /// <summary>
+    /// Phường chứa sự vụ. Trả ra ngay trên điểm để client gom nhóm lại
+    /// theo phường mà không phải dựa vào vị trí của điểm trong cây kết quả.
+    /// </summary>
+    public int AreaId { get; set; }
+
     public string Title { get; set; } = null!;
 
     public decimal Latitude { get; set; }

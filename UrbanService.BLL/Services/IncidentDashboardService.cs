@@ -1,5 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common.Constraint;
+using UrbanService.BLL.Common.Helpers;
 using UrbanService.BLL.DTOs.Incident.Dashboard;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
@@ -46,8 +47,15 @@ public class IncidentDashboardService
     public async Task<IncidentDashboardOverviewDto>
         GetOverviewAsync(Guid actorUserId)
     {
-        var now = DateTime.UtcNow;
-        var startOfToday = now.Date;
+        var now = SlaDateTimeHelper.UtcNow;
+
+        /*
+         * Ranh giới ngày phải tính theo giờ Việt Nam. Nếu dùng now.Date của UTC
+         * thì mọi bản ghi từ 00:00 đến 07:00 giờ Việt Nam bị đẩy sang hôm trước.
+         */
+        var startOfToday =
+            SlaDateTimeHelper.VietnamToUtc(
+                SlaDateTimeHelper.ToVietnamTime(now).Date);
 
         var reports = await GetScopedFeedbacksAsync(actorUserId);
         var incidents = await GetScopedIncidentsAsync(actorUserId);
@@ -327,8 +335,11 @@ public class IncidentDashboardService
             .OrderByDescending(x => x.Count)
             .ToListAsync();
 
-        var pointsByArea =
-            await GetMapPointsByAreaAsync(query);
+        var pointsByArea = (await GetMapPointsAsync(query))
+            .GroupBy(point => point.AreaId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToList());
 
         return data
             .Select(x =>
@@ -377,14 +388,321 @@ public class IncidentDashboardService
     }
 
     /// <summary>
-    /// Lấy tọa độ các sự vụ trong phạm vi đọc của người dùng, gom theo khu vực.
+    /// Phân bố sự vụ theo danh mục, tách tiếp theo từng phường, kèm tọa độ.
+    ///
+    /// Mỗi sự vụ được quy về đúng một ô (danh mục, phường) nên tổng số đếm của
+    /// các ô bằng tổng số sự vụ; có thể cộng dồn mà không sợ đếm trùng.
+    /// </summary>
+    public async Task<List<IncidentCategoryAreaDistributionDto>>
+        GetCategoryAreaDistributionAsync(
+            Guid actorUserId,
+            int maxPointsPerArea = DefaultMapPointsPerArea)
+    {
+        maxPointsPerArea = Math.Clamp(
+            maxPointsPerArea,
+            1,
+            MaxMapPointsPerArea);
+
+        var query = await GetScopedIncidentsAsync(actorUserId);
+
+        var total =
+            await query.CountAsync();
+
+        if (total == 0)
+        {
+            return [];
+        }
+
+        var cells = await query
+            .GroupBy(x => new
+            {
+                x.CategoryId,
+
+                CategoryName =
+                    x.Category != null
+                        ? x.Category.CategoryName
+                        : "Chưa phân loại",
+
+                x.AreaId,
+                x.Area.AreaName,
+                x.Area.WardCode,
+                x.Area.DistrictName,
+                x.Area.CenterLatitude,
+                x.Area.CenterLongitude
+            })
+            .Select(group => new
+            {
+                group.Key.CategoryId,
+                group.Key.CategoryName,
+                group.Key.AreaId,
+                group.Key.AreaName,
+                group.Key.WardCode,
+                group.Key.DistrictName,
+                group.Key.CenterLatitude,
+                group.Key.CenterLongitude,
+
+                Count =
+                    group.Count(),
+
+                CompletedCount =
+                    group.Count(x =>
+                        ClosedIncidentStatuses.Contains(x.Status)),
+
+                OpenCount =
+                    group.Count(x =>
+                        !ClosedIncidentStatuses.Contains(x.Status) &&
+                        x.Status != IncidentStatus.Cancelled &&
+                        x.Status != IncidentStatus.Rejected)
+            })
+            .ToListAsync();
+
+        /*
+         * Gom điểm theo cặp (danh mục, phường) để mỗi ô chỉ nhận đúng các sự vụ
+         * của mình, thay vì nhận toàn bộ điểm của phường.
+         */
+        var pointsByCell = (await GetMapPointsAsync(query))
+            .GroupBy(point => new
+            {
+                point.CategoryId,
+                point.AreaId
+            })
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToList());
+
+        return cells
+            .GroupBy(cell => new
+            {
+                cell.CategoryId,
+                cell.CategoryName
+            })
+            .Select(categoryGroup =>
+            {
+                var categoryCount =
+                    categoryGroup.Sum(cell => cell.Count);
+
+                var areas = categoryGroup
+                    .OrderByDescending(cell => cell.Count)
+                    .Select(cell =>
+                    {
+                        var hasPoints = pointsByCell.TryGetValue(
+                            new
+                            {
+                                categoryGroup.Key.CategoryId,
+                                cell.AreaId
+                            },
+                            out var cellPoints);
+
+                        return new IncidentAreaBreakdownDto
+                        {
+                            AreaId = cell.AreaId,
+
+                            AreaName = cell.AreaName,
+
+                            WardCode = cell.WardCode,
+
+                            DistrictName = cell.DistrictName,
+
+                            CenterLatitude = cell.CenterLatitude,
+
+                            CenterLongitude = cell.CenterLongitude,
+
+                            Count = cell.Count,
+
+                            OpenCount = cell.OpenCount,
+
+                            CompletedCount = cell.CompletedCount,
+
+                            PercentageInCategory =
+                                ToPercentage(
+                                    cell.Count,
+                                    categoryCount),
+
+                            MappedCount =
+                                hasPoints
+                                    ? cellPoints!.Count
+                                    : 0,
+
+                            Points =
+                                hasPoints
+                                    ? cellPoints!
+                                        .Take(maxPointsPerArea)
+                                        .ToList()
+                                    : []
+                        };
+                    })
+                    .ToList();
+
+                return new IncidentCategoryAreaDistributionDto
+                {
+                    CategoryId = categoryGroup.Key.CategoryId,
+
+                    CategoryName = categoryGroup.Key.CategoryName,
+
+                    Count = categoryCount,
+
+                    OpenCount =
+                        categoryGroup.Sum(cell => cell.OpenCount),
+
+                    CompletedCount =
+                        categoryGroup.Sum(cell => cell.CompletedCount),
+
+                    Percentage =
+                        ToPercentage(categoryCount, total),
+
+                    MappedCount =
+                        areas.Sum(area => area.MappedCount),
+
+                    Areas = areas
+                };
+            })
+            .OrderByDescending(x => x.Count)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Tình hình tiếp nhận và xử lý trong ngày hôm nay, ranh giới ngày tính theo
+    /// giờ Việt Nam.
+    /// </summary>
+    public async Task<IncidentTodaySummaryDto>
+        GetTodaySummaryAsync(Guid actorUserId)
+    {
+        var nowUtc =
+            SlaDateTimeHelper.UtcNow;
+
+        var vietnamNow =
+            SlaDateTimeHelper.ToVietnamTime(nowUtc);
+
+        var startOfDayUtc =
+            SlaDateTimeHelper.VietnamToUtc(
+                vietnamNow.Date);
+
+        var endOfDayUtc =
+            SlaDateTimeHelper.VietnamToUtc(
+                vietnamNow.Date.AddDays(1));
+
+        var reports = await GetScopedFeedbacksAsync(actorUserId);
+        var incidents = await GetScopedIncidentsAsync(actorUserId);
+
+        var reportsToday = reports
+            .Where(x =>
+                x.CreatedAt >= startOfDayUtc &&
+                x.CreatedAt < endOfDayUtc);
+
+        var reportCount =
+            await reportsToday.CountAsync();
+
+        var incidentCount =
+            await incidents.CountAsync(x =>
+                x.CreatedAt >= startOfDayUtc &&
+                x.CreatedAt < endOfDayUtc);
+
+        /*
+         * Đếm theo thời điểm sự vụ được xử lý xong, không theo trạng thái hiện
+         * tại, để con số phản ánh đúng khối lượng giải quyết trong hôm nay.
+         */
+        var resolvedCount =
+            await incidents.CountAsync(x =>
+                x.ResolvedAt.HasValue &&
+                x.ResolvedAt.Value >= startOfDayUtc &&
+                x.ResolvedAt.Value < endOfDayUtc);
+
+        var byCategory = await reportsToday
+            .GroupBy(x => new
+            {
+                x.CategoryId,
+
+                CategoryName =
+                    x.Category != null
+                        ? x.Category.CategoryName
+                        : "Chưa phân loại"
+            })
+            .Select(group => new
+            {
+                group.Key.CategoryId,
+                group.Key.CategoryName,
+                Count = group.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+
+        var byArea = await reportsToday
+            .GroupBy(x => new
+            {
+                x.AreaId,
+                x.Area.AreaName,
+                x.Area.WardCode,
+                x.Area.DistrictName
+            })
+            .Select(group => new
+            {
+                group.Key.AreaId,
+                group.Key.AreaName,
+                group.Key.WardCode,
+                group.Key.DistrictName,
+                Count = group.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+
+        return new IncidentTodaySummaryDto
+        {
+            Date = DateOnly.FromDateTime(vietnamNow),
+
+            StartOfDayUtc = startOfDayUtc,
+
+            EndOfDayUtc = endOfDayUtc,
+
+            ReportCount = reportCount,
+
+            IncidentCount = incidentCount,
+
+            ResolvedCount = resolvedCount,
+
+            ByCategory = byCategory
+                .Select(x => new IncidentCategoryDistributionDto
+                {
+                    CategoryId = x.CategoryId,
+
+                    CategoryName = x.CategoryName,
+
+                    Count = x.Count,
+
+                    Percentage =
+                        ToPercentage(x.Count, reportCount)
+                })
+                .ToList(),
+
+            ByArea = byArea
+                .Select(x => new IncidentAreaCountDto
+                {
+                    AreaId = x.AreaId,
+
+                    AreaName = x.AreaName,
+
+                    WardCode = x.WardCode,
+
+                    DistrictName = x.DistrictName,
+
+                    Count = x.Count,
+
+                    Percentage =
+                        ToPercentage(x.Count, reportCount)
+                })
+                .ToList()
+        };
+    }
+
+    /// <summary>
+    /// Lấy tọa độ các sự vụ trong phạm vi đọc của người dùng, mới nhất trước.
     ///
     /// Việc lọc theo phạm vi và theo điều kiện có tọa độ được thực hiện ở database;
     /// chỉ thao tác gom nhóm và cắt theo giới hạn mới chạy trong bộ nhớ, nên số dòng
-    /// đọc lên đúng bằng số điểm thực sự vẽ được trên bản đồ.
+    /// đọc lên đúng bằng số điểm thực sự vẽ được trên bản đồ. Danh sách trả về phẳng
+    /// để người gọi tự gom theo phường hoặc theo cặp danh mục - phường.
     /// </summary>
-    private static async Task<Dictionary<int, List<IncidentMapPointDto>>>
-        GetMapPointsByAreaAsync(IQueryable<Incident> scopedIncidents)
+    private static async Task<List<IncidentMapPointDto>>
+        GetMapPointsAsync(IQueryable<Incident> scopedIncidents)
     {
         var rows = await scopedIncidents
             .Where(incident =>
@@ -418,39 +736,52 @@ public class IncidentDashboardService
             .ToListAsync();
 
         return rows
-            .GroupBy(row => row.AreaId)
-            .ToDictionary(
-                group => group.Key,
-                group => group
-                    .Select(row => new IncidentMapPointDto
-                    {
-                        IncidentId = row.IncidentId,
+            .Select(row => new IncidentMapPointDto
+            {
+                IncidentId = row.IncidentId,
 
-                        Title = row.Title,
+                AreaId = row.AreaId,
 
-                        Latitude = row.Latitude!.Value,
+                Title = row.Title,
 
-                        Longitude = row.Longitude!.Value,
+                Latitude = row.Latitude!.Value,
 
-                        Status = row.Status,
+                Longitude = row.Longitude!.Value,
 
-                        Priority = row.Priority,
+                Status = row.Status,
 
-                        Severity = row.Severity,
+                Priority = row.Priority,
 
-                        CategoryId = row.CategoryId,
+                Severity = row.Severity,
 
-                        CategoryName = row.CategoryName,
+                CategoryId = row.CategoryId,
 
-                        LocationText = row.LocationText,
+                CategoryName = row.CategoryName,
 
-                        ReportCount = row.ReportCount,
+                LocationText = row.LocationText,
 
-                        IsOpen = IsOpenIncidentStatus(row.Status),
+                ReportCount = row.ReportCount,
 
-                        CreatedAt = row.CreatedAt
-                    })
-                    .ToList());
+                IsOpen = IsOpenIncidentStatus(row.Status),
+
+                CreatedAt = row.CreatedAt
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Quy một số đếm về phần trăm, làm tròn 2 chữ số. Mẫu số bằng 0 trả về 0
+    /// thay vì ném lỗi chia cho 0.
+    /// </summary>
+    private static decimal ToPercentage(int count, int total)
+    {
+        return total == 0
+            ? 0
+            : Math.Round(
+                count /
+                (decimal)total *
+                100,
+                2);
     }
 
     public async Task<List<IncidentMonthlyTrendDto>>
