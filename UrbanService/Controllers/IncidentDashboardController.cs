@@ -152,34 +152,45 @@ public class IncidentDashboardController
     /// Lấy phân bố sự vụ theo danh mục kết hợp phường, kèm tọa độ.
     /// </summary>
     /// <remarks>
+    /// Lọc được ba chiều, tất cả đều tùy chọn:
+    ///
+    /// - `categoryId`: chỉ lấy một danh mục. Bỏ trống để lấy mọi danh mục.
+    /// - `areaId`: chỉ lấy một phường. Bỏ trống để lấy mọi phường.
+    /// - `range`: khoảng thời gian theo ngày tạo sự vụ, nhận `all`, `7d`, `1m`,
+    ///   `6m` hoặc `1y`. Bỏ trống tương đương `all`.
+    ///
+    /// Không truyền gì thì trả về toàn bộ sự vụ trong phạm vi đọc của tài khoản.
+    /// Truyền cả `categoryId` lẫn `areaId` thì lọc đồng thời cả hai.
+    ///
     /// Mỗi danh mục trả về danh sách phường có sự vụ thuộc danh mục đó, kèm số
-    /// đang mở, số đã hoàn thành, tỷ lệ trong nội bộ danh mục, và `Points` là
+    /// đang mở, số đã hoàn thành, tỷ lệ trong nội bộ danh mục, và `points` là
     /// tọa độ các sự vụ đúng cặp danh mục - phường để chấm lên bản đồ.
     ///
     /// Mỗi sự vụ chỉ thuộc đúng một ô (danh mục, phường) nên tổng số đếm của
-    /// các ô bằng tổng số sự vụ, cộng dồn không bị đếm trùng.
+    /// các ô bằng `totalCount`, cộng dồn không bị đếm trùng.
     ///
-    /// `MappedCount` là số sự vụ có tọa độ; nếu lớn hơn số phần tử trong
-    /// `Points` thì danh sách đã bị cắt theo `maxPointsPerArea`.
+    /// `mappedCount` là số sự vụ có tọa độ; nếu lớn hơn số phần tử trong
+    /// `points` thì danh sách đã bị cắt theo `maxPointsPerArea`.
     ///
-    /// Dùng cho bản đồ phân bố theo loại sự cố và biểu đồ chồng theo danh mục.
+    /// `filter` phản chiếu lại tiêu chí đã áp dụng kèm tên danh mục và tên
+    /// phường, để client hiển thị đúng bộ lọc đang có hiệu lực.
+    ///
+    /// Mốc thời gian tính theo giờ Việt Nam.
     /// </remarks>
-    /// <param name="maxPointsPerArea">
-    /// Số điểm tối đa mỗi cặp danh mục - phường, mặc định 500, tối đa 5000.
-    /// </param>
     [HttpGet("category-area-distribution")]
     [ProducesResponseType(
-        typeof(List<IncidentCategoryAreaDistributionDto>),
+        typeof(IncidentCategoryAreaReportDto),
         StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult>
         GetCategoryAreaDistribution(
-            [FromQuery] int maxPointsPerArea = 500)
+            [FromQuery] IncidentCategoryAreaQueryParameters query)
     {
         var result =
             await _incidentDashboardService
                 .GetCategoryAreaDistributionAsync(
                     GetCurrentUserId(),
-                    maxPointsPerArea);
+                    query);
 
         return Ok(result);
     }

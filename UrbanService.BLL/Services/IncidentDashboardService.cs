@@ -390,27 +390,82 @@ public class IncidentDashboardService
     /// <summary>
     /// Phân bố sự vụ theo danh mục, tách tiếp theo từng phường, kèm tọa độ.
     ///
+    /// Lọc được theo danh mục, theo phường và theo khoảng thời gian. Tiêu chí
+    /// nào bỏ trống thì tiêu chí đó không lọc, nên không truyền gì là lấy tất cả.
+    ///
     /// Mỗi sự vụ được quy về đúng một ô (danh mục, phường) nên tổng số đếm của
     /// các ô bằng tổng số sự vụ; có thể cộng dồn mà không sợ đếm trùng.
     /// </summary>
-    public async Task<List<IncidentCategoryAreaDistributionDto>>
+    public async Task<IncidentCategoryAreaReportDto>
         GetCategoryAreaDistributionAsync(
             Guid actorUserId,
-            int maxPointsPerArea = DefaultMapPointsPerArea)
+            IncidentCategoryAreaQueryParameters? parameters = null)
     {
-        maxPointsPerArea = Math.Clamp(
-            maxPointsPerArea,
+        parameters ??= new IncidentCategoryAreaQueryParameters();
+
+        var maxPointsPerArea = Math.Clamp(
+            parameters.MaxPointsPerArea,
             1,
             MaxMapPointsPerArea);
 
+        var nowUtc =
+            SlaDateTimeHelper.UtcNow;
+
+        var (range, fromUtc) =
+            ResolveRange(parameters.Range, nowUtc);
+
         var query = await GetScopedIncidentsAsync(actorUserId);
+
+        if (parameters.CategoryId.HasValue)
+        {
+            query = query.Where(x =>
+                x.CategoryId == parameters.CategoryId.Value);
+        }
+
+        if (parameters.AreaId.HasValue)
+        {
+            query = query.Where(x =>
+                x.AreaId == parameters.AreaId.Value);
+        }
+
+        if (fromUtc.HasValue)
+        {
+            query = query.Where(x =>
+                x.CreatedAt >= fromUtc.Value);
+        }
+
+        /*
+         * Trả lại tiêu chí đã áp dụng kèm tên đọc được, để client hiển thị đúng
+         * bộ lọc đang có hiệu lực mà không phải tự tra tên từ id.
+         */
+        var filter = new IncidentDistributionFilterDto
+        {
+            CategoryId = parameters.CategoryId,
+
+            CategoryName =
+                await ResolveCategoryNameAsync(parameters.CategoryId),
+
+            AreaId = parameters.AreaId,
+
+            AreaName =
+                await ResolveAreaNameAsync(parameters.AreaId),
+
+            Range = range,
+
+            FromUtc = fromUtc,
+
+            ToUtc = nowUtc
+        };
 
         var total =
             await query.CountAsync();
 
         if (total == 0)
         {
-            return [];
+            return new IncidentCategoryAreaReportDto
+            {
+                Filter = filter
+            };
         }
 
         var cells = await query
@@ -470,7 +525,7 @@ public class IncidentDashboardService
                 group => group.Key,
                 group => group.ToList());
 
-        return cells
+        var categories = cells
             .GroupBy(cell => new
             {
                 cell.CategoryId,
@@ -558,6 +613,110 @@ public class IncidentDashboardService
             })
             .OrderByDescending(x => x.Count)
             .ToList();
+
+        return new IncidentCategoryAreaReportDto
+        {
+            Filter = filter,
+
+            TotalCount = total,
+
+            OpenCount =
+                categories.Sum(category => category.OpenCount),
+
+            CompletedCount =
+                categories.Sum(category => category.CompletedCount),
+
+            MappedCount =
+                categories.Sum(category => category.MappedCount),
+
+            Categories = categories
+        };
+    }
+
+    /// <summary>
+    /// Quy tên khoảng thời gian thành mốc bắt đầu.
+    ///
+    /// Mốc bắt đầu luôn là 00:00 theo giờ Việt Nam của ngày tương ứng, để kết
+    /// quả không bị lệch nửa ngày như khi cắt theo UTC. Khoảng 7 ngày tính cả
+    /// hôm nay, tức là từ đầu ngày của 6 ngày trước.
+    /// </summary>
+    private static (string Range, DateTime? FromUtc) ResolveRange(
+        string? rawRange,
+        DateTime nowUtc)
+    {
+        var range =
+            string.IsNullOrWhiteSpace(rawRange)
+                ? DashboardRange.All
+                : rawRange.Trim().ToLowerInvariant();
+
+        if (range == DashboardRange.All)
+        {
+            return (DashboardRange.All, null);
+        }
+
+        var startOfTodayVietnam =
+            SlaDateTimeHelper.ToVietnamTime(nowUtc).Date;
+
+        var fromVietnam = range switch
+        {
+            DashboardRange.Last7Days =>
+                startOfTodayVietnam.AddDays(-6),
+
+            DashboardRange.Last1Month =>
+                startOfTodayVietnam.AddMonths(-1),
+
+            DashboardRange.Last6Months =>
+                startOfTodayVietnam.AddMonths(-6),
+
+            DashboardRange.Last1Year =>
+                startOfTodayVietnam.AddYears(-1),
+
+            _ => throw new ArgumentException(
+                $"Khoảng thời gian '{rawRange}' không hợp lệ. " +
+                $"Nhận một trong: {DashboardRange.All}, " +
+                $"{DashboardRange.Last7Days}, {DashboardRange.Last1Month}, " +
+                $"{DashboardRange.Last6Months}, {DashboardRange.Last1Year}.")
+        };
+
+        return (
+            range,
+            SlaDateTimeHelper.VietnamToUtc(fromVietnam));
+    }
+
+    /// <summary>
+    /// Lấy tên danh mục để trả kèm bộ lọc. Trả về null nếu không lọc theo danh
+    /// mục hoặc id không tồn tại.
+    /// </summary>
+    private async Task<string?> ResolveCategoryNameAsync(int? categoryId)
+    {
+        if (!categoryId.HasValue)
+        {
+            return null;
+        }
+
+        return await _unitOfWork.GetRepository<UrbanServiceCategory>().Entities
+            .AsNoTracking()
+            .Where(category => category.CategoryId == categoryId.Value)
+            .Select(category => category.CategoryName)
+            .FirstOrDefaultAsync();
+    }
+
+    /// <summary>
+    /// Lấy tên phường để trả kèm bộ lọc. Trả về null nếu không lọc theo phường
+    /// hoặc id không tồn tại.
+    /// </summary>
+    private async Task<string?> ResolveAreaNameAsync(int? areaId)
+    {
+        if (!areaId.HasValue)
+        {
+            return null;
+        }
+
+        return await _unitOfWork.GetRepository<OperatingArea>().Entities
+            .AsNoTracking()
+            .Where(area => area.AreaId == areaId.Value)
+            .Select(area => area.AreaName)
+            .FirstOrDefaultAsync();
     }
 
     /// <summary>

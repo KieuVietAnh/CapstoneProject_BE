@@ -37,14 +37,14 @@ public interface IIncidentDashboardService
     /// <summary>
     /// Phân bố sự vụ theo danh mục, tách tiếp theo từng phường, kèm tọa độ từng
     /// sự vụ để vẽ bản đồ.
+    ///
+    /// Lọc được theo danh mục, theo phường và theo khoảng thời gian; tiêu chí nào
+    /// bỏ trống thì tiêu chí đó không lọc.
     /// </summary>
-    /// <param name="maxPointsPerArea">
-    /// Số điểm tối đa trả về cho mỗi cặp danh mục - phường, mới nhất trước.
-    /// </param>
-    Task<List<IncidentCategoryAreaDistributionDto>>
+    Task<IncidentCategoryAreaReportDto>
         GetCategoryAreaDistributionAsync(
             Guid actorUserId,
-            int maxPointsPerArea = 500);
+            IncidentCategoryAreaQueryParameters? parameters = null);
 
     /// <summary>
     /// Tình hình tiếp nhận và xử lý trong ngày hôm nay, ranh giới ngày tính theo
