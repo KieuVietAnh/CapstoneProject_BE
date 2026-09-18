@@ -3027,9 +3027,56 @@ public class FeedbackService : IFeedbackService
             },
             staffUserId);
 
-        return MapResolution(await GetCurrentIncidentResolutionCoreAsync(
+        var submittedResolution = await GetCurrentIncidentResolutionCoreAsync(
             incidentId,
-            asNoTracking: true));
+            asNoTracking: true);
+
+        var staffName = submittedResolution.CreatedByStaffUser.FullName;
+        await NotifyAreaManagersResolutionSubmittedAsync(
+            incident,
+            isRework
+                ? "Kết quả xử lý đã được gửi lại chờ duyệt"
+                : "Có kết quả xử lý mới chờ duyệt",
+            isRework
+                ? $"{staffName} đã cập nhật và gửi lại kết quả xử lý sự vụ \"{submittedResolution.Incident.Title}\" sau yêu cầu làm lại."
+                : $"{staffName} đã gửi kết quả xử lý sự vụ \"{submittedResolution.Incident.Title}\" để chờ phê duyệt.");
+
+        return MapResolution(submittedResolution);
+    }
+
+    /// <summary>
+    /// Gửi thông báo cho các Manager đang phụ trách khu vực của sự vụ khi Staff gửi
+    /// kết quả xử lý lần đầu hoặc gửi lại sau khi bị yêu cầu làm lại.
+    /// </summary>
+    private async Task NotifyAreaManagersResolutionSubmittedAsync(
+        IncidentAccessContext incident,
+        string title,
+        string message)
+    {
+        var managerUserIds = await _uow.GetRepository<ManagerAreaAssignment>().Entities
+            .AsNoTracking()
+            .Where(assignment =>
+                assignment.AreaId == incident.AreaId &&
+                assignment.IsActive &&
+                assignment.Area.IsActive &&
+                assignment.ManagerUser.IsActive &&
+                assignment.ManagerUser.Role.RoleName.ToUpper() == UserRole.INTERACTIONMANAGER)
+            .Select(assignment => assignment.ManagerUserId)
+            .Distinct()
+            .ToListAsync();
+
+        foreach (var managerUserId in managerUserIds)
+        {
+            await _notificationService.SendAsync(
+                managerUserId,
+                title,
+                message,
+                NotificationType.TicketUpdated,
+                $"/management/incidents/{incident.IncidentId}",
+                incident.IncidentId,
+                "Incident",
+                incident.IncidentId.ToString());
+        }
     }
 
     public async Task ApproveResolutionAsync(
@@ -3097,6 +3144,16 @@ public class FeedbackService : IFeedbackService
                 Note = NormalizeOptional(note)
             },
             managerId);
+
+        var approveNote = NormalizeOptional(note);
+        await NotifyStaffResolutionReviewAsync(
+            incident,
+            resolution,
+            "Kết quả xử lý đã được phê duyệt",
+            string.IsNullOrWhiteSpace(approveNote)
+                ? $"Manager đã phê duyệt kết quả xử lý sự vụ \"{resolution.Incident.Title}\"."
+                : $"Manager đã phê duyệt kết quả xử lý sự vụ \"{resolution.Incident.Title}\". Ghi chú: {approveNote}",
+            NotificationType.Resolution);
 
         var result = MapResolution(resolution);
         result.IncidentStatus = updatedIncident.Status;
@@ -3196,9 +3253,50 @@ public class FeedbackService : IFeedbackService
             },
             managerId);
 
+        await NotifyStaffResolutionReviewAsync(
+            incident,
+            resolution,
+            "Kết quả xử lý cần được làm lại",
+            $"Manager yêu cầu làm lại kết quả xử lý sự vụ \"{resolution.Incident.Title}\". Lý do: {reason.Trim()}",
+            NotificationType.TicketUpdated);
+
         var result = MapResolution(resolution);
         result.IncidentStatus = updatedIncident.Status;
         return result;
+    }
+
+    /// <summary>
+    /// Gửi thông báo kết quả review của Manager cho Staff tạo resolution và Staff
+    /// đang được phân công sự vụ.
+    /// </summary>
+    private async Task NotifyStaffResolutionReviewAsync(
+        IncidentAccessContext incident,
+        FeedbackResolution resolution,
+        string title,
+        string message,
+        string notificationType)
+    {
+        var recipients = new[]
+            {
+                resolution.CreatedByStaffUserId,
+                incident.AssignedStaffUserId ?? Guid.Empty
+            }
+            .Where(userId => userId != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        foreach (var userId in recipients)
+        {
+            await _notificationService.SendAsync(
+                userId,
+                title,
+                message,
+                notificationType,
+                $"/management/incidents/{incident.IncidentId}",
+                incident.IncidentId,
+                "Incident",
+                incident.IncidentId.ToString());
+        }
     }
 
     private static void EnsureIncidentAwaitingResolutionReview(string status)
