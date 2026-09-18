@@ -411,6 +411,7 @@ public class FeedbackWorkflowRbacTests
             {
                 ManagerAreaAssignmentId = _managerAreaAssignments.Count + 1,
                 ManagerUserId = managerUserId,
+                ManagerUser = GetUser(managerUserId),
                 AreaId = area.AreaId,
                 Area = area,
                 CreatedByUserId = managerUserId,
