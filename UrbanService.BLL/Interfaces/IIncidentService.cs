@@ -61,6 +61,28 @@ public interface IIncidentService
         Guid incidentId,
         CancellationToken cancellationToken = default);
 
+    Task<PagedResultDto<IncidentCommentDto>> GetPublicCommentsAsync(
+        Guid incidentId,
+        int pageNumber,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
+    Task<IncidentCommentDto> AddCommentAsync(
+        Guid incidentId,
+        Guid userId,
+        IncidentCommentCreateRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task SupportAsync(
+        Guid incidentId,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
+    Task UnsupportAsync(
+        Guid incidentId,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
     Task<PagedResultDto<PublicIncidentEventDto>> GetPublicTimelineAsync(
         Guid incidentId,
         int pageNumber,

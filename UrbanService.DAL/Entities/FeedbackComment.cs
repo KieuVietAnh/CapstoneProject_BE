@@ -17,5 +17,7 @@ public partial class FeedbackComment
 
     public virtual Feedback Feedback { get; set; } = null!;
 
+    public virtual IncidentComment? IncidentComment { get; set; }
+
     public virtual User User { get; set; } = null!;
 }

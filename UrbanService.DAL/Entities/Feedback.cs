@@ -79,6 +79,8 @@ public partial class Feedback
 
     public virtual ICollection<IncidentEvent> IncidentEvents { get; set; } = new List<IncidentEvent>();
 
+    public virtual ICollection<IncidentComment> IncidentComments { get; set; } = new List<IncidentComment>();
+
     public virtual ICollection<IncidentReportLink> IncidentReportLinks { get; set; } = new List<IncidentReportLink>();
 
     public virtual ICollection<IncidentSubscription> IncidentSubscriptions { get; set; } = new List<IncidentSubscription>();

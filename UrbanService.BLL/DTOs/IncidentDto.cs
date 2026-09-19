@@ -59,6 +59,12 @@ public class IncidentListItemDto
 
     public int SubscriberCount { get; set; }
 
+    public int CommentCount { get; set; }
+
+    public int SupportCount { get; set; }
+
+    public string? CoverImageUrl { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }
@@ -83,6 +89,8 @@ public sealed class IncidentDetailDto : IncidentListItemDto
     public IReadOnlyCollection<IncidentSubscriberDto> Subscribers { get; set; } = [];
 
     public IReadOnlyCollection<IncidentEventDto> Events { get; set; } = [];
+
+    public IReadOnlyCollection<IncidentMediaDto> Media { get; set; } = [];
 }
 
 public sealed class IncidentReportDto
@@ -154,6 +162,43 @@ public sealed class IncidentEventDto
     public string? ActorUserName { get; set; }
 
     public string? PayloadJson { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+}
+
+public sealed class IncidentMediaDto
+{
+    public int AttachmentId { get; set; }
+
+    public Guid FeedbackId { get; set; }
+
+    public string LinkRole { get; set; } = null!;
+
+    public string FileUrl { get; set; } = null!;
+
+    public string? FileType { get; set; }
+
+    public DateTime UploadedAt { get; set; }
+}
+
+public sealed class IncidentCommentCreateRequest
+{
+    public string Content { get; set; } = null!;
+}
+
+public sealed class IncidentCommentDto
+{
+    public Guid IncidentCommentId { get; set; }
+
+    public Guid IncidentId { get; set; }
+
+    public Guid UserId { get; set; }
+
+    public string? UserName { get; set; }
+
+    public string Content { get; set; } = null!;
+
+    public Guid? SourceFeedbackId { get; set; }
 
     public DateTime CreatedAt { get; set; }
 }
@@ -230,6 +275,9 @@ public class PublicIncidentListItemDto
     public string Status { get; set; } = null!;
     public int ReportCount { get; set; }
     public int SubscriberCount { get; set; }
+    public int CommentCount { get; set; }
+    public int SupportCount { get; set; }
+    public string? CoverImageUrl { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }
@@ -240,6 +288,8 @@ public sealed class PublicIncidentDetailDto : PublicIncidentListItemDto
     public DateTime? ResolvedAt { get; set; }
     public DateTime? ClosedAt { get; set; }
     public bool IsSubscribedByCurrentUser { get; set; }
+    public bool IsSupportedByCurrentUser { get; set; }
+    public IReadOnlyCollection<IncidentMediaDto> Media { get; set; } = [];
 }
 
 public sealed class PublicIncidentReportDto

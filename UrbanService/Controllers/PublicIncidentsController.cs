@@ -45,6 +45,20 @@ public sealed class PublicIncidentsController : ControllerBase
     public async Task<IActionResult> GetReports(Guid incidentId)
         => Ok(await _incidentService.GetPublicIncidentReportsAsync(incidentId, HttpContext.RequestAborted));
 
+    /// <summary>Lấy các bình luận công khai của một sự vụ.</summary>
+    /// <remarks>API công khai; kết quả được phân trang theo thời gian mới nhất.</remarks>
+    [HttpGet("{incidentId:guid}/comments")]
+    [ProducesResponseType(typeof(PagedResultDto<IncidentCommentDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetComments(
+        Guid incidentId,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20)
+        => Ok(await _incidentService.GetPublicCommentsAsync(
+            incidentId,
+            pageNumber,
+            pageSize,
+            HttpContext.RequestAborted));
+
     /// <summary>Lấy dòng thời gian công khai của một sự vụ.</summary>
     /// <remarks>API công khai; hỗ trợ phân trang bằng `pageNumber` và `pageSize`.</remarks>
     [HttpGet("{incidentId:guid}/timeline")]

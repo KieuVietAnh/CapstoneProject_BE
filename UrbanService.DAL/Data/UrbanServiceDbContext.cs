@@ -53,11 +53,15 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<Incident> Incidents { get; set; }
 
+    public virtual DbSet<IncidentComment> IncidentComments { get; set; }
+
     public virtual DbSet<IncidentEvent> IncidentEvents { get; set; }
 
     public virtual DbSet<IncidentReportLink> IncidentReportLinks { get; set; }
 
     public virtual DbSet<IncidentSubscription> IncidentSubscriptions { get; set; }
+
+    public virtual DbSet<IncidentSupport> IncidentSupports { get; set; }
 
     public virtual DbSet<MessageAttachment> MessageAttachments { get; set; }
 
@@ -468,6 +472,80 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.AssignedStaffUserId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_incident_assigned_staff");
+        });
+
+        modelBuilder.Entity<IncidentComment>(entity =>
+        {
+            entity.HasKey(e => e.IncidentCommentId).HasName("incident_comments_pkey");
+            entity.ToTable("incident_comments");
+
+            entity.HasIndex(
+                    e => new { e.IncidentId, e.CreatedAt, e.IncidentCommentId },
+                    "ix_incident_comments_incident_created_at");
+            entity.HasIndex(e => e.SourceFeedbackCommentId, "uq_incident_comments_source_feedback_comment")
+                .IsUnique()
+                .HasFilter("source_feedback_comment_id IS NOT NULL");
+
+            entity.Property(e => e.IncidentCommentId)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("incident_comment_id");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.Content).HasColumnName("content");
+            entity.Property(e => e.SourceFeedbackCommentId).HasColumnName("source_feedback_comment_id");
+            entity.Property(e => e.SourceFeedbackId).HasColumnName("source_feedback_id");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Incident).WithMany(p => p.IncidentComments)
+                .HasForeignKey(d => d.IncidentId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_incident_comment_incident");
+
+            entity.HasOne(d => d.User).WithMany(p => p.IncidentComments)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_incident_comment_user");
+
+            entity.HasOne(d => d.SourceFeedbackComment).WithOne(p => p.IncidentComment)
+                .HasForeignKey<IncidentComment>(d => d.SourceFeedbackCommentId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_incident_comment_source_feedback_comment");
+
+            entity.HasOne(d => d.SourceFeedback).WithMany(p => p.IncidentComments)
+                .HasForeignKey(d => d.SourceFeedbackId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_incident_comment_source_feedback");
+        });
+
+        modelBuilder.Entity<IncidentSupport>(entity =>
+        {
+            entity.HasKey(e => e.IncidentSupportId).HasName("incident_supports_pkey");
+            entity.ToTable("incident_supports");
+            entity.HasIndex(e => new { e.IncidentId, e.UserId }, "uq_incident_support_user")
+                .IsUnique();
+
+            entity.Property(e => e.IncidentSupportId)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("incident_support_id");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasDefaultValueSql("now()")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Incident).WithMany(p => p.IncidentSupports)
+                .HasForeignKey(d => d.IncidentId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_incident_support_incident");
+
+            entity.HasOne(d => d.User).WithMany(p => p.IncidentSupports)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_incident_support_user");
         });
 
         modelBuilder.Entity<IncidentReportLink>(entity =>
