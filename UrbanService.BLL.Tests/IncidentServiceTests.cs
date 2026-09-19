@@ -769,6 +769,211 @@ public sealed class IncidentServiceTests
         }
     }
 
+    [Fact]
+    public async Task PublicIncidentDetail_ProjectsFeedbackImagesAndIncidentInteractionState()
+    {
+        var context = new IncidentTestContext();
+        var now = DateTime.UtcNow;
+        var currentUserId = Guid.NewGuid();
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        feedback.Status = FeedbackStatus.Verified;
+        feedback.FeedbackAttachments.Add(new FeedbackAttachment
+        {
+            AttachmentId = 1,
+            FeedbackId = feedback.FeedbackId,
+            FileUrl = "https://example.test/evidence.jpg",
+            FileType = "image/jpeg",
+            UploadedAt = now
+        });
+        feedback.FeedbackAttachments.Add(new FeedbackAttachment
+        {
+            AttachmentId = 2,
+            FeedbackId = feedback.FeedbackId,
+            FileUrl = "https://example.test/evidence.pdf",
+            FileType = "application/pdf",
+            UploadedAt = now.AddMinutes(1)
+        });
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        incident.Status = IncidentStatus.Verified;
+        var link = IncidentTestContext.Link(incident, feedback, IncidentLinkRole.Primary, now);
+        incident.IncidentReportLinks.Add(link);
+        var comment = new IncidentComment
+        {
+            IncidentCommentId = Guid.NewGuid(),
+            IncidentId = incident.IncidentId,
+            UserId = currentUserId,
+            Content = "Cần xử lý sớm",
+            CreatedAt = now
+        };
+        var support = new IncidentSupport
+        {
+            IncidentSupportId = Guid.NewGuid(),
+            IncidentId = incident.IncidentId,
+            UserId = currentUserId,
+            CreatedAt = now
+        };
+        incident.IncidentComments.Add(comment);
+        incident.IncidentSupports.Add(support);
+        context.Incidents.Add(incident);
+        context.Feedbacks.Add(feedback);
+        context.Links.Add(link);
+        context.Comments.Add(comment);
+        context.Supports.Add(support);
+
+        var result = await new IncidentService(context.UnitOfWork)
+            .GetPublicIncidentDetailAsync(incident.IncidentId, currentUserId);
+
+        Assert.Equal("https://example.test/evidence.jpg", result.CoverImageUrl);
+        var media = Assert.Single(result.Media);
+        Assert.Equal(feedback.FeedbackId, media.FeedbackId);
+        Assert.Equal("image/jpeg", media.FileType);
+        Assert.Equal(1, result.CommentCount);
+        Assert.Equal(1, result.SupportCount);
+        Assert.True(result.IsSupportedByCurrentUser);
+    }
+
+    [Fact]
+    public async Task IncidentInteractions_AllowCommentsAndIdempotentSupportOnPublicIncident()
+    {
+        var context = new IncidentTestContext();
+        var now = DateTime.UtcNow;
+        var user = context.AddActor(UserRole.SERVICEUSER, "Resident");
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        feedback.Status = FeedbackStatus.Verified;
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        incident.Status = IncidentStatus.Verified;
+        var link = IncidentTestContext.Link(incident, feedback, IncidentLinkRole.Primary, now);
+        incident.IncidentReportLinks.Add(link);
+        context.Incidents.Add(incident);
+        context.Feedbacks.Add(feedback);
+        context.Links.Add(link);
+        var service = new IncidentService(context.UnitOfWork);
+
+        var comment = await service.AddCommentAsync(
+            incident.IncidentId,
+            user.UserId,
+            new UrbanService.BLL.Dtos.IncidentCommentCreateRequest
+            {
+                Content = "  Tôi cũng gặp vấn đề này  "
+            });
+        await service.SupportAsync(incident.IncidentId, user.UserId);
+        await service.SupportAsync(incident.IncidentId, user.UserId);
+
+        Assert.Equal("Tôi cũng gặp vấn đề này", comment.Content);
+        Assert.Equal("Resident", comment.UserName);
+        Assert.Single(context.Comments);
+        Assert.Single(context.Supports);
+
+        context.Comments.Single().User = user;
+        var comments = await service.GetPublicCommentsAsync(incident.IncidentId, 1, 20);
+        Assert.Equal(1, comments.TotalItems);
+        Assert.Equal(comment.IncidentCommentId, Assert.Single(comments.Items).IncidentCommentId);
+
+        await service.UnsupportAsync(incident.IncidentId, user.UserId);
+        await service.UnsupportAsync(incident.IncidentId, user.UserId);
+        Assert.Empty(context.Supports);
+    }
+
+    [Fact]
+    public async Task Merge_MovesCommentsAndDeduplicatesSupportsIntoTargetIncident()
+    {
+        var context = new IncidentTestContext();
+        var now = DateTime.UtcNow;
+        var manager = context.AddActor(UserRole.INTERACTIONMANAGER, "Manager");
+        var sourceFeedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        var targetFeedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now.AddMinutes(-1));
+        sourceFeedback.Status = FeedbackStatus.Verified;
+        targetFeedback.Status = FeedbackStatus.Verified;
+        var source = IncidentTestContext.Incident(Guid.NewGuid(), sourceFeedback, now);
+        var target = IncidentTestContext.Incident(Guid.NewGuid(), targetFeedback, now.AddMinutes(-1));
+        source.Status = IncidentStatus.Verified;
+        target.Status = IncidentStatus.Verified;
+        context.Incidents.AddRange([source, target]);
+        context.Feedbacks.AddRange([sourceFeedback, targetFeedback]);
+        context.Links.AddRange(
+        [
+            IncidentTestContext.Link(source, sourceFeedback, IncidentLinkRole.Primary, now),
+            IncidentTestContext.Link(target, targetFeedback, IncidentLinkRole.Primary, now.AddMinutes(-1))
+        ]);
+        context.AddManagerAreaAssignment(manager, source.Area);
+        var sharedUserId = Guid.NewGuid();
+        var sourceOnlyUserId = Guid.NewGuid();
+        var comment = new IncidentComment
+        {
+            IncidentCommentId = Guid.NewGuid(),
+            IncidentId = source.IncidentId,
+            UserId = sharedUserId,
+            Content = "Source comment",
+            CreatedAt = now
+        };
+        context.Comments.Add(comment);
+        context.Supports.AddRange(
+        [
+            new IncidentSupport
+            {
+                IncidentSupportId = Guid.NewGuid(),
+                IncidentId = source.IncidentId,
+                UserId = sharedUserId,
+                CreatedAt = now
+            },
+            new IncidentSupport
+            {
+                IncidentSupportId = Guid.NewGuid(),
+                IncidentId = source.IncidentId,
+                UserId = sourceOnlyUserId,
+                CreatedAt = now
+            },
+            new IncidentSupport
+            {
+                IncidentSupportId = Guid.NewGuid(),
+                IncidentId = target.IncidentId,
+                UserId = sharedUserId,
+                CreatedAt = now.AddMinutes(-1)
+            }
+        ]);
+
+        await new IncidentService(context.UnitOfWork).MergeAsync(
+            source.IncidentId,
+            new UrbanService.BLL.Dtos.MergeIncidentRequest
+            {
+                TargetIncidentId = target.IncidentId
+            },
+            manager.UserId);
+
+        Assert.Equal(target.IncidentId, comment.IncidentId);
+        Assert.Equal(2, context.Supports.Count);
+        Assert.All(context.Supports, support => Assert.Equal(target.IncidentId, support.IncidentId));
+        Assert.Equal(2, context.Supports.Select(support => support.UserId).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task IncidentInteractions_RejectIncidentWithoutPublicReport()
+    {
+        var context = new IncidentTestContext();
+        var now = DateTime.UtcNow;
+        var user = context.AddActor(UserRole.SERVICEUSER, "Resident");
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        feedback.Status = FeedbackStatus.AiReviewed;
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        var link = IncidentTestContext.Link(incident, feedback, IncidentLinkRole.Primary, now);
+        incident.IncidentReportLinks.Add(link);
+        context.Incidents.Add(incident);
+        context.Feedbacks.Add(feedback);
+        context.Links.Add(link);
+        var service = new IncidentService(context.UnitOfWork);
+
+        await Assert.ThrowsAsync<Exception>(() => service.AddCommentAsync(
+            incident.IncidentId,
+            user.UserId,
+            new UrbanService.BLL.Dtos.IncidentCommentCreateRequest { Content = "Hidden" }));
+        await Assert.ThrowsAsync<Exception>(() => service.SupportAsync(
+            incident.IncidentId,
+            user.UserId));
+
+        Assert.Empty(context.Comments);
+        Assert.Empty(context.Supports);
+    }
+
     private sealed class IncidentTestContext
     {
         public IncidentTestContext()
@@ -776,9 +981,12 @@ public sealed class IncidentServiceTests
             ConfigureRepository(IncidentRepository, Incidents);
             ConfigureRepository(LinkRepository, Links);
             ConfigureRepository(SubscriptionRepository, Subscriptions);
+            ConfigureRepository(CommentRepository, Comments);
+            ConfigureRepository(SupportRepository, Supports);
             ConfigureRepository(EventRepository, Events);
             ConfigureRepository(FeedbackRepository, Feedbacks);
             ConfigureRepository(StatusHistoryRepository, StatusHistories);
+            ConfigureRepository(ProviderReportRepository, ProviderReports);
             ConfigureRepository(AssignmentRepository, Assignments);
             ConfigureRepository(UserRepository, Users);
             ConfigureRepository(ManagerAreaAssignmentRepository, ManagerAreaAssignments);
@@ -786,23 +994,40 @@ public sealed class IncidentServiceTests
             UnitOfWork.GetRepository<Incident>().Returns(IncidentRepository);
             UnitOfWork.GetRepository<IncidentReportLink>().Returns(LinkRepository);
             UnitOfWork.GetRepository<IncidentSubscription>().Returns(SubscriptionRepository);
+            UnitOfWork.GetRepository<IncidentComment>().Returns(CommentRepository);
+            UnitOfWork.GetRepository<IncidentSupport>().Returns(SupportRepository);
             UnitOfWork.GetRepository<IncidentEvent>().Returns(EventRepository);
             UnitOfWork.GetRepository<Feedback>().Returns(FeedbackRepository);
             UnitOfWork.GetRepository<FeedbackStatusHistory>().Returns(StatusHistoryRepository);
+            UnitOfWork.GetRepository<FeedbackProviderReport>().Returns(ProviderReportRepository);
             UnitOfWork.GetRepository<StaffAreaAssignment>().Returns(AssignmentRepository);
             UnitOfWork.GetRepository<User>().Returns(UserRepository);
             UnitOfWork.GetRepository<ManagerAreaAssignment>().Returns(ManagerAreaAssignmentRepository);
             UnitOfWork.SaveAsync().Returns(Task.CompletedTask);
             UnitOfWork.AcquireTransactionAdvisoryLockAsync(Arg.Any<long>()).Returns(Task.CompletedTask);
+
+            LinkRepository.AddAsync(Arg.Any<IncidentReportLink>()).Returns(call =>
+            {
+                var link = call.Arg<IncidentReportLink>();
+                link.Incident = Incidents.FirstOrDefault(item => item.IncidentId == link.IncidentId)
+                    ?? link.Incident;
+                link.Feedback = Feedbacks.FirstOrDefault(item => item.FeedbackId == link.FeedbackId)
+                    ?? link.Feedback;
+                Links.Add(link);
+                return Task.CompletedTask;
+            });
         }
 
         public IUnitOfWork UnitOfWork { get; } = Substitute.For<IUnitOfWork>();
         public IGenericRepository<Incident> IncidentRepository { get; } = Substitute.For<IGenericRepository<Incident>>();
         public IGenericRepository<IncidentReportLink> LinkRepository { get; } = Substitute.For<IGenericRepository<IncidentReportLink>>();
         public IGenericRepository<IncidentSubscription> SubscriptionRepository { get; } = Substitute.For<IGenericRepository<IncidentSubscription>>();
+        public IGenericRepository<IncidentComment> CommentRepository { get; } = Substitute.For<IGenericRepository<IncidentComment>>();
+        public IGenericRepository<IncidentSupport> SupportRepository { get; } = Substitute.For<IGenericRepository<IncidentSupport>>();
         public IGenericRepository<IncidentEvent> EventRepository { get; } = Substitute.For<IGenericRepository<IncidentEvent>>();
         public IGenericRepository<Feedback> FeedbackRepository { get; } = Substitute.For<IGenericRepository<Feedback>>();
         public IGenericRepository<FeedbackStatusHistory> StatusHistoryRepository { get; } = Substitute.For<IGenericRepository<FeedbackStatusHistory>>();
+        public IGenericRepository<FeedbackProviderReport> ProviderReportRepository { get; } = Substitute.For<IGenericRepository<FeedbackProviderReport>>();
         public IGenericRepository<StaffAreaAssignment> AssignmentRepository { get; } = Substitute.For<IGenericRepository<StaffAreaAssignment>>();
         public IGenericRepository<User> UserRepository { get; } = Substitute.For<IGenericRepository<User>>();
         public IGenericRepository<ManagerAreaAssignment> ManagerAreaAssignmentRepository { get; } = Substitute.For<IGenericRepository<ManagerAreaAssignment>>();
@@ -810,9 +1035,12 @@ public sealed class IncidentServiceTests
         public List<Incident> Incidents { get; } = [];
         public List<IncidentReportLink> Links { get; } = [];
         public List<IncidentSubscription> Subscriptions { get; } = [];
+        public List<IncidentComment> Comments { get; } = [];
+        public List<IncidentSupport> Supports { get; } = [];
         public List<IncidentEvent> Events { get; } = [];
         public List<Feedback> Feedbacks { get; } = [];
         public List<FeedbackStatusHistory> StatusHistories { get; } = [];
+        public List<FeedbackProviderReport> ProviderReports { get; } = [];
         public List<StaffAreaAssignment> Assignments { get; } = [];
         public List<User> Users { get; } = [];
         public List<ManagerAreaAssignment> ManagerAreaAssignments { get; } = [];
@@ -981,6 +1209,10 @@ public sealed class IncidentServiceTests
             {
                 entities.AddRange(call.Arg<IEnumerable<T>>());
                 return Task.CompletedTask;
+            });
+            repository.When(instance => instance.Delete(Arg.Any<T>())).Do(call =>
+            {
+                entities.Remove(call.Arg<T>());
             });
         }
     }

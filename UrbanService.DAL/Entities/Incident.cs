@@ -57,6 +57,10 @@ public partial class Incident
 
     public virtual ICollection<IncidentEvent> IncidentEvents { get; set; } = new List<IncidentEvent>();
 
+    public virtual ICollection<IncidentComment> IncidentComments { get; set; } = new List<IncidentComment>();
+
+    public virtual ICollection<IncidentSupport> IncidentSupports { get; set; } = new List<IncidentSupport>();
+
     public virtual ICollection<FeedbackProviderReport> ProviderAssignments { get; set; } = new List<FeedbackProviderReport>();
 
     public virtual ICollection<FeedbackResolution> Resolutions { get; set; } = new List<FeedbackResolution>();

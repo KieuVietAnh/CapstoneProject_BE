@@ -47,6 +47,44 @@ public sealed class UserIncidentsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Thêm bình luận trực tiếp vào một sự vụ công khai.</summary>
+    [HttpPost("{incidentId:guid}/comments")]
+    [ProducesResponseType(typeof(IncidentCommentDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> AddComment(
+        Guid incidentId,
+        [FromBody] IncidentCommentCreateRequest request)
+        => Ok(await _incidentService.AddCommentAsync(
+            incidentId,
+            GetCurrentUserId(),
+            request,
+            HttpContext.RequestAborted));
+
+    /// <summary>Đồng tình với một sự vụ công khai.</summary>
+    /// <remarks>Gọi lặp lại không tạo upvote trùng.</remarks>
+    [HttpPost("{incidentId:guid}/support")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> Support(Guid incidentId)
+    {
+        await _incidentService.SupportAsync(
+            incidentId,
+            GetCurrentUserId(),
+            HttpContext.RequestAborted);
+        return NoContent();
+    }
+
+    /// <summary>Hủy đồng tình với một sự vụ công khai.</summary>
+    /// <remarks>Nếu chưa đồng tình, API vẫn trả về thành công.</remarks>
+    [HttpDelete("{incidentId:guid}/support")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> Unsupport(Guid incidentId)
+    {
+        await _incidentService.UnsupportAsync(
+            incidentId,
+            GetCurrentUserId(),
+            HttpContext.RequestAborted);
+        return NoContent();
+    }
+
     private Guid GetCurrentUserId()
     {
         var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);

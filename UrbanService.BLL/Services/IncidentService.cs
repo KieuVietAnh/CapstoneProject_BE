@@ -414,6 +414,10 @@ public sealed class IncidentService : IIncidentService
             {
                 var previousIncident = childLink?.Incident ?? await _uow.GetRepository<Incident>().Entities
                     .FirstAsync(incident => incident.IncidentId == previousIncidentId.Value, cancellationToken);
+                await MoveIncidentInteractionsAsync(
+                    previousIncident.IncidentId,
+                    targetIncidentId,
+                    cancellationToken);
                 previousIncident.Status = "Merged";
                 previousIncident.MergedIntoIncidentId = targetIncidentId;
                 previousIncident.UpdatedAt = now;
@@ -532,6 +536,24 @@ public sealed class IncidentService : IIncidentService
                 AssignedStaffName = incident.AssignedStaffUser != null ? incident.AssignedStaffUser.FullName : null,
                 ReportCount = incident.IncidentReportLinks.Count(link => link.LinkStatus == IncidentLinkStatus.Active),
                 SubscriberCount = incident.IncidentSubscriptions.Count(subscription => subscription.IsActive),
+                CommentCount = incident.IncidentComments.Count,
+                SupportCount = incident.IncidentSupports.Count,
+                CoverImageUrl = incident.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .SelectMany(link => link.Feedback.FeedbackAttachments.Select(attachment => new
+                    {
+                        link.LinkRole,
+                        link.LinkedAt,
+                        Attachment = attachment
+                    }))
+                    .Where(item => item.Attachment.FileType != null &&
+                        item.Attachment.FileType.StartsWith("image"))
+                    .OrderBy(item => item.LinkRole == IncidentLinkRole.Primary ? 0 : 1)
+                    .ThenBy(item => item.LinkedAt)
+                    .ThenBy(item => item.Attachment.UploadedAt)
+                    .ThenBy(item => item.Attachment.AttachmentId)
+                    .Select(item => item.Attachment.FileUrl)
+                    .FirstOrDefault(),
                 CreatedAt = incident.CreatedAt,
                 UpdatedAt = incident.UpdatedAt
             })
@@ -601,6 +623,24 @@ public sealed class IncidentService : IIncidentService
                 AssignedStaffName = incident.AssignedStaffUser != null ? incident.AssignedStaffUser.FullName : null,
                 ReportCount = incident.IncidentReportLinks.Count(link => link.LinkStatus == IncidentLinkStatus.Active),
                 SubscriberCount = incident.IncidentSubscriptions.Count(subscription => subscription.IsActive),
+                CommentCount = incident.IncidentComments.Count,
+                SupportCount = incident.IncidentSupports.Count,
+                CoverImageUrl = incident.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .SelectMany(link => link.Feedback.FeedbackAttachments.Select(attachment => new
+                    {
+                        link.LinkRole,
+                        link.LinkedAt,
+                        Attachment = attachment
+                    }))
+                    .Where(item => item.Attachment.FileType != null &&
+                        item.Attachment.FileType.StartsWith("image"))
+                    .OrderBy(item => item.LinkRole == IncidentLinkRole.Primary ? 0 : 1)
+                    .ThenBy(item => item.LinkedAt)
+                    .ThenBy(item => item.Attachment.UploadedAt)
+                    .ThenBy(item => item.Attachment.AttachmentId)
+                    .Select(item => item.Attachment.FileUrl)
+                    .FirstOrDefault(),
                 CreatedAt = incident.CreatedAt,
                 UpdatedAt = incident.UpdatedAt
             })
@@ -668,6 +708,8 @@ public sealed class IncidentService : IIncidentService
                 CreatedAt = item.CreatedAt
             })
             .ToListAsync(cancellationToken);
+
+        detail.Media = await GetIncidentMediaAsync(incidentId, publicOnly: false, cancellationToken);
 
         return detail;
     }
@@ -934,6 +976,27 @@ public sealed class IncidentService : IIncidentService
                     link.Feedback.Status != FeedbackStatus.Submitted &&
                     link.Feedback.Status != FeedbackStatus.AiReviewed),
                 SubscriberCount = item.IncidentSubscriptions.Count(subscription => subscription.IsActive),
+                CommentCount = item.IncidentComments.Count,
+                SupportCount = item.IncidentSupports.Count,
+                CoverImageUrl = item.IncidentReportLinks
+                    .Where(link =>
+                        link.LinkStatus == IncidentLinkStatus.Active &&
+                        link.Feedback.Status != FeedbackStatus.Submitted &&
+                        link.Feedback.Status != FeedbackStatus.AiReviewed)
+                    .SelectMany(link => link.Feedback.FeedbackAttachments.Select(attachment => new
+                    {
+                        link.LinkRole,
+                        link.LinkedAt,
+                        Attachment = attachment
+                    }))
+                    .Where(media => media.Attachment.FileType != null &&
+                        media.Attachment.FileType.StartsWith("image"))
+                    .OrderBy(media => media.LinkRole == IncidentLinkRole.Primary ? 0 : 1)
+                    .ThenBy(media => media.LinkedAt)
+                    .ThenBy(media => media.Attachment.UploadedAt)
+                    .ThenBy(media => media.Attachment.AttachmentId)
+                    .Select(media => media.Attachment.FileUrl)
+                    .FirstOrDefault(),
                 CreatedAt = item.CreatedAt,
                 UpdatedAt = item.UpdatedAt
             })
@@ -983,17 +1046,46 @@ public sealed class IncidentService : IIncidentService
                     link.Feedback.Status != FeedbackStatus.Submitted &&
                     link.Feedback.Status != FeedbackStatus.AiReviewed),
                 SubscriberCount = item.IncidentSubscriptions.Count(subscription => subscription.IsActive),
+                CommentCount = item.IncidentComments.Count,
+                SupportCount = item.IncidentSupports.Count,
+                CoverImageUrl = item.IncidentReportLinks
+                    .Where(link =>
+                        link.LinkStatus == IncidentLinkStatus.Active &&
+                        link.Feedback.Status != FeedbackStatus.Submitted &&
+                        link.Feedback.Status != FeedbackStatus.AiReviewed)
+                    .SelectMany(link => link.Feedback.FeedbackAttachments.Select(attachment => new
+                    {
+                        link.LinkRole,
+                        link.LinkedAt,
+                        Attachment = attachment
+                    }))
+                    .Where(media => media.Attachment.FileType != null &&
+                        media.Attachment.FileType.StartsWith("image"))
+                    .OrderBy(media => media.LinkRole == IncidentLinkRole.Primary ? 0 : 1)
+                    .ThenBy(media => media.LinkedAt)
+                    .ThenBy(media => media.Attachment.UploadedAt)
+                    .ThenBy(media => media.Attachment.AttachmentId)
+                    .Select(media => media.Attachment.FileUrl)
+                    .FirstOrDefault(),
                 DueDate = item.DueDate,
                 ResolvedAt = item.ResolvedAt,
                 ClosedAt = item.ClosedAt,
                 IsSubscribedByCurrentUser = currentUserId != Guid.Empty && item.IncidentSubscriptions.Any(subscription =>
                     subscription.UserId == currentUserId && subscription.IsActive),
+                IsSupportedByCurrentUser = currentUserId != Guid.Empty && item.IncidentSupports.Any(support =>
+                    support.UserId == currentUserId),
                 CreatedAt = item.CreatedAt,
                 UpdatedAt = item.UpdatedAt
             })
             .FirstOrDefaultAsync(cancellationToken);
 
-        return detail ?? throw new Exception("Không tìm thấy Incident công khai.");
+        if (detail == null)
+        {
+            throw new Exception("Không tìm thấy Incident công khai.");
+        }
+
+        detail.Media = await GetIncidentMediaAsync(incidentId, publicOnly: true, cancellationToken);
+        return detail;
     }
 
     public async Task<IReadOnlyCollection<PublicIncidentReportDto>> GetPublicIncidentReportsAsync(
@@ -1032,6 +1124,154 @@ public sealed class IncidentService : IIncidentService
                     .ToList()
             })
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<PagedResultDto<IncidentCommentDto>> GetPublicCommentsAsync(
+        Guid incidentId,
+        int pageNumber,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsurePublicIncidentExistsAsync(incidentId, cancellationToken);
+        pageNumber = Math.Max(1, pageNumber);
+        pageSize = pageSize < 1 ? 20 : Math.Min(pageSize, MaxPageSize);
+
+        var query = _uow.GetRepository<IncidentComment>().Entities
+            .AsNoTracking()
+            .Where(comment => comment.IncidentId == incidentId);
+        var totalItems = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(comment => comment.CreatedAt)
+            .ThenByDescending(comment => comment.IncidentCommentId)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .Select(comment => new IncidentCommentDto
+            {
+                IncidentCommentId = comment.IncidentCommentId,
+                IncidentId = comment.IncidentId,
+                UserId = comment.UserId,
+                UserName = comment.User.FullName,
+                Content = comment.Content,
+                SourceFeedbackId = comment.SourceFeedbackId,
+                CreatedAt = comment.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        return new PagedResultDto<IncidentCommentDto>
+        {
+            Items = items,
+            PageNumber = pageNumber,
+            PageSize = pageSize,
+            TotalItems = totalItems,
+            TotalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize)
+        };
+    }
+
+    public async Task<IncidentCommentDto> AddCommentAsync(
+        Guid incidentId,
+        Guid userId,
+        IncidentCommentCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Content))
+        {
+            throw new Exception("Nội dung bình luận là bắt buộc.");
+        }
+
+        await EnsurePublicIncidentExistsAsync(incidentId, cancellationToken);
+        var userName = await _uow.GetRepository<User>().Entities
+            .AsNoTracking()
+            .Where(user => user.UserId == userId)
+            .Select(user => user.FullName)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new UnauthorizedAccessException();
+        var comment = new IncidentComment
+        {
+            IncidentCommentId = Guid.NewGuid(),
+            IncidentId = incidentId,
+            UserId = userId,
+            Content = request.Content.Trim(),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _uow.GetRepository<IncidentComment>().AddAsync(comment);
+        await _uow.SaveAsync();
+
+        return new IncidentCommentDto
+        {
+            IncidentCommentId = comment.IncidentCommentId,
+            IncidentId = comment.IncidentId,
+            UserId = comment.UserId,
+            UserName = userName,
+            Content = comment.Content,
+            CreatedAt = comment.CreatedAt
+        };
+    }
+
+    public async Task SupportAsync(
+        Guid incidentId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        _uow.BeginTransaction();
+        try
+        {
+            await _uow.AcquireTransactionAdvisoryLockAsync(ToAdvisoryLockKey(incidentId));
+            await EnsurePublicIncidentExistsAsync(incidentId, cancellationToken);
+            var repository = _uow.GetRepository<IncidentSupport>();
+            var exists = await repository.Entities.AnyAsync(
+                support => support.IncidentId == incidentId && support.UserId == userId,
+                cancellationToken);
+
+            if (!exists)
+            {
+                await repository.AddAsync(new IncidentSupport
+                {
+                    IncidentSupportId = Guid.NewGuid(),
+                    IncidentId = incidentId,
+                    UserId = userId,
+                    CreatedAt = DateTime.UtcNow
+                });
+                await _uow.SaveAsync();
+            }
+
+            _uow.CommitTransaction();
+        }
+        catch
+        {
+            _uow.RollBack();
+            throw;
+        }
+    }
+
+    public async Task UnsupportAsync(
+        Guid incidentId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        _uow.BeginTransaction();
+        try
+        {
+            await _uow.AcquireTransactionAdvisoryLockAsync(ToAdvisoryLockKey(incidentId));
+            await EnsurePublicIncidentExistsAsync(incidentId, cancellationToken);
+            var repository = _uow.GetRepository<IncidentSupport>();
+            var support = await repository.Entities.FirstOrDefaultAsync(
+                item => item.IncidentId == incidentId && item.UserId == userId,
+                cancellationToken);
+
+            if (support != null)
+            {
+                repository.Delete(support);
+                await _uow.SaveAsync();
+            }
+
+            _uow.CommitTransaction();
+        }
+        catch
+        {
+            _uow.RollBack();
+            throw;
+        }
     }
 
     public async Task<PagedResultDto<PublicIncidentEventDto>> GetPublicTimelineAsync(
@@ -1167,6 +1407,24 @@ public sealed class IncidentService : IIncidentService
                 AssignedStaffName = item.AssignedStaffUser != null ? item.AssignedStaffUser.FullName : null,
                 ReportCount = item.IncidentReportLinks.Count(link => link.LinkStatus == IncidentLinkStatus.Active),
                 SubscriberCount = item.IncidentSubscriptions.Count(subscription => subscription.IsActive),
+                CommentCount = item.IncidentComments.Count,
+                SupportCount = item.IncidentSupports.Count,
+                CoverImageUrl = item.IncidentReportLinks
+                    .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+                    .SelectMany(link => link.Feedback.FeedbackAttachments.Select(attachment => new
+                    {
+                        link.LinkRole,
+                        link.LinkedAt,
+                        Attachment = attachment
+                    }))
+                    .Where(media => media.Attachment.FileType != null &&
+                        media.Attachment.FileType.StartsWith("image"))
+                    .OrderBy(media => media.LinkRole == IncidentLinkRole.Primary ? 0 : 1)
+                    .ThenBy(media => media.LinkedAt)
+                    .ThenBy(media => media.Attachment.UploadedAt)
+                    .ThenBy(media => media.Attachment.AttachmentId)
+                    .Select(media => media.Attachment.FileUrl)
+                    .FirstOrDefault(),
                 CreatedAt = item.CreatedAt,
                 UpdatedAt = item.UpdatedAt
             })
@@ -1772,6 +2030,11 @@ public sealed class IncidentService : IIncidentService
                 }
             }
 
+            await MoveIncidentInteractionsAsync(
+                sourceIncidentId,
+                request.TargetIncidentId,
+                cancellationToken);
+
             sourceStatusBeforeMerge = source.Status;
             source.Status = IncidentStatus.Merged;
             source.MergedIntoIncidentId = request.TargetIncidentId;
@@ -1842,6 +2105,92 @@ public sealed class IncidentService : IIncidentService
             newStatus,
             actorUserId,
             note);
+    }
+
+    private async Task<IReadOnlyCollection<IncidentMediaDto>> GetIncidentMediaAsync(
+        Guid incidentId,
+        bool publicOnly,
+        CancellationToken cancellationToken)
+    {
+        var links = _uow.GetRepository<IncidentReportLink>().Entities
+            .AsNoTracking()
+            .Where(link =>
+                link.IncidentId == incidentId &&
+                link.LinkStatus == IncidentLinkStatus.Active);
+
+        if (publicOnly)
+        {
+            links = links.Where(link =>
+                link.Feedback.Status != FeedbackStatus.Submitted &&
+                link.Feedback.Status != FeedbackStatus.AiReviewed);
+        }
+
+        return await links
+            .SelectMany(link => link.Feedback.FeedbackAttachments
+                .Where(attachment =>
+                    attachment.FileType != null &&
+                    attachment.FileType.StartsWith("image"))
+                .Select(attachment => new
+                {
+                    link.FeedbackId,
+                    link.LinkRole,
+                    link.LinkedAt,
+                    Attachment = attachment
+                }))
+            .OrderBy(media => media.LinkRole == IncidentLinkRole.Primary ? 0 : 1)
+            .ThenBy(media => media.LinkedAt)
+            .ThenBy(media => media.Attachment.UploadedAt)
+            .ThenBy(media => media.Attachment.AttachmentId)
+            .Select(media => new IncidentMediaDto
+            {
+                AttachmentId = media.Attachment.AttachmentId,
+                FeedbackId = media.FeedbackId,
+                LinkRole = media.LinkRole,
+                FileUrl = media.Attachment.FileUrl,
+                FileType = media.Attachment.FileType,
+                UploadedAt = media.Attachment.UploadedAt
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task MoveIncidentInteractionsAsync(
+        Guid sourceIncidentId,
+        Guid targetIncidentId,
+        CancellationToken cancellationToken)
+    {
+        if (sourceIncidentId == targetIncidentId)
+        {
+            return;
+        }
+
+        var comments = await _uow.GetRepository<IncidentComment>().Entities
+            .Where(comment => comment.IncidentId == sourceIncidentId)
+            .ToListAsync(cancellationToken);
+        foreach (var comment in comments)
+        {
+            comment.IncidentId = targetIncidentId;
+        }
+
+        var supportRepository = _uow.GetRepository<IncidentSupport>();
+        var targetUserIds = (await supportRepository.Entities
+            .Where(support => support.IncidentId == targetIncidentId)
+            .Select(support => support.UserId)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
+        var sourceSupports = await supportRepository.Entities
+            .Where(support => support.IncidentId == sourceIncidentId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var support in sourceSupports)
+        {
+            if (!targetUserIds.Add(support.UserId))
+            {
+                supportRepository.Delete(support);
+                continue;
+            }
+
+            support.IncidentId = targetIncidentId;
+        }
     }
 
     private async Task EnsureSubscriptionAsync(
