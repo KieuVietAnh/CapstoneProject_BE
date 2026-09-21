@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using NSubstitute;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
+using UrbanService.BLL.Interfaces;
 using UrbanService.BLL.Services;
 using UrbanService.Controllers;
 using UrbanService.DAL.Entities;
@@ -36,7 +37,8 @@ public sealed class IncidentServiceTests
     public async Task VerifyReport_CreatesVerifiedIncidentLinkSubscriptionAndEvents()
     {
         var context = new IncidentTestContext();
-        var service = new IncidentService(context.UnitOfWork);
+        var notificationService = Substitute.For<INotificationService>();
+        var service = new IncidentService(context.UnitOfWork, notificationService);
         var now = DateTime.UtcNow;
         var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
         feedback.Status = FeedbackStatus.AiReviewed;
@@ -72,7 +74,137 @@ public sealed class IncidentServiceTests
         Assert.Contains(context.Events, item => item.EventType == IncidentEventType.IncidentCreated);
         Assert.Contains(context.Events, item => item.EventType == IncidentEventType.ReportLinked);
         Assert.Contains(context.Events, item => item.EventType == IncidentEventType.StatusChanged);
+        await notificationService.Received(1).SendAsync(
+            feedback.UserId,
+            "Sự vụ đã được xác nhận",
+            Arg.Is<string>(message => message.Contains(feedback.Title, StringComparison.Ordinal)),
+            NotificationType.TicketUpdated,
+            $"/community/incidents/{incident.IncidentId}",
+            incident.IncidentId,
+            "Incident",
+            incident.IncidentId.ToString());
         context.UnitOfWork.Received(1).CommitTransaction();
+    }
+
+    [Fact]
+    public async Task UpdateStatus_NotifiesEachActiveSubscriberOnceWithVietnameseContent()
+    {
+        var context = new IncidentTestContext();
+        var notificationService = Substitute.For<INotificationService>();
+        var service = new IncidentService(context.UnitOfWork, notificationService);
+        var now = DateTime.UtcNow;
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        feedback.Status = FeedbackStatus.Verified;
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        incident.Status = IncidentStatus.Verified;
+        context.Incidents.Add(incident);
+        context.Feedbacks.Add(feedback);
+        context.Links.Add(IncidentTestContext.Link(
+            incident,
+            feedback,
+            IncidentLinkRole.Primary,
+            now));
+        var activeUserId = Guid.NewGuid();
+        var activeUser = new User
+        {
+            UserId = activeUserId,
+            FullName = "Active subscriber",
+            Email = "active-subscriber@example.test"
+        };
+        var inactiveUser = new User
+        {
+            UserId = Guid.NewGuid(),
+            FullName = "Inactive subscriber",
+            Email = "inactive-subscriber@example.test"
+        };
+        context.Subscriptions.AddRange(
+        [
+            new IncidentSubscription
+            {
+                IncidentSubscriptionId = Guid.NewGuid(),
+                IncidentId = incident.IncidentId,
+                UserId = activeUserId,
+                User = activeUser,
+                SourceType = IncidentSubscriptionSource.Manual,
+                IsActive = true,
+                CreatedAt = now
+            },
+            new IncidentSubscription
+            {
+                IncidentSubscriptionId = Guid.NewGuid(),
+                IncidentId = incident.IncidentId,
+                UserId = activeUserId,
+                User = activeUser,
+                SourceType = IncidentSubscriptionSource.Report,
+                IsActive = true,
+                CreatedAt = now
+            },
+            new IncidentSubscription
+            {
+                IncidentSubscriptionId = Guid.NewGuid(),
+                IncidentId = incident.IncidentId,
+                UserId = inactiveUser.UserId,
+                User = inactiveUser,
+                SourceType = IncidentSubscriptionSource.Manual,
+                IsActive = false,
+                CreatedAt = now
+            }
+        ]);
+
+        await service.UpdateStatusFromFeedbackAsync(
+            feedback.FeedbackId,
+            new UrbanService.BLL.Dtos.UpdateIncidentStatusRequest
+            {
+                Status = IncidentStatus.InProgress
+            },
+            Guid.NewGuid());
+
+        await notificationService.Received(1).SendAsync(
+            activeUserId,
+            "Sự vụ đang được xử lý",
+            Arg.Is<string>(message =>
+                message.Contains(feedback.Title, StringComparison.Ordinal) &&
+                !message.Contains(IncidentStatus.InProgress, StringComparison.Ordinal)),
+            NotificationType.TicketUpdated,
+            $"/community/incidents/{incident.IncidentId}",
+            incident.IncidentId,
+            "Incident",
+            incident.IncidentId.ToString());
+        Assert.Single(notificationService.ReceivedCalls());
+    }
+
+    [Fact]
+    public async Task NotifyContentUpdated_UsesIncidentIdentityForActiveSubscribers()
+    {
+        var context = new IncidentTestContext();
+        var notificationService = Substitute.For<INotificationService>();
+        var service = new IncidentService(context.UnitOfWork, notificationService);
+        var now = DateTime.UtcNow;
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        var subscriberId = Guid.NewGuid();
+        context.Incidents.Add(incident);
+        context.Subscriptions.Add(new IncidentSubscription
+        {
+            IncidentSubscriptionId = Guid.NewGuid(),
+            IncidentId = incident.IncidentId,
+            UserId = subscriberId,
+            SourceType = IncidentSubscriptionSource.Manual,
+            IsActive = true,
+            CreatedAt = now
+        });
+
+        await service.NotifyContentUpdatedAsync(incident.IncidentId);
+
+        await notificationService.Received(1).SendAsync(
+            subscriberId,
+            "Sự vụ có thông tin mới",
+            Arg.Is<string>(message => message.Contains(incident.Title, StringComparison.Ordinal)),
+            NotificationType.TicketUpdated,
+            $"/community/incidents/{incident.IncidentId}",
+            incident.IncidentId,
+            "Incident",
+            incident.IncidentId.ToString());
     }
 
     [Fact]
@@ -627,7 +759,8 @@ public sealed class IncidentServiceTests
     public async Task Assign_MixedCaseRoles_ManagerSetsStaffAndProjectsAssignedStatusToAllActiveReports()
     {
         var context = new IncidentTestContext();
-        var service = new IncidentService(context.UnitOfWork);
+        var notificationService = Substitute.For<INotificationService>();
+        var service = new IncidentService(context.UnitOfWork, notificationService);
         var now = DateTime.UtcNow;
         var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
         var corroborating = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now.AddMinutes(1));
@@ -647,6 +780,17 @@ public sealed class IncidentServiceTests
         context.Assignments.Add(IncidentTestContext.Assignment(staff, incident.Area, incident.CategoryId));
         var manager = context.AddActor("InteractionManager", "Ward manager");
         context.AddManagerAreaAssignment(manager, incident.Area);
+        context.Subscriptions.Add(new IncidentSubscription
+        {
+            IncidentSubscriptionId = Guid.NewGuid(),
+            IncidentId = incident.IncidentId,
+            UserId = feedback.UserId,
+            User = feedback.User,
+            SourceType = IncidentSubscriptionSource.Report,
+            SourceFeedbackId = feedback.FeedbackId,
+            IsActive = true,
+            CreatedAt = now
+        });
 
         var result = await service.AssignAsync(
             incident.IncidentId,
@@ -675,6 +819,15 @@ public sealed class IncidentServiceTests
             incidentEvent.IncidentId == incident.IncidentId &&
             incidentEvent.EventType == IncidentEventType.StatusChanged &&
             incidentEvent.ActorUserId == manager.UserId);
+        await notificationService.Received(1).SendAsync(
+            feedback.UserId,
+            "Sự vụ đã được phân công",
+            Arg.Is<string>(message => message.Contains(feedback.Title, StringComparison.Ordinal)),
+            NotificationType.TicketUpdated,
+            $"/community/incidents/{incident.IncidentId}",
+            incident.IncidentId,
+            "Incident",
+            incident.IncidentId.ToString());
         await context.UnitOfWork.Received(1).SaveAsync();
     }
 
@@ -812,24 +965,37 @@ public sealed class IncidentServiceTests
             UserId = currentUserId,
             CreatedAt = now
         };
+        var subscription = new IncidentSubscription
+        {
+            IncidentSubscriptionId = Guid.NewGuid(),
+            IncidentId = incident.IncidentId,
+            UserId = currentUserId,
+            SourceType = IncidentSubscriptionSource.Manual,
+            IsActive = true,
+            CreatedAt = now
+        };
         incident.IncidentComments.Add(comment);
         incident.IncidentSupports.Add(support);
+        incident.IncidentSubscriptions.Add(subscription);
         context.Incidents.Add(incident);
         context.Feedbacks.Add(feedback);
         context.Links.Add(link);
         context.Comments.Add(comment);
         context.Supports.Add(support);
+        context.Subscriptions.Add(subscription);
 
         var result = await new IncidentService(context.UnitOfWork)
             .GetPublicIncidentDetailAsync(incident.IncidentId, currentUserId);
 
         Assert.Equal("https://example.test/evidence.jpg", result.CoverImageUrl);
+        Assert.Equal(result.CoverImageUrl, result.CoverImageThumbnailUrl);
         var media = Assert.Single(result.Media);
         Assert.Equal(feedback.FeedbackId, media.FeedbackId);
         Assert.Equal("image/jpeg", media.FileType);
         Assert.Equal(1, result.CommentCount);
         Assert.Equal(1, result.SupportCount);
         Assert.True(result.IsSupportedByCurrentUser);
+        Assert.True(result.IsSubscribedByCurrentUser);
     }
 
     [Fact]
@@ -872,6 +1038,154 @@ public sealed class IncidentServiceTests
         await service.UnsupportAsync(incident.IncidentId, user.UserId);
         await service.UnsupportAsync(incident.IncidentId, user.UserId);
         Assert.Empty(context.Supports);
+    }
+
+    [Fact]
+    public async Task IncidentComments_UpdateAndDeleteRequireCurrentUserOwnership()
+    {
+        var context = new IncidentTestContext();
+        var now = DateTime.UtcNow;
+        var owner = context.AddActor(UserRole.SERVICEUSER, "Comment owner");
+        var otherUser = context.AddActor(UserRole.SERVICEUSER, "Other resident");
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), owner.UserId, now);
+        feedback.Status = FeedbackStatus.Verified;
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        incident.Status = IncidentStatus.Verified;
+        var link = IncidentTestContext.Link(incident, feedback, IncidentLinkRole.Primary, now);
+        incident.IncidentReportLinks.Add(link);
+        var comment = new IncidentComment
+        {
+            IncidentCommentId = Guid.NewGuid(),
+            IncidentId = incident.IncidentId,
+            UserId = owner.UserId,
+            User = owner,
+            Content = "Original comment",
+            CreatedAt = now
+        };
+        context.Incidents.Add(incident);
+        context.Feedbacks.Add(feedback);
+        context.Links.Add(link);
+        context.Comments.Add(comment);
+        var service = new IncidentService(context.UnitOfWork);
+
+        await Assert.ThrowsAsync<Exception>(() => service.UpdateCommentAsync(
+            incident.IncidentId,
+            comment.IncidentCommentId,
+            otherUser.UserId,
+            new UrbanService.BLL.Dtos.IncidentCommentUpdateRequest { Content = "Not allowed" }));
+
+        var updated = await service.UpdateCommentAsync(
+            incident.IncidentId,
+            comment.IncidentCommentId,
+            owner.UserId,
+            new UrbanService.BLL.Dtos.IncidentCommentUpdateRequest { Content = "  Updated comment  " });
+
+        Assert.Equal("Updated comment", updated.Content);
+        Assert.Equal("Updated comment", comment.Content);
+        await Assert.ThrowsAsync<Exception>(() => service.DeleteCommentAsync(
+            incident.IncidentId,
+            comment.IncidentCommentId,
+            otherUser.UserId));
+
+        await service.DeleteCommentAsync(
+            incident.IncidentId,
+            comment.IncidentCommentId,
+            owner.UserId);
+
+        Assert.Empty(context.Comments);
+    }
+
+    [Fact]
+    public async Task PublicIncidentList_ReturnsInteractionStateThumbnailAndTrendingOrder()
+    {
+        var context = new IncidentTestContext();
+        var now = DateTime.UtcNow;
+        var currentUser = context.AddActor(UserRole.SERVICEUSER, "Resident");
+        var trendingFeedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now.AddDays(-1));
+        trendingFeedback.Status = FeedbackStatus.Verified;
+        trendingFeedback.FeedbackAttachments.Add(new FeedbackAttachment
+        {
+            AttachmentId = 11,
+            FeedbackId = trendingFeedback.FeedbackId,
+            FileUrl = "https://res.cloudinary.com/demo/image/upload/v1/incidents/cover.jpg",
+            FileType = "image/jpeg",
+            UploadedAt = now.AddDays(-1)
+        });
+        var trendingIncident = IncidentTestContext.Incident(
+            Guid.NewGuid(),
+            trendingFeedback,
+            now.AddDays(-1));
+        trendingIncident.Status = IncidentStatus.Verified;
+        var trendingLink = IncidentTestContext.Link(
+            trendingIncident,
+            trendingFeedback,
+            IncidentLinkRole.Primary,
+            now.AddDays(-1));
+        trendingIncident.IncidentReportLinks.Add(trendingLink);
+        var support = new IncidentSupport
+        {
+            IncidentSupportId = Guid.NewGuid(),
+            IncidentId = trendingIncident.IncidentId,
+            UserId = currentUser.UserId,
+            User = currentUser,
+            CreatedAt = now
+        };
+        var subscription = new IncidentSubscription
+        {
+            IncidentSubscriptionId = Guid.NewGuid(),
+            IncidentId = trendingIncident.IncidentId,
+            UserId = currentUser.UserId,
+            User = currentUser,
+            SourceType = IncidentSubscriptionSource.Manual,
+            IsActive = true,
+            CreatedAt = now
+        };
+        var comment = new IncidentComment
+        {
+            IncidentCommentId = Guid.NewGuid(),
+            IncidentId = trendingIncident.IncidentId,
+            UserId = currentUser.UserId,
+            User = currentUser,
+            Content = "Interested",
+            CreatedAt = now
+        };
+        trendingIncident.IncidentSupports.Add(support);
+        trendingIncident.IncidentSubscriptions.Add(subscription);
+        trendingIncident.IncidentComments.Add(comment);
+
+        var recentFeedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        recentFeedback.Status = FeedbackStatus.Verified;
+        var recentIncident = IncidentTestContext.Incident(Guid.NewGuid(), recentFeedback, now);
+        recentIncident.Status = IncidentStatus.Verified;
+        var recentLink = IncidentTestContext.Link(
+            recentIncident,
+            recentFeedback,
+            IncidentLinkRole.Primary,
+            now);
+        recentIncident.IncidentReportLinks.Add(recentLink);
+
+        context.Incidents.AddRange([trendingIncident, recentIncident]);
+        context.Feedbacks.AddRange([trendingFeedback, recentFeedback]);
+        context.Links.AddRange([trendingLink, recentLink]);
+        context.Supports.Add(support);
+        context.Subscriptions.Add(subscription);
+        context.Comments.Add(comment);
+
+        var result = await new IncidentService(context.UnitOfWork).GetPublicIncidentsAsync(
+            new UrbanService.BLL.Dtos.IncidentQueryParameters { Sort = "trending" },
+            currentUser.UserId);
+
+        Assert.Equal(2, result.TotalItems);
+        var first = result.Items.First();
+        Assert.Equal(trendingIncident.IncidentId, first.IncidentId);
+        Assert.Equal(7, first.EngagementScore);
+        Assert.True(first.IsSupportedByCurrentUser);
+        Assert.True(first.IsSubscribedByCurrentUser);
+        Assert.Equal("https://res.cloudinary.com/demo/image/upload/v1/incidents/cover.jpg", first.CoverImageUrl);
+        Assert.Contains(
+            "/image/upload/f_auto,q_auto,w_640,c_limit/",
+            first.CoverImageThumbnailUrl,
+            StringComparison.Ordinal);
     }
 
     [Fact]

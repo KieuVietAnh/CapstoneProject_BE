@@ -150,6 +150,62 @@ public class FeedbackManagementUpdateTests
     }
 
     [Fact]
+    public async Task Update_LinkedFeedback_DoesNotCreateASecondFeedbackNotification()
+    {
+        var notificationService = Substitute.For<INotificationService>();
+        var (context, feedback, service, incidentService) = CreateContext(
+            FeedbackStatus.Verified,
+            notificationService);
+        var link = context.TrackActiveIncident(feedback);
+
+        await service.UpdateByStaffAsync(
+            context.ManagerUserId,
+            feedback.FeedbackId,
+            new StaffFeedbackUpdateRequest { Priority = "High" });
+
+        Assert.Equal("High", feedback.Priority);
+        await incidentService.Received(1).NotifyContentUpdatedAsync(
+            link.IncidentId,
+            Arg.Any<CancellationToken>());
+        await notificationService.DidNotReceiveWithAnyArgs().SendAsync(
+            default,
+            default!,
+            default!,
+            default!,
+            default,
+            default,
+            default,
+            default);
+    }
+
+    [Fact]
+    public async Task Update_UnchangedValues_DoesNotCreateFeedbackNotification()
+    {
+        var notificationService = Substitute.For<INotificationService>();
+        var (context, feedback, service, _) = CreateContext(
+            notificationService: notificationService);
+
+        await service.UpdateByStaffAsync(
+            context.ManagerUserId,
+            feedback.FeedbackId,
+            new StaffFeedbackUpdateRequest
+            {
+                Priority = $" {feedback.Priority} ",
+                Title = $" {feedback.Title} "
+            });
+
+        await notificationService.DidNotReceiveWithAnyArgs().SendAsync(
+            default,
+            default!,
+            default!,
+            default!,
+            default,
+            default,
+            default,
+            default);
+    }
+
+    [Fact]
     public async Task Update_CannotVerifyThroughStatusField()
     {
         var (context, feedback, service, _) = CreateContext();
@@ -164,7 +220,9 @@ public class FeedbackManagementUpdateTests
     }
 
     private static (DuplicateTestContext Context, Feedback Feedback, FeedbackService Service,
-        IIncidentService IncidentService) CreateContext(string status = FeedbackStatus.AiReviewed)
+        IIncidentService IncidentService) CreateContext(
+            string status = FeedbackStatus.AiReviewed,
+            INotificationService? notificationService = null)
     {
         var context = new DuplicateTestContext();
         var feedback = DuplicateTestContext.Feedback(Guid.NewGuid(), DateTime.UtcNow,
@@ -185,7 +243,7 @@ public class FeedbackManagementUpdateTests
         context.UnitOfWork.GetRepository<UrbanServiceCategory>().Returns(categories);
         var incidentService = Substitute.For<IIncidentService>();
         var service = new FeedbackService(context.UnitOfWork,
-            Substitute.For<INotificationService>(), Substitute.For<IAiFeedbackReviewQueue>(),
+            notificationService ?? Substitute.For<INotificationService>(), Substitute.For<IAiFeedbackReviewQueue>(),
             Substitute.For<IAiFeedbackDuplicateService>(), incidentService);
         return (context, feedback, service, incidentService);
     }

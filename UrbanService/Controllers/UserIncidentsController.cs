@@ -59,6 +59,35 @@ public sealed class UserIncidentsController : ControllerBase
             request,
             HttpContext.RequestAborted));
 
+    /// <summary>Sửa bình luận do chính người dùng hiện tại tạo trên một sự vụ.</summary>
+    [HttpPatch("{incidentId:guid}/comments/{incidentCommentId:guid}")]
+    [ProducesResponseType(typeof(IncidentCommentDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateComment(
+        Guid incidentId,
+        Guid incidentCommentId,
+        [FromBody] IncidentCommentUpdateRequest request)
+        => Ok(await _incidentService.UpdateCommentAsync(
+            incidentId,
+            incidentCommentId,
+            GetCurrentUserId(),
+            request,
+            HttpContext.RequestAborted));
+
+    /// <summary>Xóa bình luận do chính người dùng hiện tại tạo trên một sự vụ.</summary>
+    [HttpDelete("{incidentId:guid}/comments/{incidentCommentId:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> DeleteComment(
+        Guid incidentId,
+        Guid incidentCommentId)
+    {
+        await _incidentService.DeleteCommentAsync(
+            incidentId,
+            incidentCommentId,
+            GetCurrentUserId(),
+            HttpContext.RequestAborted);
+        return NoContent();
+    }
+
     /// <summary>Đồng tình với một sự vụ công khai.</summary>
     /// <remarks>Gọi lặp lại không tạo upvote trùng.</remarks>
     [HttpPost("{incidentId:guid}/support")]

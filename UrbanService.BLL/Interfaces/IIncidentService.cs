@@ -50,6 +50,7 @@ public interface IIncidentService
 
     Task<PagedResultDto<PublicIncidentListItemDto>> GetPublicIncidentsAsync(
         IncidentQueryParameters query,
+        Guid currentUserId,
         CancellationToken cancellationToken = default);
 
     Task<PublicIncidentDetailDto> GetPublicIncidentDetailAsync(
@@ -71,6 +72,19 @@ public interface IIncidentService
         Guid incidentId,
         Guid userId,
         IncidentCommentCreateRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<IncidentCommentDto> UpdateCommentAsync(
+        Guid incidentId,
+        Guid incidentCommentId,
+        Guid userId,
+        IncidentCommentUpdateRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteCommentAsync(
+        Guid incidentId,
+        Guid incidentCommentId,
+        Guid userId,
         CancellationToken cancellationToken = default);
 
     Task SupportAsync(
@@ -104,6 +118,8 @@ public interface IIncidentService
     Task SubscribeAsync(Guid incidentId, Guid userId, CancellationToken cancellationToken = default);
 
     Task UnsubscribeAsync(Guid incidentId, Guid userId, CancellationToken cancellationToken = default);
+
+    Task NotifyContentUpdatedAsync(Guid incidentId, CancellationToken cancellationToken = default);
 
     Task<IncidentDetailDto> UpdateIncidentAsync(
         Guid incidentId,
