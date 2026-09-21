@@ -123,6 +123,26 @@ public class AiController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Xoa mot AI conversation cua nguoi dung hien tai.</summary>
+    /// <remarks>Cac message trong conversation cung duoc xoa.</remarks>
+    [HttpDelete("conversations/{conversationId:int}")]
+    [Authorize(Roles = UserRole.SERVICEUSER)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> DeleteConversation(
+        int conversationId,
+        CancellationToken cancellationToken)
+    {
+        await _aiChatService.DeleteConversationAsync(
+            GetCurrentUserId(),
+            conversationId,
+            cancellationToken);
+
+        return NoContent();
+    }
+
     /// <summary>Chatbot UrbanService cho nguoi dan.</summary>
     [HttpPost("chat")]
     [Authorize(Roles = UserRole.SERVICEUSER)]

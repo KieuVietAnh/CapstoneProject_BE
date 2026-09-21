@@ -998,6 +998,165 @@ public sealed class IncidentServiceTests
         Assert.True(result.IsSubscribedByCurrentUser);
     }
 
+    [Theory]
+    [InlineData(IncidentStatus.Approved)]
+    [InlineData(IncidentStatus.Closed)]
+    public async Task PublicIncidentResolution_ApprovedOrClosed_ReturnsApprovedPublicProjection(
+        string incidentStatus)
+    {
+        var context = new IncidentTestContext();
+        var now = DateTime.UtcNow;
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        feedback.Status = FeedbackStatus.Approved;
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        incident.Status = incidentStatus;
+        var link = IncidentTestContext.Link(incident, feedback, IncidentLinkRole.Primary, now);
+        incident.IncidentReportLinks.Add(link);
+
+        var providerReport = new FeedbackProviderReport
+        {
+            ProviderReportId = 11,
+            IncidentId = incident.IncidentId,
+            Incident = incident,
+            CoordinatorId = 3,
+            ReportedByUserId = Guid.NewGuid(),
+            ReportStatus = "Done",
+            ReportedAt = now
+        };
+        var resolution = new FeedbackResolution
+        {
+            ResolutionId = 21,
+            IncidentId = incident.IncidentId,
+            Incident = incident,
+            ProviderReportId = providerReport.ProviderReportId,
+            ProviderReport = providerReport,
+            CreatedByStaffUserId = Guid.NewGuid(),
+            ResolutionSummary = "Đã khắc phục điểm hư hỏng.",
+            ActionTaken = "Thay mới thiết bị và kiểm tra vận hành.",
+            ResolvedAt = now.AddHours(2),
+            ReviewedAt = now.AddHours(3),
+            Status = FeedbackStatus.Approved
+        };
+        var completionDocument = new CompletionDocument
+        {
+            CompletionDocumentId = 31,
+            ProviderReportId = providerReport.ProviderReportId,
+            IncidentId = incident.IncidentId,
+            FileUrl = "https://example.test/completed.jpg",
+            FileType = "image/jpeg",
+            Description = "Hiện trường sau xử lý",
+            ReceivedAt = now.AddHours(1)
+        };
+        var unrelatedDocument = new CompletionDocument
+        {
+            CompletionDocumentId = 32,
+            ProviderReportId = 99,
+            IncidentId = incident.IncidentId,
+            FileUrl = "https://example.test/internal.jpg",
+            FileType = "image/jpeg",
+            ReceivedAt = now.AddHours(4)
+        };
+
+        incident.ProviderAssignments.Add(providerReport);
+        incident.Resolutions.Add(resolution);
+        incident.CompletionDocuments.Add(completionDocument);
+        incident.CompletionDocuments.Add(unrelatedDocument);
+        providerReport.FeedbackResolutions.Add(resolution);
+        providerReport.CompletionDocuments.Add(completionDocument);
+        context.Incidents.Add(incident);
+        context.Feedbacks.Add(feedback);
+        context.Links.Add(link);
+        context.ProviderReports.Add(providerReport);
+        context.Resolutions.Add(resolution);
+
+        var result = await new IncidentService(context.UnitOfWork)
+            .GetPublicIncidentResolutionAsync(incident.IncidentId);
+
+        Assert.NotNull(result);
+        Assert.Equal(resolution.ResolutionSummary, result.ResolutionSummary);
+        Assert.Equal(resolution.ActionTaken, result.ActionTaken);
+        Assert.Equal(resolution.ResolvedAt, result.ResolvedAt);
+        var document = Assert.Single(result.CompletionDocuments);
+        Assert.Equal(completionDocument.FileUrl, document.FileUrl);
+        Assert.Equal(completionDocument.Description, document.Description);
+    }
+
+    [Theory]
+    [InlineData(IncidentStatus.InProgress, FeedbackStatus.Approved)]
+    [InlineData(IncidentStatus.SubmittedForApproval, FeedbackStatus.SubmittedForApproval)]
+    [InlineData(IncidentStatus.NeedRework, FeedbackStatus.NeedRework)]
+    [InlineData(IncidentStatus.Approved, FeedbackStatus.SubmittedForApproval)]
+    public async Task PublicIncidentResolution_NotFinallyApproved_ReturnsNull(
+        string incidentStatus,
+        string resolutionStatus)
+    {
+        var context = new IncidentTestContext();
+        var now = DateTime.UtcNow;
+        var feedback = IncidentTestContext.Feedback(Guid.NewGuid(), Guid.NewGuid(), now);
+        feedback.Status = FeedbackStatus.Verified;
+        var incident = IncidentTestContext.Incident(Guid.NewGuid(), feedback, now);
+        incident.Status = incidentStatus;
+        var link = IncidentTestContext.Link(incident, feedback, IncidentLinkRole.Primary, now);
+        incident.IncidentReportLinks.Add(link);
+        var resolution = new FeedbackResolution
+        {
+            ResolutionId = 41,
+            IncidentId = incident.IncidentId,
+            Incident = incident,
+            CreatedByStaffUserId = Guid.NewGuid(),
+            ResolutionSummary = "Chưa được công khai.",
+            ActionTaken = "Đang chờ duyệt.",
+            ResolvedAt = now,
+            Status = resolutionStatus
+        };
+        incident.Resolutions.Add(resolution);
+        context.Incidents.Add(incident);
+        context.Feedbacks.Add(feedback);
+        context.Links.Add(link);
+        context.Resolutions.Add(resolution);
+
+        var result = await new IncidentService(context.UnitOfWork)
+            .GetPublicIncidentResolutionAsync(incident.IncidentId);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void PublicIncidentResolution_ActionUsesPublicGuidRoute()
+    {
+        var action = typeof(PublicIncidentsController)
+            .GetMethod(nameof(PublicIncidentsController.GetResolution))!;
+        var httpGet = Assert.Single(action
+            .GetCustomAttributes(typeof(Microsoft.AspNetCore.Mvc.HttpGetAttribute), inherit: true)
+            .Cast<Microsoft.AspNetCore.Mvc.HttpGetAttribute>());
+
+        Assert.Equal("{incidentId:guid}/resolution", httpGet.Template);
+    }
+
+    [Fact]
+    public async Task PublicIncidentResolution_ActionReturnsNotFoundWhenResultIsNotPublic()
+    {
+        var incidentId = Guid.NewGuid();
+        var incidentService = Substitute.For<IIncidentService>();
+        incidentService
+            .GetPublicIncidentResolutionAsync(incidentId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<UrbanService.BLL.Dtos.PublicIncidentResolutionDto?>(null));
+        var controller = new PublicIncidentsController(incidentService)
+        {
+            ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+            {
+                HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext()
+            }
+        };
+
+        var result = await controller.GetResolution(incidentId);
+
+        var notFound = Assert.IsType<Microsoft.AspNetCore.Mvc.NotFoundObjectResult>(result);
+        var response = Assert.IsType<ApiResponse<object>>(notFound.Value);
+        Assert.Equal(404, response.Status);
+        Assert.Equal("Không tìm thấy kết quả xử lý công khai.", response.Msg);
+    }
+
     [Fact]
     public async Task IncidentInteractions_AllowCommentsAndIdempotentSupportOnPublicIncident()
     {
@@ -1301,6 +1460,7 @@ public sealed class IncidentServiceTests
             ConfigureRepository(FeedbackRepository, Feedbacks);
             ConfigureRepository(StatusHistoryRepository, StatusHistories);
             ConfigureRepository(ProviderReportRepository, ProviderReports);
+            ConfigureRepository(ResolutionRepository, Resolutions);
             ConfigureRepository(AssignmentRepository, Assignments);
             ConfigureRepository(UserRepository, Users);
             ConfigureRepository(ManagerAreaAssignmentRepository, ManagerAreaAssignments);
@@ -1314,6 +1474,7 @@ public sealed class IncidentServiceTests
             UnitOfWork.GetRepository<Feedback>().Returns(FeedbackRepository);
             UnitOfWork.GetRepository<FeedbackStatusHistory>().Returns(StatusHistoryRepository);
             UnitOfWork.GetRepository<FeedbackProviderReport>().Returns(ProviderReportRepository);
+            UnitOfWork.GetRepository<FeedbackResolution>().Returns(ResolutionRepository);
             UnitOfWork.GetRepository<StaffAreaAssignment>().Returns(AssignmentRepository);
             UnitOfWork.GetRepository<User>().Returns(UserRepository);
             UnitOfWork.GetRepository<ManagerAreaAssignment>().Returns(ManagerAreaAssignmentRepository);
@@ -1342,6 +1503,7 @@ public sealed class IncidentServiceTests
         public IGenericRepository<Feedback> FeedbackRepository { get; } = Substitute.For<IGenericRepository<Feedback>>();
         public IGenericRepository<FeedbackStatusHistory> StatusHistoryRepository { get; } = Substitute.For<IGenericRepository<FeedbackStatusHistory>>();
         public IGenericRepository<FeedbackProviderReport> ProviderReportRepository { get; } = Substitute.For<IGenericRepository<FeedbackProviderReport>>();
+        public IGenericRepository<FeedbackResolution> ResolutionRepository { get; } = Substitute.For<IGenericRepository<FeedbackResolution>>();
         public IGenericRepository<StaffAreaAssignment> AssignmentRepository { get; } = Substitute.For<IGenericRepository<StaffAreaAssignment>>();
         public IGenericRepository<User> UserRepository { get; } = Substitute.For<IGenericRepository<User>>();
         public IGenericRepository<ManagerAreaAssignment> ManagerAreaAssignmentRepository { get; } = Substitute.For<IGenericRepository<ManagerAreaAssignment>>();
@@ -1355,6 +1517,7 @@ public sealed class IncidentServiceTests
         public List<Feedback> Feedbacks { get; } = [];
         public List<FeedbackStatusHistory> StatusHistories { get; } = [];
         public List<FeedbackProviderReport> ProviderReports { get; } = [];
+        public List<FeedbackResolution> Resolutions { get; } = [];
         public List<StaffAreaAssignment> Assignments { get; } = [];
         public List<User> Users { get; } = [];
         public List<ManagerAreaAssignment> ManagerAreaAssignments { get; } = [];
