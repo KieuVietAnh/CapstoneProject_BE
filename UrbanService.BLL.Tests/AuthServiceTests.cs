@@ -8,7 +8,6 @@ using NSubstitute;
 using UrbanService.BLL.Common.Securities;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
-using UrbanService.BLL.Options;
 using UrbanService.BLL.Services;
 using UrbanService.Controllers;
 using UrbanService.DAL.Entities;
@@ -347,13 +346,6 @@ public class AuthServiceTests
                 Substitute.For<IConfiguration>(),
                 Substitute.For<IJwtTokenGenerator>(),
                 EmailSender,
-                SmsSender,
-                Microsoft.Extensions.Options.Options.Create(new TwilioOptions
-                {
-                    AccountSid = "test-account-sid",
-                    AuthToken = "test-auth-token",
-                    FromNumber = "+15550000000"
-                }),
                 Cache,
                 Substitute.For<ILogger<AuthService>>());
         }
@@ -361,8 +353,6 @@ public class AuthServiceTests
         public List<User> Users { get; } = [];
 
         public List<EmailMessageDto> SentEmails { get; } = [];
-
-        public ISmsSender SmsSender { get; } = Substitute.For<ISmsSender>();
 
         public IUnitOfWork UnitOfWork { get; } = Substitute.For<IUnitOfWork>();
 

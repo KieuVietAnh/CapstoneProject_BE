@@ -137,7 +137,7 @@ public class FeedbackService : IFeedbackService
     {
         ValidateCreate(request);
         var submissionChannel = NormalizeSubmissionChannel(request.SubmissionChannel);
-        await EnsurePhoneVerifiedForWebSubmissionAsync(userId, submissionChannel);
+        await EnsureEmailVerifiedForWebSubmissionAsync(userId, submissionChannel);
         await EnsureAreaMatchesLocationAsync(request.AreaId, request.Latitude, request.Longitude);
 
         var now = DateTime.UtcNow;
@@ -2104,18 +2104,18 @@ public class FeedbackService : IFeedbackService
     }
 
     /// <summary>
-    /// Người dân gửi phản ánh từ web phải có số điện thoại đã xác thực.
+    /// Người dân gửi phản ánh từ web phải có email đã xác thực.
     ///
     /// Đây là nơi ràng buộc trách nhiệm: tài khoản nào gửi phản ánh thì phải có
-    /// một số điện thoại đã qua OTP, để phản ánh sai sự thật còn truy được đầu
-    /// mối. Đăng nhập thì không cần, nên người chỉ vào xem tình hình khu vực
-    /// không bị bắt cung cấp số điện thoại.
+    /// một email đã qua OTP, để phản ánh sai sự thật còn truy được đầu mối. Đăng
+    /// nhập thì không cần, nên người chỉ vào xem tình hình khu vực không bị bắt
+    /// xác thực.
     ///
     /// Messenger và Zalo đi qua tài khoản dịch vụ dùng chung do admin quản lý,
     /// định danh người gửi nằm ở định danh kênh chứ không ở tài khoản, nên không
     /// áp ràng buộc này.
     /// </summary>
-    private async Task EnsurePhoneVerifiedForWebSubmissionAsync(
+    private async Task EnsureEmailVerifiedForWebSubmissionAsync(
         Guid userId,
         string submissionChannel)
     {
@@ -2136,7 +2136,7 @@ public class FeedbackService : IFeedbackService
         if (isVerified != true)
         {
             throw new ForbiddenAccessException(
-                "Bạn cần xác thực số điện thoại trước khi gửi phản ánh.");
+                "Bạn cần xác thực email trước khi gửi phản ánh.");
         }
     }
 
