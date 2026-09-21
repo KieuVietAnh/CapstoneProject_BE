@@ -301,6 +301,22 @@ public sealed class PublicIncidentDetailDto : PublicIncidentListItemDto
     public IReadOnlyCollection<IncidentMediaDto> Media { get; set; } = [];
 }
 
+public sealed class PublicIncidentResolutionDto
+{
+    public string ResolutionSummary { get; set; } = null!;
+    public string ActionTaken { get; set; } = null!;
+    public DateTime ResolvedAt { get; set; }
+    public IReadOnlyCollection<PublicCompletionDocumentDto> CompletionDocuments { get; set; } = [];
+}
+
+public sealed class PublicCompletionDocumentDto
+{
+    public string FileUrl { get; set; } = null!;
+    public string? FileType { get; set; }
+    public string? Description { get; set; }
+    public DateTime ReceivedAt { get; set; }
+}
+
 public sealed class PublicIncidentReportDto
 {
     public Guid FeedbackId { get; set; }

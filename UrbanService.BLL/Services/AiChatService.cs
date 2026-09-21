@@ -84,6 +84,21 @@ public class AiChatService : IAiChatService
             .ToListAsync(cancellationToken);
     }
 
+    public async Task DeleteConversationAsync(
+        Guid userId,
+        int conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        var conversation = await _uow.GetRepository<AiConversation>().Entities
+            .FirstOrDefaultAsync(
+                c => c.AiConversationId == conversationId && c.UserId == userId,
+                cancellationToken)
+            ?? throw new Exception("Khong tim thay conversation cua nguoi dung.");
+
+        _uow.GetRepository<AiConversation>().Delete(conversation);
+        await _uow.SaveAsync();
+    }
+
     public async Task<AiChatResponse> SendAsync(
         Guid userId,
         AiChatRequest request,

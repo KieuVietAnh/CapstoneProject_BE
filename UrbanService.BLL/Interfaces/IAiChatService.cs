@@ -13,6 +13,11 @@ public interface IAiChatService
         int conversationId,
         CancellationToken cancellationToken = default);
 
+    Task DeleteConversationAsync(
+        Guid userId,
+        int conversationId,
+        CancellationToken cancellationToken = default);
+
     Task<AiChatResponse> SendAsync(
         Guid userId,
         AiChatRequest request,

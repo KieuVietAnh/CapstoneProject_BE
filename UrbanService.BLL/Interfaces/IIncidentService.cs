@@ -58,6 +58,10 @@ public interface IIncidentService
         Guid currentUserId,
         CancellationToken cancellationToken = default);
 
+    Task<PublicIncidentResolutionDto?> GetPublicIncidentResolutionAsync(
+        Guid incidentId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<PublicIncidentReportDto>> GetPublicIncidentReportsAsync(
         Guid incidentId,
         CancellationToken cancellationToken = default);

@@ -1136,6 +1136,48 @@ public sealed class IncidentService : IIncidentService
         return detail;
     }
 
+    public async Task<PublicIncidentResolutionDto?> GetPublicIncidentResolutionAsync(
+        Guid incidentId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _uow.GetRepository<FeedbackResolution>().Entities
+            .AsNoTracking()
+            .Where(resolution =>
+                resolution.IncidentId == incidentId &&
+                resolution.Status == FeedbackStatus.Approved &&
+                (resolution.Incident.Status == IncidentStatus.Approved ||
+                    resolution.Incident.Status == IncidentStatus.Closed) &&
+                resolution.Incident.MergedIntoIncidentId == null &&
+                resolution.Incident.IncidentReportLinks.Any(link =>
+                    link.LinkStatus == IncidentLinkStatus.Active &&
+                    link.Feedback.Status != FeedbackStatus.Submitted &&
+                    link.Feedback.Status != FeedbackStatus.AiReviewed))
+            .OrderByDescending(resolution => resolution.ReviewedAt)
+            .ThenByDescending(resolution => resolution.ResolvedAt)
+            .ThenByDescending(resolution => resolution.ResolutionId)
+            .Select(resolution => new PublicIncidentResolutionDto
+            {
+                ResolutionSummary = resolution.ResolutionSummary,
+                ActionTaken = resolution.ActionTaken,
+                ResolvedAt = resolution.ResolvedAt,
+                CompletionDocuments = resolution.Incident.CompletionDocuments
+                    .Where(document =>
+                        resolution.ProviderReportId.HasValue &&
+                        document.ProviderReportId == resolution.ProviderReportId.Value)
+                    .OrderByDescending(document => document.ReceivedAt)
+                    .ThenByDescending(document => document.CompletionDocumentId)
+                    .Select(document => new PublicCompletionDocumentDto
+                    {
+                        FileUrl = document.FileUrl,
+                        FileType = document.FileType,
+                        Description = document.Description,
+                        ReceivedAt = document.ReceivedAt
+                    })
+                    .ToList()
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<PublicIncidentReportDto>> GetPublicIncidentReportsAsync(
         Guid incidentId,
         CancellationToken cancellationToken = default)
