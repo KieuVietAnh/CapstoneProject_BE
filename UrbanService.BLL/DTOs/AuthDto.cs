@@ -14,15 +14,8 @@
         public string Otp { get; set; } = "";
     }
 
-    public class SendPhoneOtpRequest
+    public class VerifyEmailRequest
     {
-        public string Phone { get; set; } = "";
-    }
-
-    public class VerifyPhoneRequest
-    {
-        public string Phone { get; set; } = "";
-
         public string Otp { get; set; } = "";
     }
 

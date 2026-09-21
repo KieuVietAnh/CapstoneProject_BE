@@ -22,11 +22,6 @@ services:
       Brevo__ApiKey: ${BREVO_API_KEY}
       Brevo__SenderEmail: ${BREVO_SENDER_EMAIL}
       Brevo__SenderName: ${BREVO_SENDER_NAME:-UrbanService}
-      Twilio__AccountSid: ${TWILIO_ACCOUNT_SID}
-      Twilio__AuthToken: ${TWILIO_AUTH_TOKEN}
-      Twilio__FromNumber: ${TWILIO_FROM_NUMBER}
-      Twilio__DefaultCountryCode: ${TWILIO_DEFAULT_COUNTRY_CODE:-+84}
-      Twilio__TimeoutSeconds: ${TWILIO_TIMEOUT_SECONDS:-20}
 
       GoogleAuth__ClientId: ${GOOGLE_AUTH_CLIENT_ID}
       Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS}
