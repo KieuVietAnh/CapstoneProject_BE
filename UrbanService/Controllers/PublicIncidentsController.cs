@@ -20,11 +20,14 @@ public sealed class PublicIncidentsController : ControllerBase
     }
 
     /// <summary>Lấy danh sách sự vụ đô thị được công khai.</summary>
-    /// <remarks>API công khai, không yêu cầu JWT; hỗ trợ bộ lọc và phân trang từ query.</remarks>
+    /// <remarks>API công khai, không yêu cầu JWT; hỗ trợ bộ lọc, phân trang và `sort=trending` từ query.</remarks>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResultDto<PublicIncidentListItemDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetIncidents([FromQuery] IncidentQueryParameters query)
-        => Ok(await _incidentService.GetPublicIncidentsAsync(query, HttpContext.RequestAborted));
+        => Ok(await _incidentService.GetPublicIncidentsAsync(
+            query,
+            GetCurrentUserIdOrEmpty(),
+            HttpContext.RequestAborted));
 
     /// <summary>Lấy chi tiết một sự vụ công khai.</summary>
     /// <remarks>

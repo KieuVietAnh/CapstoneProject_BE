@@ -787,19 +787,29 @@ public class FeedbackService : IFeedbackService
 
 
 
+        var requestedGeoSource = request.GeoSource != null
+            ? NormalizeOptional(request.GeoSource)
+            : null;
         var hasContentChanges =
-            request.AreaId.HasValue ||
-            request.CategoryId.HasValue ||
-            !string.IsNullOrWhiteSpace(request.Title) ||
-            !string.IsNullOrWhiteSpace(request.Description) ||
-            !string.IsNullOrWhiteSpace(request.LocationText) ||
-            request.Latitude.HasValue ||
-            request.Longitude.HasValue ||
-            request.LocationAccuracyMeters.HasValue ||
-            request.GeoSource != null ||
-            !string.IsNullOrWhiteSpace(request.Priority) ||
-            request.Severity != null ||
-            request.DueDate.HasValue;
+            (request.AreaId.HasValue && request.AreaId.Value != feedback.AreaId) ||
+            (request.CategoryId.HasValue && request.CategoryId != feedback.CategoryId) ||
+            (!string.IsNullOrWhiteSpace(request.Title) &&
+                !string.Equals(request.Title.Trim(), feedback.Title, StringComparison.Ordinal)) ||
+            (!string.IsNullOrWhiteSpace(request.Description) &&
+                !string.Equals(request.Description.Trim(), feedback.Description, StringComparison.Ordinal)) ||
+            (!string.IsNullOrWhiteSpace(request.LocationText) &&
+                !string.Equals(request.LocationText.Trim(), feedback.LocationText, StringComparison.Ordinal)) ||
+            (request.Latitude.HasValue && request.Latitude != feedback.Latitude) ||
+            (request.Longitude.HasValue && request.Longitude != feedback.Longitude) ||
+            (request.LocationAccuracyMeters.HasValue &&
+                request.LocationAccuracyMeters != feedback.LocationAccuracyMeters) ||
+            (request.GeoSource != null &&
+                !string.Equals(requestedGeoSource, feedback.GeoSource, StringComparison.Ordinal)) ||
+            (!string.IsNullOrWhiteSpace(request.Priority) &&
+                !string.Equals(request.Priority.Trim(), feedback.Priority, StringComparison.Ordinal)) ||
+            (request.Severity != null &&
+                !string.Equals(severity, feedback.Severity, StringComparison.Ordinal)) ||
+            (request.DueDate.HasValue && request.DueDate != feedback.DueDate);
 
 
 
@@ -888,7 +898,7 @@ public class FeedbackService : IFeedbackService
 
         feedback.GeoSource =
             request.GeoSource != null
-            ? NormalizeOptional(request.GeoSource)
+            ? requestedGeoSource
             : feedback.GeoSource;
 
 
@@ -913,8 +923,10 @@ public class FeedbackService : IFeedbackService
 
 
 
-        feedback.UpdatedAt =
-            DateTime.UtcNow;
+        if (hasContentChanges)
+        {
+            feedback.UpdatedAt = DateTime.UtcNow;
+        }
 
 
 
@@ -1035,7 +1047,15 @@ public class FeedbackService : IFeedbackService
 
 
 
-        if (hasContentChanges)
+        var activeIncidentId = feedback.IncidentReportLinks
+            .Where(link => link.LinkStatus == IncidentLinkStatus.Active)
+            .Select(link => (Guid?)link.IncidentId)
+            .SingleOrDefault();
+        if (hasContentChanges && activeIncidentId.HasValue)
+        {
+            await _incidentService.NotifyContentUpdatedAsync(activeIncidentId.Value);
+        }
+        else if (hasContentChanges)
         {
             await SendFeedbackNotificationAsync(
                 feedback,

@@ -15,6 +15,8 @@ public sealed class IncidentService : IIncidentService
         IncidentDetailDto Detail,
         IReadOnlyCollection<FeedbackStatusHistory> Histories);
 
+    private sealed record IncidentNotificationContent(string Title, string Message);
+
     private readonly IUnitOfWork _uow;
     private readonly INotificationService? _notificationService;
     private readonly ISlaService? _slaService;
@@ -202,6 +204,12 @@ public sealed class IncidentService : IIncidentService
                 IncidentStatus.Verified,
                 managerUserId,
                 normalizedNote);
+
+            await NotifyIncidentStatusChangedAsync(
+                incident.IncidentId,
+                incident.Title,
+                IncidentStatus.Verified,
+                cancellationToken);
 
             return MapFeedbackStatusHistory(history);
         }
@@ -915,6 +923,7 @@ public sealed class IncidentService : IIncidentService
 
     public async Task<PagedResultDto<PublicIncidentListItemDto>> GetPublicIncidentsAsync(
         IncidentQueryParameters query,
+        Guid currentUserId,
         CancellationToken cancellationToken = default)
     {
         var pageNumber = Math.Max(1, query.PageNumber);
@@ -923,6 +932,7 @@ public sealed class IncidentService : IIncidentService
         var priority = NormalizeOptional(query.Priority)?.ToLower();
         var severity = NormalizeOptional(query.Severity)?.ToLower();
         var search = NormalizeOptional(query.Search)?.ToLower();
+        var sort = NormalizeOptional(query.Sort);
 
         var incidents = _uow.GetRepository<Incident>().Entities
             .AsNoTracking()
@@ -952,8 +962,20 @@ public sealed class IncidentService : IIncidentService
         }
 
         var totalItems = await incidents.CountAsync(cancellationToken);
-        var items = await incidents
-            .OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt)
+        var orderedIncidents = string.Equals(sort, "trending", StringComparison.OrdinalIgnoreCase)
+            ? incidents
+                .OrderByDescending(item =>
+                    item.IncidentSupports.Count * 3 +
+                    item.IncidentComments.Count * 2 +
+                    item.IncidentSubscriptions.Count(subscription => subscription.IsActive) +
+                    item.IncidentReportLinks.Count(link =>
+                        link.LinkStatus == IncidentLinkStatus.Active &&
+                        link.Feedback.Status != FeedbackStatus.Submitted &&
+                        link.Feedback.Status != FeedbackStatus.AiReviewed))
+                .ThenByDescending(item => item.UpdatedAt ?? item.CreatedAt)
+            : incidents.OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt);
+
+        var items = await orderedIncidents
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .Select(item => new PublicIncidentListItemDto
@@ -978,6 +1000,18 @@ public sealed class IncidentService : IIncidentService
                 SubscriberCount = item.IncidentSubscriptions.Count(subscription => subscription.IsActive),
                 CommentCount = item.IncidentComments.Count,
                 SupportCount = item.IncidentSupports.Count,
+                IsSubscribedByCurrentUser = currentUserId != Guid.Empty && item.IncidentSubscriptions.Any(subscription =>
+                    subscription.UserId == currentUserId && subscription.IsActive),
+                IsSupportedByCurrentUser = currentUserId != Guid.Empty && item.IncidentSupports.Any(support =>
+                    support.UserId == currentUserId),
+                EngagementScore =
+                    item.IncidentSupports.Count * 3 +
+                    item.IncidentComments.Count * 2 +
+                    item.IncidentSubscriptions.Count(subscription => subscription.IsActive) +
+                    item.IncidentReportLinks.Count(link =>
+                        link.LinkStatus == IncidentLinkStatus.Active &&
+                        link.Feedback.Status != FeedbackStatus.Submitted &&
+                        link.Feedback.Status != FeedbackStatus.AiReviewed),
                 CoverImageUrl = item.IncidentReportLinks
                     .Where(link =>
                         link.LinkStatus == IncidentLinkStatus.Active &&
@@ -1001,6 +1035,11 @@ public sealed class IncidentService : IIncidentService
                 UpdatedAt = item.UpdatedAt
             })
             .ToListAsync(cancellationToken);
+
+        foreach (var item in items)
+        {
+            item.CoverImageThumbnailUrl = BuildCoverImageThumbnailUrl(item.CoverImageUrl);
+        }
 
         return new PagedResultDto<PublicIncidentListItemDto>
         {
@@ -1048,6 +1087,14 @@ public sealed class IncidentService : IIncidentService
                 SubscriberCount = item.IncidentSubscriptions.Count(subscription => subscription.IsActive),
                 CommentCount = item.IncidentComments.Count,
                 SupportCount = item.IncidentSupports.Count,
+                EngagementScore =
+                    item.IncidentSupports.Count * 3 +
+                    item.IncidentComments.Count * 2 +
+                    item.IncidentSubscriptions.Count(subscription => subscription.IsActive) +
+                    item.IncidentReportLinks.Count(link =>
+                        link.LinkStatus == IncidentLinkStatus.Active &&
+                        link.Feedback.Status != FeedbackStatus.Submitted &&
+                        link.Feedback.Status != FeedbackStatus.AiReviewed),
                 CoverImageUrl = item.IncidentReportLinks
                     .Where(link =>
                         link.LinkStatus == IncidentLinkStatus.Active &&
@@ -1084,6 +1131,7 @@ public sealed class IncidentService : IIncidentService
             throw new Exception("Không tìm thấy Incident công khai.");
         }
 
+        detail.CoverImageThumbnailUrl = BuildCoverImageThumbnailUrl(detail.CoverImageUrl);
         detail.Media = await GetIncidentMediaAsync(incidentId, publicOnly: true, cancellationToken);
         return detail;
     }
@@ -1206,6 +1254,65 @@ public sealed class IncidentService : IIncidentService
             Content = comment.Content,
             CreatedAt = comment.CreatedAt
         };
+    }
+
+    public async Task<IncidentCommentDto> UpdateCommentAsync(
+        Guid incidentId,
+        Guid incidentCommentId,
+        Guid userId,
+        IncidentCommentUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Content))
+        {
+            throw new Exception("Nội dung bình luận là bắt buộc.");
+        }
+
+        var comment = await _uow.GetRepository<IncidentComment>().Entities
+            .FirstOrDefaultAsync(item =>
+                item.IncidentCommentId == incidentCommentId &&
+                item.IncidentId == incidentId &&
+                item.UserId == userId,
+                cancellationToken)
+            ?? throw new Exception("Không tìm thấy bình luận thuộc người dùng hiện tại.");
+
+        comment.Content = request.Content.Trim();
+        await _uow.SaveAsync();
+
+        var userName = await _uow.GetRepository<User>().Entities
+            .AsNoTracking()
+            .Where(user => user.UserId == userId)
+            .Select(user => user.FullName)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return new IncidentCommentDto
+        {
+            IncidentCommentId = comment.IncidentCommentId,
+            IncidentId = comment.IncidentId,
+            UserId = comment.UserId,
+            UserName = userName,
+            Content = comment.Content,
+            SourceFeedbackId = comment.SourceFeedbackId,
+            CreatedAt = comment.CreatedAt
+        };
+    }
+
+    public async Task DeleteCommentAsync(
+        Guid incidentId,
+        Guid incidentCommentId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var repository = _uow.GetRepository<IncidentComment>();
+        var comment = await repository.Entities.FirstOrDefaultAsync(item =>
+            item.IncidentCommentId == incidentCommentId &&
+            item.IncidentId == incidentId &&
+            item.UserId == userId,
+            cancellationToken)
+            ?? throw new Exception("Không tìm thấy bình luận thuộc người dùng hiện tại.");
+
+        repository.Delete(comment);
+        await _uow.SaveAsync();
     }
 
     public async Task SupportAsync(
@@ -1478,6 +1585,26 @@ public sealed class IncidentService : IIncidentService
         subscription.IsActive = false;
         subscription.UpdatedAt = DateTime.UtcNow;
         await _uow.SaveAsync();
+    }
+
+    public async Task NotifyContentUpdatedAsync(
+        Guid incidentId,
+        CancellationToken cancellationToken = default)
+    {
+        var incidentTitle = await _uow.GetRepository<Incident>().Entities
+            .AsNoTracking()
+            .Where(incident =>
+                incident.IncidentId == incidentId &&
+                incident.MergedIntoIncidentId == null)
+            .Select(incident => incident.Title)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new Exception("Không tìm thấy Incident đang hoạt động.");
+
+        await NotifyIncidentSubscribersAsync(
+            incidentId,
+            "Sự vụ có thông tin mới",
+            $"Thông tin liên quan đến sự vụ \"{incidentTitle}\" đã được nhân viên cập nhật.",
+            cancellationToken);
     }
 
     public async Task<IncidentDetailDto> UpdateIncidentAsync(
@@ -1764,10 +1891,10 @@ public sealed class IncidentService : IIncidentService
 
         if (statusChanged)
         {
-            await NotifyIncidentSubscribersAsync(
+            await NotifyIncidentStatusChangedAsync(
                 incidentId,
-                "Sự vụ đã cập nhật trạng thái",
-                $"Sự vụ \"{incident.Title}\" đã chuyển sang trạng thái {status}.",
+                incident.Title,
+                status,
                 cancellationToken);
 
             await SynchronizeSlaAsync(
@@ -1862,10 +1989,12 @@ public sealed class IncidentService : IIncidentService
         var oldAssignee = incident.AssignedStaffUserId;
         incident.AssignedStaffUserId = request.StaffUserId;
         var now = DateTime.UtcNow;
+        var statusChangedToAssigned = false;
         incident.AssignedAt ??= now;
         incident.UpdatedAt = now;
         if (string.Equals(incident.Status, IncidentStatus.Verified, StringComparison.OrdinalIgnoreCase))
         {
+            statusChangedToAssigned = true;
             var oldStatus = incident.Status;
             incident.Status = IncidentStatus.Assigned;
             var activeLinks = await _uow.GetRepository<IncidentReportLink>().Entities
@@ -1901,6 +2030,15 @@ public sealed class IncidentService : IIncidentService
             reason = NormalizeOptional(request.Reason)
         });
         await _uow.SaveAsync();
+
+        if (statusChangedToAssigned)
+        {
+            await NotifyIncidentStatusChangedAsync(
+                incidentId,
+                incident.Title,
+                IncidentStatus.Assigned,
+                cancellationToken);
+        }
 
         if (_notificationService != null)
         {
@@ -2317,6 +2455,87 @@ public sealed class IncidentService : IIncidentService
                 "Incident",
                 incidentId.ToString());
         }
+    }
+
+    private Task NotifyIncidentStatusChangedAsync(
+        Guid incidentId,
+        string incidentTitle,
+        string status,
+        CancellationToken cancellationToken)
+    {
+        var content = GetIncidentStatusNotificationContent(incidentTitle, status);
+        return NotifyIncidentSubscribersAsync(
+            incidentId,
+            content.Title,
+            content.Message,
+            cancellationToken);
+    }
+
+    private static IncidentNotificationContent GetIncidentStatusNotificationContent(
+        string incidentTitle,
+        string status)
+    {
+        return status switch
+        {
+            IncidentStatus.Verified => new(
+                "Sự vụ đã được xác nhận",
+                $"Sự vụ \"{incidentTitle}\" đã được xác nhận và chuyển sang bước xử lý."),
+            IncidentStatus.Assigned => new(
+                "Sự vụ đã được phân công",
+                $"Sự vụ \"{incidentTitle}\" đã được phân công cho nhân sự xử lý."),
+            IncidentStatus.InProgress => new(
+                "Sự vụ đang được xử lý",
+                $"Đơn vị phụ trách đã bắt đầu xử lý sự vụ \"{incidentTitle}\"."),
+            IncidentStatus.Resolved => new(
+                "Sự vụ đã có kết quả xử lý",
+                $"Sự vụ \"{incidentTitle}\" đã có kết quả xử lý."),
+            IncidentStatus.SubmittedForApproval => new(
+                "Kết quả xử lý đang chờ phê duyệt",
+                $"Kết quả xử lý sự vụ \"{incidentTitle}\" đã được gửi để phê duyệt."),
+            IncidentStatus.Approved => new(
+                "Kết quả xử lý đã được phê duyệt",
+                $"Kết quả xử lý sự vụ \"{incidentTitle}\" đã được phê duyệt."),
+            IncidentStatus.NeedRework => new(
+                "Sự vụ cần được xử lý lại",
+                $"Kết quả của sự vụ \"{incidentTitle}\" cần được bổ sung hoặc xử lý lại."),
+            IncidentStatus.Closed => new(
+                "Sự vụ đã hoàn tất",
+                $"Sự vụ \"{incidentTitle}\" đã hoàn tất."),
+            IncidentStatus.Rejected => new(
+                "Sự vụ đã bị từ chối",
+                $"Sự vụ \"{incidentTitle}\" đã bị từ chối."),
+            IncidentStatus.Cancelled => new(
+                "Sự vụ đã bị hủy",
+                $"Sự vụ \"{incidentTitle}\" đã bị hủy."),
+            _ => new(
+                "Sự vụ đã cập nhật trạng thái",
+                $"Trạng thái của sự vụ \"{incidentTitle}\" đã được cập nhật.")
+        };
+    }
+
+    private static string? BuildCoverImageThumbnailUrl(string? imageUrl)
+    {
+        if (string.IsNullOrWhiteSpace(imageUrl) ||
+            !Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri) ||
+            !uri.Host.Contains("res.cloudinary.com", StringComparison.OrdinalIgnoreCase) ||
+            !uri.AbsolutePath.Contains("/image/upload/", StringComparison.OrdinalIgnoreCase))
+        {
+            return imageUrl;
+        }
+
+        const string marker = "/image/upload/";
+        const string transform = "f_auto,q_auto,w_640,c_limit/";
+        var markerIndex = uri.AbsolutePath.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0)
+        {
+            return imageUrl;
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            Path = uri.AbsolutePath.Insert(markerIndex + marker.Length, transform)
+        };
+        return builder.Uri.ToString();
     }
 
     private static string NormalizeSeverity(string severity)

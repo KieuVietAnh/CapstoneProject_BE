@@ -21,6 +21,8 @@ public sealed class IncidentQueryParameters
     public bool IncludeMerged { get; set; }
 
     public Guid? AssignedStaffUserId { get; set; }
+
+    public string? Sort { get; set; }
 }
 
 public class IncidentListItemDto
@@ -186,6 +188,11 @@ public sealed class IncidentCommentCreateRequest
     public string Content { get; set; } = null!;
 }
 
+public sealed class IncidentCommentUpdateRequest
+{
+    public string Content { get; set; } = null!;
+}
+
 public sealed class IncidentCommentDto
 {
     public Guid IncidentCommentId { get; set; }
@@ -278,6 +285,10 @@ public class PublicIncidentListItemDto
     public int CommentCount { get; set; }
     public int SupportCount { get; set; }
     public string? CoverImageUrl { get; set; }
+    public string? CoverImageThumbnailUrl { get; set; }
+    public bool IsSubscribedByCurrentUser { get; set; }
+    public bool IsSupportedByCurrentUser { get; set; }
+    public int EngagementScore { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }
@@ -287,8 +298,6 @@ public sealed class PublicIncidentDetailDto : PublicIncidentListItemDto
     public DateTime? DueDate { get; set; }
     public DateTime? ResolvedAt { get; set; }
     public DateTime? ClosedAt { get; set; }
-    public bool IsSubscribedByCurrentUser { get; set; }
-    public bool IsSupportedByCurrentUser { get; set; }
     public IReadOnlyCollection<IncidentMediaDto> Media { get; set; } = [];
 }
 
