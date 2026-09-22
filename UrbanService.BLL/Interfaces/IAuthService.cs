@@ -15,6 +15,9 @@ namespace UrbanService.BLL.Interfaces
         Task RequestForgotPasswordOtpAsync(
             ForgotPasswordRequest req,
             CancellationToken cancellationToken = default);
+        Task VerifyForgotPasswordOtpAsync(
+            VerifyForgotPasswordOtpRequest req,
+            CancellationToken cancellationToken = default);
         Task ResetPasswordAsync(
             ResetPasswordRequest req,
             CancellationToken cancellationToken = default);

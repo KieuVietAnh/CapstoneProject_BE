@@ -141,6 +141,14 @@ POST /api/auth/email-verification/send-otp -> [Authorize] gửi OTP tới email 
 POST /api/auth/email-verification/verify   -> [Authorize] xác thực OTP, isVerified=true
 ```
 
+Luồng quên mật khẩu tách làm ba bước, OTP chỉ bị tiêu thụ ở bước cuối:
+
+```text
+POST /api/auth/forgot-password/send-otp   -> gửi OTP tới email, luôn trả 204
+POST /api/auth/forgot-password/verify-otp -> kiểm tra OTP, không tiêu thụ
+POST /api/auth/forgot-password/reset      -> đổi mật khẩu, tiêu thụ OTP, thu hồi refresh token
+```
+
 Đăng ký bằng email và mật khẩu trả JWT ngay, người dùng tự gọi
 `email-verification/send-otp` khi cần xác thực. Đăng nhập Google lấy luôn trạng
 thái xác thực email từ Google nên không phải nhập OTP lại.

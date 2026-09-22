@@ -103,6 +103,28 @@ namespace UrbanService.Controllers
             return NoContent();
         }
 
+        /// <summary>Kiểm tra OTP đặt lại mật khẩu trước khi nhập mật khẩu mới.</summary>
+        /// <remarks>
+        /// API công khai. Dùng cho giao diện tách bước: sau khi nhận OTP, client gọi
+        /// endpoint này để biết mã đúng hay sai trước khi hiện màn nhập mật khẩu mới.
+        ///
+        /// OTP **không** bị tiêu thụ ở đây, vẫn phải gửi lại trong
+        /// `forgot-password/reset`. Nhập sai vẫn tính vào giới hạn số lần thử.
+        /// </remarks>
+        /// <response code="204">OTP hợp lệ.</response>
+        /// <response code="400">OTP không hợp lệ hoặc đã hết hạn.</response>
+        [HttpPost("forgot-password/verify-otp")]
+        [AllowAnonymous]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> VerifyForgotPasswordOtp(
+            [FromBody] VerifyForgotPasswordOtpRequest req,
+            CancellationToken cancellationToken)
+        {
+            await _auth.VerifyForgotPasswordOtpAsync(req, cancellationToken);
+            return NoContent();
+        }
+
         /// <summary>Đặt mật khẩu mới bằng OTP đã gửi qua email.</summary>
         /// <remarks>
         /// API công khai. OTP chỉ dùng một lần; mật khẩu mới phải có ít nhất 8 ký tự.

@@ -342,6 +342,68 @@ namespace UrbanService.BLL.Services
             }
         }
 
+        /// <summary>
+        /// Kiểm tra OTP quên mật khẩu mà không tiêu thụ nó.
+        ///
+        /// Dùng cho giao diện tách làm nhiều bước: nhập email, nhập OTP, rồi mới
+        /// nhập mật khẩu mới. OTP phải còn nguyên sau bước này để
+        /// <see cref="ResetPasswordAsync"/> còn dùng được, nên ở đây chỉ đối chiếu
+        /// chứ không xóa khỏi cache.
+        ///
+        /// Nhập sai vẫn cộng vào bộ đếm và vẫn hủy OTP khi chạm ngưỡng, nếu không
+        /// endpoint này sẽ thành đường dò mã không giới hạn, đi vòng qua giới hạn
+        /// mà luồng reset đang có.
+        /// </summary>
+        public async Task VerifyForgotPasswordOtpAsync(
+            VerifyForgotPasswordOtpRequest req,
+            CancellationToken cancellationToken = default)
+        {
+            var normalizedEmail = NormalizeEmail(req.Email);
+
+            var otp = req.Otp?.Trim();
+            if (string.IsNullOrWhiteSpace(otp) || otp.Length != 6 || !otp.All(char.IsDigit))
+            {
+                throw new Exception(InvalidPasswordResetOtpMessage);
+            }
+
+            var otpKey = GetPasswordResetOtpKey(normalizedEmail);
+            if (!_cache.TryGetValue<PasswordResetOtpState>(otpKey, out var state) || state == null)
+            {
+                throw new Exception(InvalidPasswordResetOtpMessage);
+            }
+
+            var user = await _uow.GetRepository<User>().Entities
+                .FirstOrDefaultAsync(
+                    candidate => candidate.IsActive && candidate.Email.ToLower() == normalizedEmail,
+                    cancellationToken);
+
+            if (user == null || user.UserId != state.UserId)
+            {
+                throw new Exception(InvalidPasswordResetOtpMessage);
+            }
+
+            lock (state.SyncRoot)
+            {
+                if (!_cache.TryGetValue<PasswordResetOtpState>(otpKey, out var currentState) ||
+                    !ReferenceEquals(currentState, state) ||
+                    state.IsConsuming)
+                {
+                    throw new Exception(InvalidPasswordResetOtpMessage);
+                }
+
+                if (!PasswordHasher.Verify(otp, state.OtpHash))
+                {
+                    state.FailedAttempts++;
+                    if (state.FailedAttempts >= PasswordResetOtpMaxAttempts)
+                    {
+                        _cache.Remove(otpKey);
+                    }
+
+                    throw new Exception(InvalidPasswordResetOtpMessage);
+                }
+            }
+        }
+
         public async Task ResetPasswordAsync(
             ResetPasswordRequest req,
             CancellationToken cancellationToken = default)
