@@ -177,7 +177,10 @@ POST /api/auth/forgot-password/reset      -> đổi mật khẩu, tiêu thụ OT
 ```
 
 Đăng ký bằng email và mật khẩu trả JWT ngay, người dùng tự gọi
-`email-verification/send-otp` khi cần xác thực. Đăng nhập Google lấy luôn trạng
+`email-verification/send-otp` khi cần xác thực. Đăng ký lại bằng email của một tài
+khoản **chưa xác thực** sẽ cập nhật tên, số điện thoại và mật khẩu rồi trả token
+mới, thay vì báo trùng email; tài khoản đã xác thực hoặc đã bị khóa thì vẫn báo
+`Email đã được sử dụng.` Đăng nhập Google lấy luôn trạng
 thái xác thực email từ Google nên không phải nhập OTP lại.
 
 Phản ánh từ Messenger và Zalo đi qua tài khoản dịch vụ dùng chung nên không áp ràng
