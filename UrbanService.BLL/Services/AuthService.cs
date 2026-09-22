@@ -99,11 +99,35 @@ namespace UrbanService.BLL.Services
             }
 
             var userRepo = _uow.GetRepository<User>();
-            var existingUser = await userRepo.FindAsync(u => u.Email.ToLower() == email.ToLower(), include: null);
+            var existingUser = await userRepo.FindAsync(
+                u => u.Email.ToLower() == email.ToLower(),
+                q => q.Include(u => u.Role));
 
             if (existingUser != null)
             {
-                throw new Exception("Email đã được sử dụng.");
+                /*
+                 * Tài khoản đã xác thực thì email coi như có chủ, không cho ghi đè.
+                 * Tài khoản bị khóa cũng vậy: cho đăng ký lại sẽ thành đường mở lại
+                 * tài khoản đã bị chặn.
+                 */
+                if (existingUser.IsVerified || !existingUser.IsActive)
+                {
+                    throw new Exception("Email đã được sử dụng.");
+                }
+
+                /*
+                 * Chưa xác thực thì cho đăng ký lại đè lên, vì chưa ai chứng minh
+                 * quyền sở hữu email này. Không cho thì người bỏ dở giữa chừng sẽ
+                 * kẹt vĩnh viễn: họ không nhận được OTP để xác thực, mà email đã bị
+                 * chính tài khoản dở dang của họ chiếm chỗ.
+                 */
+                existingUser.FullName = fullName;
+                existingUser.PasswordHash = PasswordHasher.Hash(req.Password);
+                existingUser.PhoneNumber = req.Phone;
+                existingUser.UpdatedAt = DateTime.UtcNow;
+                await _uow.SaveAsync();
+
+                return await IssueAuthResultAsync(existingUser);
             }
 
             var role = await GetOrCreateDefaultRoleAsync();
@@ -715,6 +739,7 @@ namespace UrbanService.BLL.Services
                 Email = user.Email,
                 FullName = user.FullName,
                 Role = user.Role?.RoleName,
+                PhoneNumber = user.PhoneNumber,
                 IsVerified = user.IsVerified
             };
         }

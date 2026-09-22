@@ -1,4 +1,6 @@
-﻿namespace UrbanService.BLL.Dtos
+﻿using UrbanService.BLL.Common.Constraint;
+
+namespace UrbanService.BLL.Dtos
 {
     public class RegisterRequest
     {
@@ -49,6 +51,31 @@
         public string Email { get; set; } = "";
         public string? FullName { get; set; }
         public string? Role { get; set; }
+        public string? PhoneNumber { get; set; }
+        public bool IsVerified { get; set; }
+    }
+
+    /// <summary>
+    /// Response của đăng nhập khi tài khoản chưa xác thực email.
+    ///
+    /// Vẫn là 200 và vẫn cấp token, nhưng có <see cref="Code"/> để client rẽ thẳng
+    /// sang màn xác thực thay vì phải tự suy ra từ cờ isVerified.
+    /// </summary>
+    public class UnverifiedLoginResultDto
+    {
+        public string Code { get; set; } = AuthResultCode.EmailNotVerified;
+        public string Message { get; set; } = "Email chưa được xác thực.";
+        public string Token { get; set; } = "";
+        public string RefreshToken { get; set; } = "";
+        public UnverifiedLoginUserDto User { get; set; } = new();
+    }
+
+    public class UnverifiedLoginUserDto
+    {
+        public Guid Id { get; set; }
+        public string Email { get; set; } = "";
+        public string? FullName { get; set; }
+        public string? PhoneNumber { get; set; }
         public bool IsVerified { get; set; }
     }
 

@@ -4,6 +4,7 @@ using System.Security.Claims;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
+using UrbanService.Authorization;
 
 namespace UrbanService.Controllers
 {
@@ -26,6 +27,7 @@ namespace UrbanService.Controllers
         /// <response code="200">Đăng ký thành công, trả về JWT và thông tin tài khoản.</response>
         /// <response code="400">Dữ liệu không hợp lệ hoặc tài khoản đã tồn tại.</response>
         [HttpPost("register")]
+        [AllowAnonymous]
         [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Register([FromBody] RegisterRequest req)
@@ -42,15 +44,42 @@ namespace UrbanService.Controllers
         /// **Authorize** trên Swagger và nhập token. API tạo feedback yêu cầu tài
         /// khoản có role `SERVICEUSER`.
         /// </remarks>
-        /// <response code="200">Đăng nhập thành công, trả về JWT và thông tin người dùng.</response>
+        /// <response code="200">
+        /// Đăng nhập thành công, trả về JWT và thông tin người dùng.
+        ///
+        /// Tài khoản chưa xác thực email cũng trả `200` và vẫn có token, nhưng body
+        /// là `UnverifiedLoginResultDto` với `code = EMAIL_NOT_VERIFIED`. Token đó
+        /// đọc được dữ liệu bình thường nhưng bị từ chối ở mọi thao tác ghi, trừ các
+        /// API hoàn tất đăng ký.
+        /// </response>
         /// <response code="400">Email hoặc mật khẩu không hợp lệ.</response>
         [HttpPost("login")]
+        [AllowAnonymous]
         [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(UnverifiedLoginResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Login([FromBody] LoginRequest req)
         {
             var result = await _auth.LoginAsync(req);
-            return Ok(result);
+
+            if (result.IsVerified)
+            {
+                return Ok(result);
+            }
+
+            return Ok(new UnverifiedLoginResultDto
+            {
+                Token = result.Token,
+                RefreshToken = result.RefreshToken,
+                User = new UnverifiedLoginUserDto
+                {
+                    Id = result.UserId,
+                    Email = result.Email,
+                    FullName = result.FullName,
+                    PhoneNumber = result.PhoneNumber,
+                    IsVerified = result.IsVerified
+                }
+            });
         }
 
         /// <summary>Cấp access token mới bằng refresh token.</summary>
@@ -59,6 +88,7 @@ namespace UrbanService.Controllers
         /// Refresh token sẽ được rotate sau mỗi lần gọi thành công.
         /// </remarks>
         [HttpPost("refresh-token")]
+        [AllowAnonymous]
         [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest req)
@@ -76,6 +106,7 @@ namespace UrbanService.Controllers
         /// API không tự động tạo tài khoản mới.
         /// </remarks>
         [HttpPost("google-login")]
+        [AllowAnonymous]
         [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
@@ -161,6 +192,7 @@ namespace UrbanService.Controllers
         /// <response code="400">Email không hợp lệ, đã được dùng, hoặc tài khoản đã xác thực.</response>
         [HttpPatch("pending-account")]
         [Authorize]
+        [AllowUnverifiedEmail]
         [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -182,6 +214,7 @@ namespace UrbanService.Controllers
         /// </remarks>
         [HttpPost("email-verification/send-otp")]
         [Authorize]
+        [AllowUnverifiedEmail]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -198,6 +231,7 @@ namespace UrbanService.Controllers
         /// </remarks>
         [HttpPost("email-verification/verify")]
         [Authorize]
+        [AllowUnverifiedEmail]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
