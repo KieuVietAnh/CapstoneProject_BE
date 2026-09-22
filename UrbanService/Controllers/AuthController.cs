@@ -142,6 +142,39 @@ namespace UrbanService.Controllers
             return NoContent();
         }
 
+        /// <summary>Sửa thông tin đăng ký của tài khoản chưa xác thực email.</summary>
+        /// <remarks>
+        /// Yêu cầu JWT hợp lệ. Dùng khi người dùng gõ nhầm email lúc đăng ký: họ
+        /// không nhận được OTP nên không tự xác thực được, mà đăng ký lại cũng
+        /// không xong vì email cũ đã chiếm chỗ.
+        ///
+        /// Giữ nguyên email của chính tài khoản thì **không** báo trùng. Đổi sang
+        /// email đang thuộc tài khoản khác thì trả `400`.
+        ///
+        /// Khi email đổi, OTP cũ bị hủy ngay và một OTP mới được gửi tới email mới
+        /// trong cùng lời gọi này, nên client **không** cần gọi thêm
+        /// `email-verification/send-otp`.
+        ///
+        /// Response trả JWT mới vì email nằm trong claim của token.
+        /// </remarks>
+        /// <response code="200">Cập nhật thành công, trả JWT mới.</response>
+        /// <response code="400">Email không hợp lệ, đã được dùng, hoặc tài khoản đã xác thực.</response>
+        [HttpPatch("pending-account")]
+        [Authorize]
+        [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> UpdatePendingAccount(
+            [FromBody] PendingAccountUpdateRequest req,
+            CancellationToken cancellationToken)
+        {
+            var result = await _auth.UpdatePendingAccountAsync(
+                GetCurrentUserId(),
+                req,
+                cancellationToken);
+            return Ok(result);
+        }
+
         /// <summary>Gửi OTP xác thực email tới email của người dùng hiện tại.</summary>
         /// <remarks>
         /// Yêu cầu JWT hợp lệ. OTP có hiệu lực trong 5 phút. Brevo API phải được

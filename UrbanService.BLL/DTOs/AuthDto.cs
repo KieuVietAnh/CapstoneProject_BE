@@ -19,6 +19,16 @@
         public string Otp { get; set; } = "";
     }
 
+    public class PendingAccountUpdateRequest
+    {
+        public string? FullName { get; set; }
+        public string Email { get; set; } = "";
+        public string? PhoneNumber { get; set; }
+
+        /// <summary>Bỏ trống nếu người dùng không đổi mật khẩu.</summary>
+        public string? NewPassword { get; set; }
+    }
+
     public class LoginRequest
     {
         public string Email { get; set; } = "";

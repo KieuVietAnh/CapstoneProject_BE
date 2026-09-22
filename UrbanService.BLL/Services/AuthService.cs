@@ -236,6 +236,19 @@ namespace UrbanService.BLL.Services
                 throw new Exception($"Vui lòng chờ {VerificationOtpCooldownSeconds} giây trước khi gửi lại OTP.");
             }
 
+            await SendEmailVerificationOtpAsync(user);
+        }
+
+        /// <summary>
+        /// Sinh OTP mới, gửi tới email hiện tại của tài khoản và đặt lại cooldown.
+        ///
+        /// Tách riêng khỏi <see cref="RequestEmailVerificationOtpAsync"/> vì luồng
+        /// đổi email của tài khoản chưa xác thực cũng cần gửi OTP, nhưng không được
+        /// vướng cooldown của email cũ: người dùng vừa nhận mã ở địa chỉ sai thì
+        /// không có lý do gì bắt họ chờ thêm một phút mới nhận được mã ở địa chỉ đúng.
+        /// </summary>
+        private async Task SendEmailVerificationOtpAsync(User user)
+        {
             var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
 
             var body = $"""
@@ -252,11 +265,99 @@ namespace UrbanService.BLL.Services
                 Subject = "Mã OTP xác thực email UrbanService",
                 Body = body
             });
-            _cache.Set(GetVerificationOtpKey(userId), otp, TimeSpan.FromMinutes(VerificationOtpMinutes));
             _cache.Set(
-                GetVerificationOtpCooldownKey(userId),
+                GetVerificationOtpKey(user.UserId),
+                otp,
+                TimeSpan.FromMinutes(VerificationOtpMinutes));
+            _cache.Set(
+                GetVerificationOtpCooldownKey(user.UserId),
                 true,
                 TimeSpan.FromSeconds(VerificationOtpCooldownSeconds));
+        }
+
+        /// <summary>
+        /// Sửa thông tin đăng ký của tài khoản chưa xác thực email.
+        ///
+        /// Dùng khi người dùng gõ nhầm email lúc đăng ký: họ không nhận được OTP
+        /// nên không tự xác thực được, mà đăng ký lại cũng không xong vì email cũ
+        /// đã chiếm chỗ.
+        ///
+        /// Giữ nguyên email của chính mình thì không báo trùng, chỉ báo khi email
+        /// mới đang thuộc về tài khoản khác. Đổi email thì OTP cũ bị hủy ngay: mã
+        /// đó được gửi tới hòm thư cũ, để nó còn hiệu lực nghĩa là người kiểm soát
+        /// địa chỉ cũ vẫn xác thực được địa chỉ mới.
+        /// </summary>
+        public async Task<AuthResultDto> UpdatePendingAccountAsync(
+            Guid userId,
+            PendingAccountUpdateRequest req,
+            CancellationToken cancellationToken = default)
+        {
+            var userRepo = _uow.GetRepository<User>();
+            var user = await userRepo.Entities
+                .Include(candidate => candidate.Role)
+                .FirstOrDefaultAsync(candidate => candidate.UserId == userId, cancellationToken)
+                ?? throw new Exception("Không tìm thấy người dùng.");
+
+            if (!user.IsActive)
+            {
+                throw new UnauthorizedAccessException("Tài khoản đã bị khóa.");
+            }
+
+            if (user.IsVerified)
+            {
+                throw new Exception(
+                    "Tài khoản đã xác thực email nên không sửa được qua API này.");
+            }
+
+            var email = NormalizeEmail(req.Email);
+            var emailChanged = !string.Equals(
+                user.Email,
+                email,
+                StringComparison.OrdinalIgnoreCase);
+
+            if (emailChanged)
+            {
+                var emailTaken = await userRepo.Entities
+                    .AnyAsync(
+                        candidate => candidate.UserId != userId &&
+                            candidate.Email.ToLower() == email,
+                        cancellationToken);
+
+                if (emailTaken)
+                {
+                    throw new Exception("Email đã được sử dụng.");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(req.NewPassword))
+            {
+                if (req.NewPassword.Length < PasswordPolicy.MinLength)
+                {
+                    throw new Exception(
+                        $"Mật khẩu phải có ít nhất {PasswordPolicy.MinLength} ký tự.");
+                }
+
+                user.PasswordHash = PasswordHasher.Hash(req.NewPassword);
+            }
+
+            user.FullName = string.IsNullOrWhiteSpace(req.FullName)
+                ? email
+                : req.FullName.Trim();
+            user.Email = email;
+            user.PhoneNumber = string.IsNullOrWhiteSpace(req.PhoneNumber)
+                ? null
+                : req.PhoneNumber.Trim();
+            user.UpdatedAt = DateTime.UtcNow;
+            await _uow.SaveAsync();
+
+            if (emailChanged)
+            {
+                _cache.Remove(GetVerificationOtpKey(userId));
+                _cache.Remove(GetVerificationOtpCooldownKey(userId));
+                await SendEmailVerificationOtpAsync(user);
+            }
+
+            return await IssueAuthResultAsync(user);
         }
 
         public async Task RequestForgotPasswordOtpAsync(
