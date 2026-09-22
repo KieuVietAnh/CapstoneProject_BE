@@ -715,6 +715,7 @@ namespace UrbanService.BLL.Services
                 Email = user.Email,
                 FullName = user.FullName,
                 Role = user.Role?.RoleName,
+                PhoneNumber = user.PhoneNumber,
                 IsVerified = user.IsVerified
             };
         }

@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Reflection;
 using System.Text;
+using UrbanService.Authorization;
 using UrbanService.BackgroundServices;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Interfaces;
@@ -26,7 +27,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<EmailVerifiedWriteFilter>();
+});
 builder.Services.AddDbContext<UrbanServiceDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();

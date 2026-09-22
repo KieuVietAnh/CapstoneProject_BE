@@ -130,9 +130,29 @@ Xem tên biến môi trường Docker trong [docker-compose.yml](docker-compose.
 Tài khoản xác thực bằng OTP gửi qua email, dùng chung cấu hình `Brevo` với luồng
 quên mật khẩu. OTP có hiệu lực 5 phút và có cooldown 60 giây giữa hai lần gửi.
 
-Xác thực email **không** phải điều kiện để đăng nhập, mà là điều kiện để gửi phản
-ánh. Người dùng chưa xác thực vẫn đăng nhập, xem sự vụ và nhận thông báo bình
-thường; chỉ khi gửi phản ánh từ web mới bị chặn với lỗi `403`.
+Xác thực email **không** phải điều kiện để đăng nhập, mà là điều kiện để ghi dữ
+liệu. Người dùng chưa xác thực vẫn đăng nhập, xem sự vụ và nhận thông báo bình
+thường; mọi thao tác ghi đều bị chặn với `403` và `code = EMAIL_NOT_VERIFIED`.
+
+Ràng buộc nằm ở `EmailVerifiedWriteFilter`, đăng ký toàn cục nên không endpoint ghi
+nào lọt lưới. Filter chỉ áp cho role `SERVICEUSER`: tài khoản nội bộ do admin tạo có
+`is_verified` mặc định `false`, áp cho mọi role sẽ khóa sạch thao tác của staff,
+manager và admin ngay lúc deploy. Các API hoàn tất đăng ký được đánh dấu
+`[AllowUnverifiedEmail]` nên vẫn gọi được, nếu không người dùng sẽ không có đường
+nào để tự xác thực.
+
+Đăng nhập bằng tài khoản chưa xác thực vẫn trả `200` và vẫn có token, nhưng body
+khác:
+
+```jsonc
+{
+  "code": "EMAIL_NOT_VERIFIED",
+  "message": "Email chưa được xác thực.",
+  "token": "...",
+  "refreshToken": "...",
+  "user": { "id": "...", "email": "...", "fullName": "...", "phoneNumber": "...", "isVerified": false }
+}
+```
 
 ```text
 POST /api/auth/register                    -> tạo tài khoản, trả JWT (isVerified=false)

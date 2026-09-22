@@ -38,7 +38,10 @@ namespace UrbanService.BLL.Services
                 new Claim(ClaimTypes.NameIdentifier, acc.UserId.ToString()),
                 new Claim(ClaimTypes.Name, acc.FullName),
                 new Claim(ClaimTypes.Email, acc.Email ?? ""),
-                new Claim(ClaimTypes.Role, roleName.ToUpper())
+                new Claim(ClaimTypes.Role, roleName.ToUpper()),
+                new Claim(
+                    UserClaimTypes.EmailVerified,
+                    acc.IsVerified ? "true" : "false")
             };
 
             var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
