@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Common.Securities;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.DTOs;
@@ -243,9 +244,11 @@ public class UserManagementService : IUserManagementService
 
     public async Task ResetPasswordAsync(Guid userId, AdminResetUserPasswordRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+        if (string.IsNullOrWhiteSpace(request.NewPassword) ||
+            request.NewPassword.Length < PasswordPolicy.MinLength)
         {
-            throw new Exception("Mat khau moi phai co it nhat 6 ky tu.");
+            throw new Exception(
+                $"Mat khau moi phai co it nhat {PasswordPolicy.MinLength} ky tu.");
         }
 
         var user = await GetUserEntityAsync(userId, asNoTracking: false);
@@ -314,9 +317,11 @@ public class UserManagementService : IUserManagementService
             throw new Exception("Email la bat buoc.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 6)
+        if (string.IsNullOrWhiteSpace(request.Password) ||
+            request.Password.Length < PasswordPolicy.MinLength)
         {
-            throw new Exception("Password phai co it nhat 6 ky tu.");
+            throw new Exception(
+                $"Password phai co it nhat {PasswordPolicy.MinLength} ky tu.");
         }
     }
 

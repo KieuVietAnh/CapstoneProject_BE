@@ -105,7 +105,7 @@ namespace UrbanService.Controllers
 
         /// <summary>Đặt mật khẩu mới bằng OTP đã gửi qua email.</summary>
         /// <remarks>
-        /// API công khai. OTP chỉ dùng một lần; mật khẩu mới phải có ít nhất 6 ký tự.
+        /// API công khai. OTP chỉ dùng một lần; mật khẩu mới phải có ít nhất 8 ký tự.
         /// Reset thành công sẽ thu hồi refresh token hiện tại của tài khoản.
         /// </remarks>
         [HttpPost("forgot-password/reset")]

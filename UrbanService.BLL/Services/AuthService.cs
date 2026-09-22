@@ -92,9 +92,10 @@ namespace UrbanService.BLL.Services
 
             var fullName = string.IsNullOrWhiteSpace(req.Fullname) ? email : req.Fullname.Trim();
 
-            if (req.Password.Length < 6)
+            if (req.Password.Length < PasswordPolicy.MinLength)
             {
-                throw new Exception("Mật khẩu phải có ít nhất 6 ký tự.");
+                throw new Exception(
+                    $"Mật khẩu phải có ít nhất {PasswordPolicy.MinLength} ký tự.");
             }
 
             var userRepo = _uow.GetRepository<User>();
@@ -347,9 +348,11 @@ namespace UrbanService.BLL.Services
         {
             var normalizedEmail = NormalizeEmail(req.Email);
 
-            if (string.IsNullOrWhiteSpace(req.NewPassword) || req.NewPassword.Length < 6)
+            if (string.IsNullOrWhiteSpace(req.NewPassword) ||
+                req.NewPassword.Length < PasswordPolicy.MinLength)
             {
-                throw new Exception("Mật khẩu mới phải có ít nhất 6 ký tự.");
+                throw new Exception(
+                    $"Mật khẩu mới phải có ít nhất {PasswordPolicy.MinLength} ký tự.");
             }
 
             var otp = req.Otp?.Trim();
