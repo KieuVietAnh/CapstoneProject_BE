@@ -139,6 +139,21 @@ POST /api/auth/register                    -> tạo tài khoản, trả JWT (isV
 POST /api/auth/google-login                -> lần đầu tự tạo tài khoản, isVerified theo Google
 POST /api/auth/email-verification/send-otp -> [Authorize] gửi OTP tới email tài khoản
 POST /api/auth/email-verification/verify   -> [Authorize] xác thực OTP, isVerified=true
+PATCH /api/auth/pending-account            -> [Authorize] sửa thông tin tài khoản chưa xác thực
+```
+
+`pending-account` dùng cho trường hợp gõ nhầm email lúc đăng ký. Giữ nguyên email
+của chính tài khoản thì không báo trùng; đổi sang email của tài khoản khác thì trả
+`400`. Khi email đổi, OTP cũ bị hủy và OTP mới được gửi ngay trong lời gọi đó, nên
+client không cần gọi thêm `email-verification/send-otp`. Response trả JWT mới vì
+email nằm trong claim của token.
+
+Luồng quên mật khẩu tách làm ba bước, OTP chỉ bị tiêu thụ ở bước cuối:
+
+```text
+POST /api/auth/forgot-password/send-otp   -> gửi OTP tới email, luôn trả 204
+POST /api/auth/forgot-password/verify-otp -> kiểm tra OTP, không tiêu thụ
+POST /api/auth/forgot-password/reset      -> đổi mật khẩu, tiêu thụ OTP, thu hồi refresh token
 ```
 
 Đăng ký bằng email và mật khẩu trả JWT ngay, người dùng tự gọi

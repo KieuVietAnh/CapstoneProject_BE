@@ -11,9 +11,16 @@ namespace UrbanService.BLL.Interfaces
         Task<AuthResultDto> GoogleLoginAsync(GoogleLoginRequest req);
         Task<AuthResultDto> RefreshTokenAsync(RefreshTokenRequest req);
         Task RequestEmailVerificationOtpAsync(Guid userId);
+        Task<AuthResultDto> UpdatePendingAccountAsync(
+            Guid userId,
+            PendingAccountUpdateRequest req,
+            CancellationToken cancellationToken = default);
         Task VerifyEmailAsync(Guid userId, VerifyEmailRequest req);
         Task RequestForgotPasswordOtpAsync(
             ForgotPasswordRequest req,
+            CancellationToken cancellationToken = default);
+        Task VerifyForgotPasswordOtpAsync(
+            VerifyForgotPasswordOtpRequest req,
             CancellationToken cancellationToken = default);
         Task ResetPasswordAsync(
             ResetPasswordRequest req,

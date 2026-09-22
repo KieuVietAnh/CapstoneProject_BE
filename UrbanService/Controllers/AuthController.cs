@@ -103,9 +103,31 @@ namespace UrbanService.Controllers
             return NoContent();
         }
 
+        /// <summary>Kiểm tra OTP đặt lại mật khẩu trước khi nhập mật khẩu mới.</summary>
+        /// <remarks>
+        /// API công khai. Dùng cho giao diện tách bước: sau khi nhận OTP, client gọi
+        /// endpoint này để biết mã đúng hay sai trước khi hiện màn nhập mật khẩu mới.
+        ///
+        /// OTP **không** bị tiêu thụ ở đây, vẫn phải gửi lại trong
+        /// `forgot-password/reset`. Nhập sai vẫn tính vào giới hạn số lần thử.
+        /// </remarks>
+        /// <response code="204">OTP hợp lệ.</response>
+        /// <response code="400">OTP không hợp lệ hoặc đã hết hạn.</response>
+        [HttpPost("forgot-password/verify-otp")]
+        [AllowAnonymous]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> VerifyForgotPasswordOtp(
+            [FromBody] VerifyForgotPasswordOtpRequest req,
+            CancellationToken cancellationToken)
+        {
+            await _auth.VerifyForgotPasswordOtpAsync(req, cancellationToken);
+            return NoContent();
+        }
+
         /// <summary>Đặt mật khẩu mới bằng OTP đã gửi qua email.</summary>
         /// <remarks>
-        /// API công khai. OTP chỉ dùng một lần; mật khẩu mới phải có ít nhất 6 ký tự.
+        /// API công khai. OTP chỉ dùng một lần; mật khẩu mới phải có ít nhất 8 ký tự.
         /// Reset thành công sẽ thu hồi refresh token hiện tại của tài khoản.
         /// </remarks>
         [HttpPost("forgot-password/reset")]
@@ -118,6 +140,39 @@ namespace UrbanService.Controllers
         {
             await _auth.ResetPasswordAsync(req, cancellationToken);
             return NoContent();
+        }
+
+        /// <summary>Sửa thông tin đăng ký của tài khoản chưa xác thực email.</summary>
+        /// <remarks>
+        /// Yêu cầu JWT hợp lệ. Dùng khi người dùng gõ nhầm email lúc đăng ký: họ
+        /// không nhận được OTP nên không tự xác thực được, mà đăng ký lại cũng
+        /// không xong vì email cũ đã chiếm chỗ.
+        ///
+        /// Giữ nguyên email của chính tài khoản thì **không** báo trùng. Đổi sang
+        /// email đang thuộc tài khoản khác thì trả `400`.
+        ///
+        /// Khi email đổi, OTP cũ bị hủy ngay và một OTP mới được gửi tới email mới
+        /// trong cùng lời gọi này, nên client **không** cần gọi thêm
+        /// `email-verification/send-otp`.
+        ///
+        /// Response trả JWT mới vì email nằm trong claim của token.
+        /// </remarks>
+        /// <response code="200">Cập nhật thành công, trả JWT mới.</response>
+        /// <response code="400">Email không hợp lệ, đã được dùng, hoặc tài khoản đã xác thực.</response>
+        [HttpPatch("pending-account")]
+        [Authorize]
+        [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> UpdatePendingAccount(
+            [FromBody] PendingAccountUpdateRequest req,
+            CancellationToken cancellationToken)
+        {
+            var result = await _auth.UpdatePendingAccountAsync(
+                GetCurrentUserId(),
+                req,
+                cancellationToken);
+            return Ok(result);
         }
 
         /// <summary>Gửi OTP xác thực email tới email của người dùng hiện tại.</summary>

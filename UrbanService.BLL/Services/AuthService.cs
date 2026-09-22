@@ -92,9 +92,10 @@ namespace UrbanService.BLL.Services
 
             var fullName = string.IsNullOrWhiteSpace(req.Fullname) ? email : req.Fullname.Trim();
 
-            if (req.Password.Length < 6)
+            if (req.Password.Length < PasswordPolicy.MinLength)
             {
-                throw new Exception("Mật khẩu phải có ít nhất 6 ký tự.");
+                throw new Exception(
+                    $"Mật khẩu phải có ít nhất {PasswordPolicy.MinLength} ký tự.");
             }
 
             var userRepo = _uow.GetRepository<User>();
@@ -235,6 +236,19 @@ namespace UrbanService.BLL.Services
                 throw new Exception($"Vui lòng chờ {VerificationOtpCooldownSeconds} giây trước khi gửi lại OTP.");
             }
 
+            await SendEmailVerificationOtpAsync(user);
+        }
+
+        /// <summary>
+        /// Sinh OTP mới, gửi tới email hiện tại của tài khoản và đặt lại cooldown.
+        ///
+        /// Tách riêng khỏi <see cref="RequestEmailVerificationOtpAsync"/> vì luồng
+        /// đổi email của tài khoản chưa xác thực cũng cần gửi OTP, nhưng không được
+        /// vướng cooldown của email cũ: người dùng vừa nhận mã ở địa chỉ sai thì
+        /// không có lý do gì bắt họ chờ thêm một phút mới nhận được mã ở địa chỉ đúng.
+        /// </summary>
+        private async Task SendEmailVerificationOtpAsync(User user)
+        {
             var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
 
             var body = $"""
@@ -251,11 +265,99 @@ namespace UrbanService.BLL.Services
                 Subject = "Mã OTP xác thực email UrbanService",
                 Body = body
             });
-            _cache.Set(GetVerificationOtpKey(userId), otp, TimeSpan.FromMinutes(VerificationOtpMinutes));
             _cache.Set(
-                GetVerificationOtpCooldownKey(userId),
+                GetVerificationOtpKey(user.UserId),
+                otp,
+                TimeSpan.FromMinutes(VerificationOtpMinutes));
+            _cache.Set(
+                GetVerificationOtpCooldownKey(user.UserId),
                 true,
                 TimeSpan.FromSeconds(VerificationOtpCooldownSeconds));
+        }
+
+        /// <summary>
+        /// Sửa thông tin đăng ký của tài khoản chưa xác thực email.
+        ///
+        /// Dùng khi người dùng gõ nhầm email lúc đăng ký: họ không nhận được OTP
+        /// nên không tự xác thực được, mà đăng ký lại cũng không xong vì email cũ
+        /// đã chiếm chỗ.
+        ///
+        /// Giữ nguyên email của chính mình thì không báo trùng, chỉ báo khi email
+        /// mới đang thuộc về tài khoản khác. Đổi email thì OTP cũ bị hủy ngay: mã
+        /// đó được gửi tới hòm thư cũ, để nó còn hiệu lực nghĩa là người kiểm soát
+        /// địa chỉ cũ vẫn xác thực được địa chỉ mới.
+        /// </summary>
+        public async Task<AuthResultDto> UpdatePendingAccountAsync(
+            Guid userId,
+            PendingAccountUpdateRequest req,
+            CancellationToken cancellationToken = default)
+        {
+            var userRepo = _uow.GetRepository<User>();
+            var user = await userRepo.Entities
+                .Include(candidate => candidate.Role)
+                .FirstOrDefaultAsync(candidate => candidate.UserId == userId, cancellationToken)
+                ?? throw new Exception("Không tìm thấy người dùng.");
+
+            if (!user.IsActive)
+            {
+                throw new UnauthorizedAccessException("Tài khoản đã bị khóa.");
+            }
+
+            if (user.IsVerified)
+            {
+                throw new Exception(
+                    "Tài khoản đã xác thực email nên không sửa được qua API này.");
+            }
+
+            var email = NormalizeEmail(req.Email);
+            var emailChanged = !string.Equals(
+                user.Email,
+                email,
+                StringComparison.OrdinalIgnoreCase);
+
+            if (emailChanged)
+            {
+                var emailTaken = await userRepo.Entities
+                    .AnyAsync(
+                        candidate => candidate.UserId != userId &&
+                            candidate.Email.ToLower() == email,
+                        cancellationToken);
+
+                if (emailTaken)
+                {
+                    throw new Exception("Email đã được sử dụng.");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(req.NewPassword))
+            {
+                if (req.NewPassword.Length < PasswordPolicy.MinLength)
+                {
+                    throw new Exception(
+                        $"Mật khẩu phải có ít nhất {PasswordPolicy.MinLength} ký tự.");
+                }
+
+                user.PasswordHash = PasswordHasher.Hash(req.NewPassword);
+            }
+
+            user.FullName = string.IsNullOrWhiteSpace(req.FullName)
+                ? email
+                : req.FullName.Trim();
+            user.Email = email;
+            user.PhoneNumber = string.IsNullOrWhiteSpace(req.PhoneNumber)
+                ? null
+                : req.PhoneNumber.Trim();
+            user.UpdatedAt = DateTime.UtcNow;
+            await _uow.SaveAsync();
+
+            if (emailChanged)
+            {
+                _cache.Remove(GetVerificationOtpKey(userId));
+                _cache.Remove(GetVerificationOtpCooldownKey(userId));
+                await SendEmailVerificationOtpAsync(user);
+            }
+
+            return await IssueAuthResultAsync(user);
         }
 
         public async Task RequestForgotPasswordOtpAsync(
@@ -341,15 +443,79 @@ namespace UrbanService.BLL.Services
             }
         }
 
+        /// <summary>
+        /// Kiểm tra OTP quên mật khẩu mà không tiêu thụ nó.
+        ///
+        /// Dùng cho giao diện tách làm nhiều bước: nhập email, nhập OTP, rồi mới
+        /// nhập mật khẩu mới. OTP phải còn nguyên sau bước này để
+        /// <see cref="ResetPasswordAsync"/> còn dùng được, nên ở đây chỉ đối chiếu
+        /// chứ không xóa khỏi cache.
+        ///
+        /// Nhập sai vẫn cộng vào bộ đếm và vẫn hủy OTP khi chạm ngưỡng, nếu không
+        /// endpoint này sẽ thành đường dò mã không giới hạn, đi vòng qua giới hạn
+        /// mà luồng reset đang có.
+        /// </summary>
+        public async Task VerifyForgotPasswordOtpAsync(
+            VerifyForgotPasswordOtpRequest req,
+            CancellationToken cancellationToken = default)
+        {
+            var normalizedEmail = NormalizeEmail(req.Email);
+
+            var otp = req.Otp?.Trim();
+            if (string.IsNullOrWhiteSpace(otp) || otp.Length != 6 || !otp.All(char.IsDigit))
+            {
+                throw new Exception(InvalidPasswordResetOtpMessage);
+            }
+
+            var otpKey = GetPasswordResetOtpKey(normalizedEmail);
+            if (!_cache.TryGetValue<PasswordResetOtpState>(otpKey, out var state) || state == null)
+            {
+                throw new Exception(InvalidPasswordResetOtpMessage);
+            }
+
+            var user = await _uow.GetRepository<User>().Entities
+                .FirstOrDefaultAsync(
+                    candidate => candidate.IsActive && candidate.Email.ToLower() == normalizedEmail,
+                    cancellationToken);
+
+            if (user == null || user.UserId != state.UserId)
+            {
+                throw new Exception(InvalidPasswordResetOtpMessage);
+            }
+
+            lock (state.SyncRoot)
+            {
+                if (!_cache.TryGetValue<PasswordResetOtpState>(otpKey, out var currentState) ||
+                    !ReferenceEquals(currentState, state) ||
+                    state.IsConsuming)
+                {
+                    throw new Exception(InvalidPasswordResetOtpMessage);
+                }
+
+                if (!PasswordHasher.Verify(otp, state.OtpHash))
+                {
+                    state.FailedAttempts++;
+                    if (state.FailedAttempts >= PasswordResetOtpMaxAttempts)
+                    {
+                        _cache.Remove(otpKey);
+                    }
+
+                    throw new Exception(InvalidPasswordResetOtpMessage);
+                }
+            }
+        }
+
         public async Task ResetPasswordAsync(
             ResetPasswordRequest req,
             CancellationToken cancellationToken = default)
         {
             var normalizedEmail = NormalizeEmail(req.Email);
 
-            if (string.IsNullOrWhiteSpace(req.NewPassword) || req.NewPassword.Length < 6)
+            if (string.IsNullOrWhiteSpace(req.NewPassword) ||
+                req.NewPassword.Length < PasswordPolicy.MinLength)
             {
-                throw new Exception("Mật khẩu mới phải có ít nhất 6 ký tự.");
+                throw new Exception(
+                    $"Mật khẩu mới phải có ít nhất {PasswordPolicy.MinLength} ký tự.");
             }
 
             var otp = req.Otp?.Trim();
