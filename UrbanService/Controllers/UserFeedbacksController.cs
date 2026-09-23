@@ -1,11 +1,13 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
+using UrbanService.RateLimiting;
 
 namespace UrbanService.Controllers;
 
@@ -162,6 +164,7 @@ public class UserFeedbacksController : ControllerBase
     /// <response code="401">JWT thiếu, hết hạn hoặc không hợp lệ.</response>
     /// <response code="403">Tài khoản không có role SERVICEUSER.</response>
     [HttpPost]
+    [EnableRateLimiting(RateLimitPolicyNames.FeedbackSubmission)]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(FeedbackDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -191,6 +194,7 @@ public class UserFeedbacksController : ControllerBase
 
     /// <summary>Người dân gửi thêm một Report vào Incident công khai đã tồn tại.</summary>
     [HttpPost("~/api/user/incidents/{incidentId:guid}/reports")]
+    [EnableRateLimiting(RateLimitPolicyNames.FeedbackSubmission)]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(FeedbackDetailDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> CreateReportForIncident(
@@ -226,6 +230,7 @@ public class UserFeedbacksController : ControllerBase
     /// được truyền trong body mới được cập nhật.
     /// </remarks>
     [HttpPut("{feedbackId:guid}")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(typeof(FeedbackDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -239,6 +244,7 @@ public class UserFeedbacksController : ControllerBase
     /// <summary>Xóa feedback của người dân hiện tại.</summary>
     /// <remarks>Yêu cầu role `SERVICEUSER` và phải là chủ sở hữu feedback.</remarks>
     [HttpDelete("{feedbackId:guid}")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -255,6 +261,7 @@ public class UserFeedbacksController : ControllerBase
     /// `multipart/form-data`. File được tải lên Cloudinary.
     /// </remarks>
     [HttpPost("{feedbackId:guid}/attachments")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(FeedbackDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -270,6 +277,7 @@ public class UserFeedbacksController : ControllerBase
     /// <summary>Xóa một file đính kèm khỏi feedback.</summary>
     /// <remarks>Yêu cầu role `SERVICEUSER` và phải là chủ sở hữu feedback.</remarks>
     [HttpDelete("{feedbackId:guid}/attachments/{attachmentId:int}")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -286,6 +294,7 @@ public class UserFeedbacksController : ControllerBase
     /// bắt buộc là chủ sở hữu.
     /// </remarks>
     [HttpPost("{feedbackId:guid}/comments")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(typeof(FeedbackCommentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -301,6 +310,7 @@ public class UserFeedbacksController : ControllerBase
     /// Yêu cầu role `SERVICEUSER`. Gọi lại nhiều lần không tạo bản ghi trùng.
     /// </remarks>
     [HttpPost("{feedbackId:guid}/support")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -314,6 +324,7 @@ public class UserFeedbacksController : ControllerBase
     /// <summary>Hủy đồng tình với một feedback.</summary>
     /// <remarks>Yêu cầu role `SERVICEUSER`. Nếu chưa đồng tình, API vẫn trả về thành công.</remarks>
     [HttpDelete("{feedbackId:guid}/support")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -325,6 +336,7 @@ public class UserFeedbacksController : ControllerBase
 
     /// <summary>Nguoi dan danh gia ket qua xu ly sau khi feedback duoc duyet.</summary>
     [HttpPost("{feedbackId:guid}/resolution-review")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(typeof(FeedbackResolutionReviewDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

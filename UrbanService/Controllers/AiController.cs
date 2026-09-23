@@ -2,12 +2,14 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.RateLimiting;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs.AI;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
+using UrbanService.RateLimiting;
 
 namespace UrbanService.Controllers;
 
@@ -127,6 +129,7 @@ public class AiController : ControllerBase
     /// <remarks>Cac message trong conversation cung duoc xoa.</remarks>
     [HttpDelete("conversations/{conversationId:int}")]
     [Authorize(Roles = UserRole.SERVICEUSER)]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -146,6 +149,7 @@ public class AiController : ControllerBase
     /// <summary>Chatbot UrbanService cho nguoi dan.</summary>
     [HttpPost("chat")]
     [Authorize(Roles = UserRole.SERVICEUSER)]
+    [EnableRateLimiting(RateLimitPolicyNames.AiUsage)]
     [ProducesResponseType(typeof(AiChatResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -165,6 +169,7 @@ public class AiController : ControllerBase
     /// <summary>Tao ban nhap phan anh tu noi dung, vi tri va anh nguoi dung cung cap.</summary>
     [HttpPost("feedback-draft")]
     [Authorize(Roles = UserRole.SERVICEUSER)]
+    [EnableRateLimiting(RateLimitPolicyNames.AiUsage)]
     [ProducesResponseType(typeof(AiFeedbackDraftResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

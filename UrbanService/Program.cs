@@ -16,6 +16,7 @@ using UrbanService.DAL.UnitOfWork;
 using UrbanService.Hubs;
 using UrbanService.Middlewares;
 using UrbanService.BLL.Options;
+using UrbanService.RateLimiting;
 
 // The database schema uses PostgreSQL `timestamp without time zone` for DateTime columns.
 // Existing services store UTC DateTime values (DateTime.UtcNow). Enable Npgsql's legacy
@@ -160,6 +161,7 @@ builder.Services.AddScoped<
 builder.Services.AddMemoryCache();
 builder.Services.AddSignalR();
 builder.Services.AddHealthChecks();
+builder.Services.AddUrbanServiceRateLimiting(builder.Configuration);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -279,12 +281,16 @@ if (!app.Environment.IsProduction())
 
 app.UseCors("Frontend");
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<NotificationHub>("/hubs/notifications")
+    .DisableRateLimiting();
 app.MapHub<SlaHub>(
-    "/hubs/sla");
-app.MapHealthChecks("/health");
+    "/hubs/sla")
+    .DisableRateLimiting();
+app.MapHealthChecks("/health")
+    .DisableRateLimiting();
 
 app.Run();

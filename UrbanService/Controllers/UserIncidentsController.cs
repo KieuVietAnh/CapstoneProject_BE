@@ -1,10 +1,12 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
+using UrbanService.RateLimiting;
 
 namespace UrbanService.Controllers;
 
@@ -30,6 +32,7 @@ public sealed class UserIncidentsController : ControllerBase
     /// <summary>Đăng ký theo dõi cập nhật của một sự vụ.</summary>
     /// <remarks>Chỉ `SERVICEUSER`; thao tác lặp lại không tạo đăng ký trùng.</remarks>
     [HttpPost("{incidentId:guid}/subscribe")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Subscribe(Guid incidentId)
     {
@@ -40,6 +43,7 @@ public sealed class UserIncidentsController : ControllerBase
     /// <summary>Hủy đăng ký theo dõi một sự vụ.</summary>
     /// <remarks>Chỉ `SERVICEUSER`; thành công trả về `204 No Content`.</remarks>
     [HttpDelete("{incidentId:guid}/subscribe")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Unsubscribe(Guid incidentId)
     {
@@ -49,6 +53,7 @@ public sealed class UserIncidentsController : ControllerBase
 
     /// <summary>Thêm bình luận trực tiếp vào một sự vụ công khai.</summary>
     [HttpPost("{incidentId:guid}/comments")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(typeof(IncidentCommentDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> AddComment(
         Guid incidentId,
@@ -61,6 +66,7 @@ public sealed class UserIncidentsController : ControllerBase
 
     /// <summary>Sửa bình luận do chính người dùng hiện tại tạo trên một sự vụ.</summary>
     [HttpPatch("{incidentId:guid}/comments/{incidentCommentId:guid}")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(typeof(IncidentCommentDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateComment(
         Guid incidentId,
@@ -75,6 +81,7 @@ public sealed class UserIncidentsController : ControllerBase
 
     /// <summary>Xóa bình luận do chính người dùng hiện tại tạo trên một sự vụ.</summary>
     [HttpDelete("{incidentId:guid}/comments/{incidentCommentId:guid}")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> DeleteComment(
         Guid incidentId,
@@ -91,6 +98,7 @@ public sealed class UserIncidentsController : ControllerBase
     /// <summary>Đồng tình với một sự vụ công khai.</summary>
     /// <remarks>Gọi lặp lại không tạo upvote trùng.</remarks>
     [HttpPost("{incidentId:guid}/support")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Support(Guid incidentId)
     {
@@ -104,6 +112,7 @@ public sealed class UserIncidentsController : ControllerBase
     /// <summary>Hủy đồng tình với một sự vụ công khai.</summary>
     /// <remarks>Nếu chưa đồng tình, API vẫn trả về thành công.</remarks>
     [HttpDelete("{incidentId:guid}/support")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Unsupport(Guid incidentId)
     {

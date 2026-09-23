@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
@@ -34,6 +35,7 @@ public class ZaloController : ControllerBase
     /// <summary>Nhận sự kiện từ Zalo OA và đưa vào hàng đợi xử lý.</summary>
     [HttpPost("webhook")]
     [AllowAnonymous]
+    [DisableRateLimiting]
     [Consumes("application/json")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
@@ -28,6 +29,7 @@ public class MessengerController : ControllerBase
     /// <summary>Endpoint Meta dùng để xác minh callback URL.</summary>
     [HttpGet("webhook")]
     [AllowAnonymous]
+    [DisableRateLimiting]
     [Produces("text/plain")]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -47,6 +49,7 @@ public class MessengerController : ControllerBase
     /// <summary>Nhận sự kiện nhắn tin từ Messenger và đưa vào hàng đợi xử lý.</summary>
     [HttpPost("webhook")]
     [AllowAnonymous]
+    [DisableRateLimiting]
     [Consumes("application/json")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

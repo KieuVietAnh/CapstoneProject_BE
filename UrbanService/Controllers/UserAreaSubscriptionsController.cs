@@ -1,10 +1,12 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
+using UrbanService.RateLimiting;
 
 namespace UrbanService.Controllers;
 
@@ -33,6 +35,7 @@ public class UserAreaSubscriptionsController : ControllerBase
 
     /// <summary>User đăng ký khu vực nhận cảnh báo.</summary>
     [HttpPost]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(typeof(UserAreaSubscriptionDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -45,6 +48,7 @@ public class UserAreaSubscriptionsController : ControllerBase
 
     /// <summary>User hủy đăng ký khu vực nhận cảnh báo.</summary>
     [HttpDelete("{areaId:int}")]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

@@ -1,10 +1,12 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
+using UrbanService.RateLimiting;
 
 namespace UrbanService.Controllers;
 
@@ -35,6 +37,7 @@ public class UserProfileController : ControllerBase
     /// <summary>Cập nhật hồ sơ của người dùng hiện tại.</summary>
     /// <remarks>Chỉ `SERVICEUSER`; chỉ các trường hồ sơ được phép mới được cập nhật.</remarks>
     [HttpPut]
+    [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
     [ProducesResponseType(typeof(UserProfileDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

@@ -5,6 +5,8 @@ using UrbanService.BLL.Common;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
 using UrbanService.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
+using UrbanService.RateLimiting;
 
 namespace UrbanService.Controllers
 {
@@ -28,6 +30,7 @@ namespace UrbanService.Controllers
         /// <response code="400">Dữ liệu không hợp lệ hoặc tài khoản đã tồn tại.</response>
         [HttpPost("register")]
         [AllowAnonymous]
+        [EnableRateLimiting(RateLimitPolicyNames.AuthAttempt)]
         [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Register([FromBody] RegisterRequest req)
@@ -55,6 +58,7 @@ namespace UrbanService.Controllers
         /// <response code="400">Email hoặc mật khẩu không hợp lệ.</response>
         [HttpPost("login")]
         [AllowAnonymous]
+        [EnableRateLimiting(RateLimitPolicyNames.AuthAttempt)]
         [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(UnverifiedLoginResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -107,6 +111,7 @@ namespace UrbanService.Controllers
         /// </remarks>
         [HttpPost("google-login")]
         [AllowAnonymous]
+        [EnableRateLimiting(RateLimitPolicyNames.AuthAttempt)]
         [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
@@ -124,6 +129,7 @@ namespace UrbanService.Controllers
         /// </remarks>
         [HttpPost("forgot-password/send-otp")]
         [AllowAnonymous]
+        [EnableRateLimiting(RateLimitPolicyNames.Otp)]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> SendForgotPasswordOtp(
@@ -146,6 +152,7 @@ namespace UrbanService.Controllers
         /// <response code="400">OTP không hợp lệ hoặc đã hết hạn.</response>
         [HttpPost("forgot-password/verify-otp")]
         [AllowAnonymous]
+        [EnableRateLimiting(RateLimitPolicyNames.Otp)]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> VerifyForgotPasswordOtp(
@@ -163,6 +170,7 @@ namespace UrbanService.Controllers
         /// </remarks>
         [HttpPost("forgot-password/reset")]
         [AllowAnonymous]
+        [EnableRateLimiting(RateLimitPolicyNames.Otp)]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> ResetForgottenPassword(
@@ -193,6 +201,7 @@ namespace UrbanService.Controllers
         [HttpPatch("pending-account")]
         [Authorize]
         [AllowUnverifiedEmail]
+        [EnableRateLimiting(RateLimitPolicyNames.UserWrite)]
         [ProducesResponseType(typeof(AuthResultDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -215,6 +224,7 @@ namespace UrbanService.Controllers
         [HttpPost("email-verification/send-otp")]
         [Authorize]
         [AllowUnverifiedEmail]
+        [EnableRateLimiting(RateLimitPolicyNames.Otp)]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -232,6 +242,7 @@ namespace UrbanService.Controllers
         [HttpPost("email-verification/verify")]
         [Authorize]
         [AllowUnverifiedEmail]
+        [EnableRateLimiting(RateLimitPolicyNames.Otp)]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
