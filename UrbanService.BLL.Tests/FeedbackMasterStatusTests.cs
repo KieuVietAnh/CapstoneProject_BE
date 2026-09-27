@@ -2,6 +2,7 @@
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
+using UrbanService.BLL.Options;
 using UrbanService.BLL.Services;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
@@ -40,7 +41,8 @@ public class FeedbackMasterStatusTests
             Substitute.For<INotificationService>(),
             reviewQueue,
             Substitute.For<IAiFeedbackDuplicateService>(),
-            incidentService);
+            incidentService,
+            Microsoft.Extensions.Options.Options.Create(new FeedbackLimitOptions()));
 
         // Gửi phản ánh từ web yêu cầu tài khoản đã xác thực số điện thoại.
         var resident = context.AddActor(UserRole.SERVICEUSER, "Resident");
@@ -251,6 +253,7 @@ public class FeedbackMasterStatusTests
             Substitute.For<INotificationService>(),
             Substitute.For<IAiFeedbackReviewQueue>(),
             Substitute.For<IAiFeedbackDuplicateService>(),
-            incidentService ?? Substitute.For<IIncidentService>());
+            incidentService ?? Substitute.For<IIncidentService>(),
+            Microsoft.Extensions.Options.Options.Create(new FeedbackLimitOptions()));
     }
 }

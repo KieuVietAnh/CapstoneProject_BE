@@ -1,11 +1,14 @@
 ﻿using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.DTOs;
 using UrbanService.BLL.DTOs.AI;
 using UrbanService.BLL.Interfaces;
+using UrbanService.BLL.Options;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
 using UrbanService.BLL.DTOs.SLA;
@@ -30,6 +33,8 @@ public class FeedbackService : IFeedbackService
     private readonly INotificationService _notificationService;
     private readonly IAiFeedbackReviewQueue _aiFeedbackReviewQueue;
     private readonly IIncidentService _incidentService;
+    private readonly FeedbackLimitOptions _feedbackLimitOptions;
+    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
 
 
     public FeedbackService(
@@ -37,12 +42,14 @@ public class FeedbackService : IFeedbackService
     INotificationService notificationService,
     IAiFeedbackReviewQueue aiFeedbackReviewQueue,
     IAiFeedbackDuplicateService aiFeedbackDuplicateService,
-    IIncidentService incidentService)
+    IIncidentService incidentService,
+    IOptions<FeedbackLimitOptions> feedbackLimitOptions)
     {
         _uow = uow;
         _notificationService = notificationService;
         _aiFeedbackReviewQueue = aiFeedbackReviewQueue;
         _incidentService = incidentService;
+        _feedbackLimitOptions = feedbackLimitOptions.Value;
     }
 
     public async Task ClearCompletionDocumentsAsync(
@@ -137,7 +144,7 @@ public class FeedbackService : IFeedbackService
     {
         ValidateCreate(request);
         var submissionChannel = NormalizeSubmissionChannel(request.SubmissionChannel);
-        await EnsureEmailVerifiedForWebSubmissionAsync(userId, submissionChannel);
+        await EnsureCitizenCanSubmitWebFeedbackAsync(userId, submissionChannel);
         await EnsureAreaMatchesLocationAsync(request.AreaId, request.Latitude, request.Longitude);
 
         var now = DateTime.UtcNow;
@@ -2104,18 +2111,18 @@ public class FeedbackService : IFeedbackService
     }
 
     /// <summary>
-    /// Người dân gửi phản ánh từ web phải có email đã xác thực.
+    /// Điều kiện để người dân gửi phản ánh từ web: đã xác thực số điện thoại, và
+    /// chưa chạm trần số phản ánh trong ngày.
     ///
-    /// Đây là nơi ràng buộc trách nhiệm: tài khoản nào gửi phản ánh thì phải có
-    /// một email đã qua OTP, để phản ánh sai sự thật còn truy được đầu mối. Đăng
-    /// nhập thì không cần, nên người chỉ vào xem tình hình khu vực không bị bắt
-    /// xác thực.
+    /// Xác thực là nơi ràng buộc trách nhiệm — phản ánh sai sự thật còn truy được
+    /// đầu mối. Trần theo ngày là để một tài khoản không làm ngập hàng đợi tiếp
+    /// nhận; nhân sự xử lý là người thật với thời gian hữu hạn.
     ///
-    /// Messenger và Zalo đi qua tài khoản dịch vụ dùng chung do admin quản lý,
-    /// định danh người gửi nằm ở định danh kênh chứ không ở tài khoản, nên không
-    /// áp ràng buộc này.
+    /// Messenger và Zalo đi qua tài khoản dịch vụ dùng chung do admin quản lý, định
+    /// danh người gửi nằm ở định danh kênh chứ không ở tài khoản, nên đếm theo tài
+    /// khoản sẽ chặn nhầm toàn bộ người gửi qua hai kênh đó.
     /// </summary>
-    private async Task EnsureEmailVerifiedForWebSubmissionAsync(
+    private async Task EnsureCitizenCanSubmitWebFeedbackAsync(
         Guid userId,
         string submissionChannel)
     {
@@ -2135,8 +2142,42 @@ public class FeedbackService : IFeedbackService
 
         if (isVerified != true)
         {
-            throw new ForbiddenAccessException(
-                "Bạn cần xác thực email trước khi gửi phản ánh.");
+            throw new BusinessRuleException(
+                BusinessErrorCode.PhoneNotVerified,
+                "Bạn cần xác thực số điện thoại trước khi gửi phản ánh.",
+                StatusCodes.Status403Forbidden);
+        }
+
+        var dailyLimit = _feedbackLimitOptions.DailyPerUser;
+        if (dailyLimit <= 0)
+        {
+            return;
+        }
+
+        /*
+         * Mốc ngày lấy theo giờ Việt Nam rồi quy về UTC để so sánh, vì cột thời gian
+         * lưu UTC. Dùng thẳng ngày UTC thì trần sẽ reset lúc 7 giờ sáng giờ Việt Nam,
+         * không khớp với cách người dùng hiểu "mỗi ngày".
+         */
+        var nowVietnam = DateTime.UtcNow.Add(VietnamOffset);
+        var startOfDayUtc = nowVietnam.Date.Subtract(VietnamOffset);
+        var endOfDayUtc = startOfDayUtc.AddDays(1);
+
+        var submittedToday = await _uow.GetRepository<Feedback>().Entities
+            .AsNoTracking()
+            .CountAsync(feedback =>
+                feedback.UserId == userId &&
+                feedback.SubmissionChannel == FeedbackSubmissionChannel.Web &&
+                feedback.CreatedAt >= startOfDayUtc &&
+                feedback.CreatedAt < endOfDayUtc);
+
+        if (submittedToday >= dailyLimit)
+        {
+            throw new BusinessRuleException(
+                BusinessErrorCode.DailyFeedbackLimitReached,
+                $"Bạn đã gửi đủ {dailyLimit} phản ánh trong hôm nay. " +
+                "Vui lòng quay lại vào ngày mai.",
+                StatusCodes.Status429TooManyRequests);
         }
     }
 

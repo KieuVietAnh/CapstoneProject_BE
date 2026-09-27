@@ -3,6 +3,7 @@ using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
+using UrbanService.BLL.Options;
 using UrbanService.BLL.Services;
 using UrbanService.DAL.Entities;
 using UrbanService.DAL.Interfaces;
@@ -244,7 +245,8 @@ public class FeedbackManagementUpdateTests
         var incidentService = Substitute.For<IIncidentService>();
         var service = new FeedbackService(context.UnitOfWork,
             notificationService ?? Substitute.For<INotificationService>(), Substitute.For<IAiFeedbackReviewQueue>(),
-            Substitute.For<IAiFeedbackDuplicateService>(), incidentService);
+            Substitute.For<IAiFeedbackDuplicateService>(), incidentService,
+            Microsoft.Extensions.Options.Options.Create(new FeedbackLimitOptions()));
         return (context, feedback, service, incidentService);
     }
 }

@@ -3,11 +3,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Net.Mail;
 using System.Security.Cryptography;
 using System.Text;
+using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
+using UrbanService.BLL.Common.Helpers;
 using UrbanService.BLL.Common.Securities;
+using UrbanService.BLL.Options;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
@@ -23,13 +27,16 @@ namespace UrbanService.BLL.Services
         private readonly IEmailSender _emailSender;
         private readonly IMemoryCache _cache;
         private readonly ILogger<AuthService> _logger;
-        private const int VerificationOtpMinutes = 5;
-        private const int VerificationOtpCooldownSeconds = 60;
+        private readonly IFirebasePhoneVerifier _firebasePhoneVerifier;
+        private readonly PhoneOtpOptions _phoneOtpOptions;
         private const int PasswordResetOtpMinutes = 5;
         private const int PasswordResetOtpCooldownSeconds = 60;
         private const int PasswordResetOtpMaxAttempts = 5;
         private const int DefaultRefreshTokenExpireDays = 7;
         private const string InvalidPasswordResetOtpMessage = "OTP không hợp lệ hoặc đã hết hạn.";
+        private const int TooManyRequestsStatusCode = 429;
+        private const int ConflictStatusCode = 409;
+        private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
         private static readonly object PasswordResetCacheSync = new();
 
         public AuthService(
@@ -38,7 +45,9 @@ namespace UrbanService.BLL.Services
             IJwtTokenGenerator jwt,
             IEmailSender emailSender,
             IMemoryCache cache,
-            ILogger<AuthService> logger)
+            ILogger<AuthService> logger,
+            IFirebasePhoneVerifier firebasePhoneVerifier,
+            IOptions<PhoneOtpOptions> phoneOtpOptions)
         {
             _uow = uow;
             _cfg = cfg;
@@ -46,6 +55,8 @@ namespace UrbanService.BLL.Services
             _emailSender = emailSender;
             _cache = cache;
             _logger = logger;
+            _firebasePhoneVerifier = firebasePhoneVerifier;
+            _phoneOtpOptions = phoneOtpOptions.Value;
         }
 
         public async Task<AuthResultDto> LoginAsync(LoginRequest req)
@@ -90,6 +101,17 @@ namespace UrbanService.BLL.Services
                 throw new Exception("Email và mật khẩu là bắt buộc.");
             }
 
+            /*
+             * Số điện thoại là bắt buộc vì OTP xác thực tài khoản gửi qua SMS. Email
+             * vẫn bắt buộc nhưng để dùng cho luồng quên mật khẩu, nơi gửi mail gần
+             * như không tốn gì trong khi mỗi tin SMS là chi phí thật.
+             */
+            if (string.IsNullOrWhiteSpace(req.Phone))
+            {
+                throw new Exception("Số điện thoại là bắt buộc.");
+            }
+
+            var phoneNumber = PhoneNumberHelper.NormalizeRequired(req.Phone);
             var fullName = string.IsNullOrWhiteSpace(req.Fullname) ? email : req.Fullname.Trim();
 
             if (req.Password.Length < PasswordPolicy.MinLength)
@@ -99,6 +121,7 @@ namespace UrbanService.BLL.Services
             }
 
             var userRepo = _uow.GetRepository<User>();
+            await EnsurePhoneNumberAvailableAsync(phoneNumber, excludedUserId: null);
             var existingUser = await userRepo.FindAsync(
                 u => u.Email.ToLower() == email.ToLower(),
                 q => q.Include(u => u.Role));
@@ -123,7 +146,7 @@ namespace UrbanService.BLL.Services
                  */
                 existingUser.FullName = fullName;
                 existingUser.PasswordHash = PasswordHasher.Hash(req.Password);
-                existingUser.PhoneNumber = req.Phone;
+                existingUser.PhoneNumber = phoneNumber;
                 existingUser.UpdatedAt = DateTime.UtcNow;
                 await _uow.SaveAsync();
 
@@ -139,7 +162,7 @@ namespace UrbanService.BLL.Services
                 FullName = fullName,
                 Email = email,
                 PasswordHash = PasswordHasher.Hash(req.Password),
-                PhoneNumber = req.Phone,
+                PhoneNumber = phoneNumber,
                 IsActive = true,
                 IsVerified = false,
                 IsRefreshTokenRevoked = false,
@@ -245,71 +268,192 @@ namespace UrbanService.BLL.Services
             return await IssueAuthResultAsync(user);
         }
 
-        public async Task RequestEmailVerificationOtpAsync(Guid userId)
+        /// <summary>
+        /// Bước 1 của xác thực số điện thoại: xin phép gửi SMS OTP.
+        ///
+        /// Firebase gửi SMS từ phía client, backend không gọi Firebase để gửi. Nhưng
+        /// hạn mức phải nằm ở đây: chặn ở frontend thì bất kỳ ai gọi thẳng Firebase
+        /// bằng API key công khai vẫn đốt tiền của dự án. Client chỉ được gọi
+        /// Firebase sau khi endpoint này trả về thành công.
+        /// </summary>
+        public async Task<RequestPhoneOtpResultDto> RequestPhoneOtpAsync(
+            Guid userId,
+            RequestPhoneOtpRequest req,
+            CancellationToken cancellationToken = default)
         {
             var user = await _uow.GetRepository<User>().GetByIdAsync(userId)
                 ?? throw new Exception("Không tìm thấy người dùng.");
 
+            if (!user.IsActive)
+            {
+                throw new UnauthorizedAccessException("Tài khoản đã bị khóa.");
+            }
+
             if (user.IsVerified)
             {
-                throw new Exception("Email đã được xác thực.");
+                throw new Exception("Tài khoản đã được xác thực.");
             }
 
-            if (_cache.TryGetValue(GetVerificationOtpCooldownKey(userId), out _))
+            /*
+             * Cho phép đổi số ngay tại bước này: người gõ nhầm số lúc đăng ký sẽ
+             * không nhận được OTP, nếu bắt họ giữ nguyên số sai thì họ kẹt hẳn.
+             */
+            var phoneNumber = string.IsNullOrWhiteSpace(req.PhoneNumber)
+                ? PhoneNumberHelper.NormalizeRequired(user.PhoneNumber)
+                : PhoneNumberHelper.NormalizeRequired(req.PhoneNumber);
+
+            await EnsurePhoneNumberAvailableAsync(phoneNumber, excludedUserId: userId);
+
+            if (!string.Equals(user.PhoneNumber, phoneNumber, StringComparison.Ordinal))
             {
-                throw new Exception($"Vui lòng chờ {VerificationOtpCooldownSeconds} giây trước khi gửi lại OTP.");
+                user.PhoneNumber = phoneNumber;
+                user.UpdatedAt = DateTime.UtcNow;
+                await _uow.SaveAsync();
             }
 
-            await SendEmailVerificationOtpAsync(user);
-        }
-
-        /// <summary>
-        /// Sinh OTP mới, gửi tới email hiện tại của tài khoản và đặt lại cooldown.
-        ///
-        /// Tách riêng khỏi <see cref="RequestEmailVerificationOtpAsync"/> vì luồng
-        /// đổi email của tài khoản chưa xác thực cũng cần gửi OTP, nhưng không được
-        /// vướng cooldown của email cũ: người dùng vừa nhận mã ở địa chỉ sai thì
-        /// không có lý do gì bắt họ chờ thêm một phút mới nhận được mã ở địa chỉ đúng.
-        /// </summary>
-        private async Task SendEmailVerificationOtpAsync(User user)
-        {
-            var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-
-            var body = $"""
-                <h2>Xác thực email UrbanService</h2>
-                <p>Xin chào {System.Net.WebUtility.HtmlEncode(user.FullName)},</p>
-                <p>Mã OTP xác thực email của bạn là:</p>
-                <h1 style="letter-spacing: 6px">{otp}</h1>
-                <p>Mã có hiệu lực trong {VerificationOtpMinutes} phút.</p>
-                """;
-
-            await _emailSender.SendAsync(new EmailMessageDto
+            /*
+             * Số test khai trong Firebase Console dùng mã cố định và không phát sinh
+             * SMS thật, nên không tính vào hạn mức. Nếu tính, cả nhóm sẽ đốt sạch
+             * hạn mức chỉ bằng việc demo đi demo lại.
+             */
+            if (IsTestPhoneNumber(phoneNumber))
             {
-                To = [user.Email],
-                Subject = "Mã OTP xác thực email UrbanService",
-                Body = body
+                return new RequestPhoneOtpResultDto
+                {
+                    PhoneNumber = phoneNumber,
+                    RemainingToday = null,
+                    IsTestNumber = true
+                };
+            }
+
+            var today = VietnamToday();
+            var otpRepo = _uow.GetRepository<PhoneOtpRequest>();
+            var sentToday = await otpRepo.Entities
+                .AsNoTracking()
+                .CountAsync(item => item.Day == today, cancellationToken);
+
+            if (sentToday >= _phoneOtpOptions.DailyLimit)
+            {
+                throw new BusinessRuleException(
+                    BusinessErrorCode.DailyOtpLimitReached,
+                    $"Hôm nay hệ thống đã dùng hết {_phoneOtpOptions.DailyLimit} lượt gửi mã OTP. " +
+                    "Vui lòng thử lại vào ngày mai.",
+                    TooManyRequestsStatusCode);
+            }
+
+            await otpRepo.AddAsync(new PhoneOtpRequest
+            {
+                PhoneNumber = phoneNumber,
+                Day = today,
+                RequestedByUserId = userId,
+                CreatedAt = DateTime.UtcNow
             });
-            _cache.Set(
-                GetVerificationOtpKey(user.UserId),
-                otp,
-                TimeSpan.FromMinutes(VerificationOtpMinutes));
-            _cache.Set(
-                GetVerificationOtpCooldownKey(user.UserId),
-                true,
-                TimeSpan.FromSeconds(VerificationOtpCooldownSeconds));
+            await _uow.SaveAsync();
+
+            _logger.LogInformation(
+                "Cho phép gửi OTP tới số của user {UserId} ({Count}/{Limit} hôm nay)",
+                userId,
+                sentToday + 1,
+                _phoneOtpOptions.DailyLimit);
+
+            return new RequestPhoneOtpResultDto
+            {
+                PhoneNumber = phoneNumber,
+                RemainingToday = _phoneOtpOptions.DailyLimit - sentToday - 1,
+                IsTestNumber = false
+            };
         }
 
         /// <summary>
-        /// Sửa thông tin đăng ký của tài khoản chưa xác thực email.
+        /// Bước 2: client gửi lên Firebase ID token nhận được sau khi nhập đúng OTP.
         ///
-        /// Dùng khi người dùng gõ nhầm email lúc đăng ký: họ không nhận được OTP
-        /// nên không tự xác thực được, mà đăng ký lại cũng không xong vì email cũ
-        /// đã chiếm chỗ.
+        /// Số điện thoại lấy từ token đã qua kiểm tra chữ ký, không lấy từ request,
+        /// nếu không thì client chỉ cần gửi đại một số là qua cửa.
+        /// </summary>
+        public async Task<AuthResultDto> VerifyPhoneAsync(
+            Guid userId,
+            VerifyPhoneRequest req,
+            CancellationToken cancellationToken = default)
+        {
+            var userRepo = _uow.GetRepository<User>();
+            var user = await userRepo.Entities
+                .Include(candidate => candidate.Role)
+                .FirstOrDefaultAsync(candidate => candidate.UserId == userId, cancellationToken)
+                ?? throw new Exception("Không tìm thấy người dùng.");
+
+            if (!user.IsActive)
+            {
+                throw new UnauthorizedAccessException("Tài khoản đã bị khóa.");
+            }
+
+            if (user.IsVerified)
+            {
+                return await IssueAuthResultAsync(user);
+            }
+
+            var verified = await _firebasePhoneVerifier.VerifyAsync(req.IdToken, cancellationToken);
+            var phoneNumber = PhoneNumberHelper.NormalizeRequired(verified.PhoneNumber);
+
+            await EnsurePhoneNumberAvailableAsync(phoneNumber, excludedUserId: userId);
+
+            var now = DateTime.UtcNow;
+            user.PhoneNumber = phoneNumber;
+            user.FirebaseUid = verified.FirebaseUid;
+            user.IsVerified = true;
+            user.PhoneVerifiedAt = now;
+            user.UpdatedAt = now;
+            await _uow.SaveAsync();
+
+            _logger.LogInformation("Tài khoản {UserId} đã xác thực số điện thoại.", userId);
+
+            return await IssueAuthResultAsync(user);
+        }
+
+        /// <summary>
+        /// Một số điện thoại chỉ thuộc về một tài khoản đã xác thực.
         ///
-        /// Giữ nguyên email của chính mình thì không báo trùng, chỉ báo khi email
-        /// mới đang thuộc về tài khoản khác. Đổi email thì OTP cũ bị hủy ngay: mã
-        /// đó được gửi tới hòm thư cũ, để nó còn hiệu lực nghĩa là người kiểm soát
-        /// địa chỉ cũ vẫn xác thực được địa chỉ mới.
+        /// Không đặt unique index ở database vì dữ liệu hiện có có thể đã trùng số,
+        /// mà migration lỗi thì container mới không khởi động được. Ràng buộc đặt ở
+        /// tầng nghiệp vụ, nơi chỉ chặn đúng lúc một tài khoản muốn xác thực.
+        /// </summary>
+        private async Task EnsurePhoneNumberAvailableAsync(string phoneNumber, Guid? excludedUserId)
+        {
+            var taken = await _uow.GetRepository<User>().Entities
+                .AsNoTracking()
+                .AnyAsync(candidate =>
+                    candidate.IsVerified &&
+                    candidate.PhoneNumber == phoneNumber &&
+                    (excludedUserId == null || candidate.UserId != excludedUserId));
+
+            if (taken)
+            {
+                throw new BusinessRuleException(
+                    BusinessErrorCode.PhoneAlreadyUsed,
+                    "Số điện thoại này đã được dùng cho một tài khoản khác.",
+                    ConflictStatusCode);
+            }
+        }
+
+        private bool IsTestPhoneNumber(string phoneNumber)
+        {
+            return _phoneOtpOptions.TestNumbers
+                .Select(PhoneNumberHelper.Normalize)
+                .Any(candidate => string.Equals(candidate, phoneNumber, StringComparison.Ordinal));
+        }
+
+        /// <summary>Ngày làm việc theo giờ Việt Nam, để hạn mức reset lúc nửa đêm ở đây.</summary>
+        private static string VietnamToday() =>
+            DateTimeOffset.UtcNow.ToOffset(VietnamOffset).ToString("yyyy-MM-dd");
+
+        /// <summary>
+        /// Sửa thông tin đăng ký của tài khoản chưa xác thực số điện thoại.
+        ///
+        /// Dùng khi người dùng gõ nhầm thông tin lúc đăng ký và muốn quay lại sửa
+        /// trước khi xác thực. Đăng ký lại cũng không xong vì email cũ đã chiếm chỗ.
+        ///
+        /// Giữ nguyên email hoặc số điện thoại của chính mình thì không báo trùng,
+        /// chỉ báo khi chúng đang thuộc về tài khoản khác. Không gửi OTP ở đây:
+        /// người dùng bấm gửi mã ở màn xác thực, nơi hạn mức SMS được đếm.
         /// </summary>
         public async Task<AuthResultDto> UpdatePendingAccountAsync(
             Guid userId,
@@ -330,7 +474,7 @@ namespace UrbanService.BLL.Services
             if (user.IsVerified)
             {
                 throw new Exception(
-                    "Tài khoản đã xác thực email nên không sửa được qua API này.");
+                    "Tài khoản đã xác thực nên không sửa được qua API này.");
             }
 
             var email = NormalizeEmail(req.Email);
@@ -364,22 +508,16 @@ namespace UrbanService.BLL.Services
                 user.PasswordHash = PasswordHasher.Hash(req.NewPassword);
             }
 
+            var phoneNumber = PhoneNumberHelper.NormalizeRequired(req.PhoneNumber);
+            await EnsurePhoneNumberAvailableAsync(phoneNumber, excludedUserId: userId);
+
             user.FullName = string.IsNullOrWhiteSpace(req.FullName)
                 ? email
                 : req.FullName.Trim();
             user.Email = email;
-            user.PhoneNumber = string.IsNullOrWhiteSpace(req.PhoneNumber)
-                ? null
-                : req.PhoneNumber.Trim();
+            user.PhoneNumber = phoneNumber;
             user.UpdatedAt = DateTime.UtcNow;
             await _uow.SaveAsync();
-
-            if (emailChanged)
-            {
-                _cache.Remove(GetVerificationOtpKey(userId));
-                _cache.Remove(GetVerificationOtpCooldownKey(userId));
-                await SendEmailVerificationOtpAsync(user);
-            }
 
             return await IssueAuthResultAsync(user);
         }
@@ -667,33 +805,6 @@ namespace UrbanService.BLL.Services
             return user;
         }
 
-        public async Task VerifyEmailAsync(Guid userId, VerifyEmailRequest req)
-        {
-            if (string.IsNullOrWhiteSpace(req.Otp))
-            {
-                throw new Exception("OTP là bắt buộc.");
-            }
-
-            var user = await _uow.GetRepository<User>().GetByIdAsync(userId)
-                ?? throw new Exception("Không tìm thấy người dùng.");
-
-            if (user.IsVerified)
-            {
-                return;
-            }
-
-            if (!_cache.TryGetValue<string>(GetVerificationOtpKey(userId), out var otp) ||
-                !string.Equals(otp, req.Otp.Trim(), StringComparison.Ordinal))
-            {
-                throw new Exception("OTP không đúng hoặc đã hết hạn.");
-            }
-
-            user.IsVerified = true;
-            user.UpdatedAt = DateTime.UtcNow;
-            await _uow.SaveAsync();
-            _cache.Remove(GetVerificationOtpKey(userId));
-        }
-
         private async Task<Role> GetOrCreateDefaultRoleAsync()
         {
             var defaultRole = _cfg["Auth:DefaultRole"] ?? UserRole.SERVICEUSER;
@@ -789,11 +900,6 @@ namespace UrbanService.BLL.Services
             expiresAt = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
             return true;
         }
-
-        private static string GetVerificationOtpKey(Guid userId) => $"email-verification:{userId}";
-
-        private static string GetVerificationOtpCooldownKey(Guid userId) =>
-            $"email-verification-cooldown:{userId}";
 
         private static string NormalizeEmail(string? email)
         {

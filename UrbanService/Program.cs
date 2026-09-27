@@ -5,6 +5,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Reflection;
 using System.Text;
+using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
 using UrbanService.Authorization;
 using UrbanService.BackgroundServices;
 using UrbanService.BLL.Common;
@@ -30,7 +32,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers(options =>
 {
-    options.Filters.Add<EmailVerifiedWriteFilter>();
+    options.Filters.Add<PhoneVerifiedWriteFilter>();
 });
 builder.Services.AddDbContext<UrbanServiceDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -155,6 +157,14 @@ builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+builder.Services.Configure<FirebaseOptions>(
+    builder.Configuration.GetSection(FirebaseOptions.SectionName));
+builder.Services.Configure<PhoneOtpOptions>(
+    builder.Configuration.GetSection(PhoneOtpOptions.SectionName));
+builder.Services.Configure<FeedbackLimitOptions>(
+    builder.Configuration.GetSection(FeedbackLimitOptions.SectionName));
+builder.Services.AddSingleton<IFirebasePhoneVerifier, FirebasePhoneVerifier>();
+
 builder.Services.AddScoped<IRealtimeNotificationSender, SignalRNotificationSender>();
 builder.Services.AddScoped<
     ISlaRealtimeSender,
@@ -262,6 +272,8 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
+InitializeFirebase(app);
+
 if (builder.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
 {
     using var migrationScope = app.Services.CreateScope();
@@ -295,3 +307,52 @@ app.MapHealthChecks("/health")
     .DisableRateLimiting();
 
 app.Run();
+
+/// <summary>
+/// Nạp service account cho Firebase Admin SDK, dùng để xác minh ID token của luồng
+/// OTP số điện thoại.
+///
+/// Ưu tiên biến môi trường vì môi trường deploy chạy trong container và khoá riêng
+/// thì không được commit; đường dẫn file chỉ để tiện cho máy lập trình viên.
+///
+/// Thiếu cấu hình thì chỉ ghi cảnh báo chứ không chặn khởi động: cả hệ thống không
+/// nên chết chỉ vì một tính năng chưa cấu hình xong. Khi đó endpoint xác thực SĐT
+/// sẽ báo lỗi rõ ràng lúc được gọi.
+/// </summary>
+static void InitializeFirebase(WebApplication app)
+{
+    if (FirebaseApp.DefaultInstance != null)
+    {
+        return;
+    }
+
+    var settings = app.Services.GetRequiredService<IOptions<FirebaseOptions>>().Value;
+
+    GoogleCredential credential;
+    if (!string.IsNullOrWhiteSpace(settings.ServiceAccountJson))
+    {
+        credential = GoogleCredential.FromJson(settings.ServiceAccountJson);
+    }
+    else if (!string.IsNullOrWhiteSpace(settings.ServiceAccountPath) &&
+             File.Exists(settings.ServiceAccountPath))
+    {
+        credential = GoogleCredential.FromFile(settings.ServiceAccountPath);
+    }
+    else
+    {
+        app.Logger.LogWarning(
+            "Chưa cấu hình Firebase service account. Xác thực số điện thoại sẽ không dùng được " +
+            "cho tới khi đặt biến môi trường Firebase__ServiceAccountJson.");
+        return;
+    }
+
+    try
+    {
+        FirebaseApp.Create(new AppOptions { Credential = credential });
+        app.Logger.LogInformation("Đã khởi tạo Firebase Admin SDK.");
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "Không khởi tạo được Firebase Admin SDK.");
+    }
+}

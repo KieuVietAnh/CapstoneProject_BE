@@ -40,7 +40,7 @@ namespace UrbanService.BLL.Services
                 new Claim(ClaimTypes.Email, acc.Email ?? ""),
                 new Claim(ClaimTypes.Role, roleName.ToUpper()),
                 new Claim(
-                    UserClaimTypes.EmailVerified,
+                    UserClaimTypes.PhoneVerified,
                     acc.IsVerified ? "true" : "false")
             };
 

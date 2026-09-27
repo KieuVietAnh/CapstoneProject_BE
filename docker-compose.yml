@@ -10,6 +10,11 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
       Database__MigrateOnStartup: ${DATABASE_MIGRATE_ON_STARTUP:-true}
+      # Nội dung JSON service account Firebase. Khoá riêng nên không commit vào repo.
+      Firebase__ServiceAccountJson: ${FIREBASE_SERVICE_ACCOUNT_JSON}
+      # Trần SMS OTP mỗi ngày cho toàn hệ thống. Mỗi tin là chi phí thật.
+      PhoneOtp__DailyLimit: ${PHONE_OTP_DAILY_LIMIT:-5}
+      FeedbackLimits__DailyPerUser: ${FEEDBACK_DAILY_PER_USER:-3}
       ConnectionStrings__DefaultConnection: ${DEFAULT_CONNECTION}
       Jwt__Key: ${JWT_KEY}
       Jwt__Issuer: ${JWT_ISSUER}

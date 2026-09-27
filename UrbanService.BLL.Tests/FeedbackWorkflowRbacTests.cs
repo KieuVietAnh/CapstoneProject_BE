@@ -5,6 +5,7 @@ using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
+using UrbanService.BLL.Options;
 using UrbanService.BLL.Services;
 using UrbanService.Controllers;
 using UrbanService.DAL.Entities;
@@ -337,7 +338,8 @@ public class FeedbackWorkflowRbacTests
                 Substitute.For<INotificationService>(),
                 Substitute.For<IAiFeedbackReviewQueue>(),
                 Substitute.For<IAiFeedbackDuplicateService>(),
-                    IncidentService);
+                    IncidentService,
+                    Microsoft.Extensions.Options.Options.Create(new FeedbackLimitOptions()));
 
             IncidentService.UpdateStatusFromResolutionReviewAsync(
                     Arg.Any<Guid>(),

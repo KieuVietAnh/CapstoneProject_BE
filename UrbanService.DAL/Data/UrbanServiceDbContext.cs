@@ -105,6 +105,8 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<User> Users { get; set; }
 
+    public virtual DbSet<PhoneOtpRequest> PhoneOtpRequests { get; set; }
+
     public virtual DbSet<SlaPolicy> SlaPolicies { get; set; }
 
     public virtual DbSet<IncidentSla> IncidentSlas { get; set; }
@@ -144,6 +146,8 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.AvatarUrl).HasMaxLength(500).HasColumnName("avatar_url");
             entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
             entity.Property(e => e.IsVerified).HasDefaultValue(false).HasColumnName("is_verified");
+            entity.Property(e => e.FirebaseUid).HasMaxLength(128).HasColumnName("firebase_uid");
+            entity.Property(e => e.PhoneVerifiedAt).HasColumnType("timestamp without time zone").HasColumnName("phone_verified_at");
             entity.Property(e => e.RefreshToken).HasColumnName("refresh_token");
             entity.Property(e => e.IsRefreshTokenRevoked).HasDefaultValue(false).HasColumnName("is_refresh_token_revoked");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()").HasColumnName("created_at");
@@ -153,6 +157,19 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.RoleId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_user_role");
+        });
+
+        modelBuilder.Entity<PhoneOtpRequest>(entity =>
+        {
+            entity.HasKey(e => e.PhoneOtpRequestId).HasName("phone_otp_requests_pkey");
+            entity.ToTable("phone_otp_requests");
+            entity.HasIndex(e => e.Day, "ix_phone_otp_requests_day");
+
+            entity.Property(e => e.PhoneOtpRequestId).HasColumnName("phone_otp_request_id");
+            entity.Property(e => e.PhoneNumber).HasMaxLength(20).HasColumnName("phone_number");
+            entity.Property(e => e.Day).HasMaxLength(10).HasColumnName("day");
+            entity.Property(e => e.RequestedByUserId).HasColumnName("requested_by_user_id");
+            entity.Property(e => e.CreatedAt).HasColumnType("timestamp without time zone").HasDefaultValueSql("now()").HasColumnName("created_at");
         });
 
         modelBuilder.Entity<OperatingArea>(entity =>

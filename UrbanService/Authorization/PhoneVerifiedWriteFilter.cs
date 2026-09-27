@@ -11,14 +11,15 @@ using UrbanService.DAL.Interfaces;
 namespace UrbanService.Authorization;
 
 /// <summary>
-/// Chặn thao tác ghi của tài khoản chưa xác thực email.
+/// Chặn thao tác ghi của tài khoản chưa xác thực số điện thoại.
 ///
-/// Quyền đọc được giữ nguyên: người dùng chưa xác thực vẫn xem được sự vụ, thông
-/// báo và dữ liệu công khai, chỉ không tạo hay sửa được gì cho tới khi xác thực.
+/// Quyền đọc được giữ nguyên: người dùng chưa xác thực vẫn đăng nhập, xem bảng tin,
+/// bản đồ sự cố và thông báo như bình thường, chỉ không tạo hay sửa được gì cho tới
+/// khi xác thực số điện thoại.
 /// Ràng buộc đặt ở đây thay vì rải trong từng service để không có endpoint ghi nào
 /// lọt lưới chỉ vì người viết quên kiểm tra.
 /// </summary>
-public sealed class EmailVerifiedWriteFilter : IAsyncAuthorizationFilter
+public sealed class PhoneVerifiedWriteFilter : IAsyncAuthorizationFilter
 {
     private static readonly HashSet<string> ReadOnlyMethods = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -37,7 +38,7 @@ public sealed class EmailVerifiedWriteFilter : IAsyncAuthorizationFilter
 
         var endpoint = context.HttpContext.GetEndpoint();
         if (endpoint?.Metadata.GetMetadata<IAllowAnonymous>() != null ||
-            endpoint?.Metadata.GetMetadata<AllowUnverifiedEmailAttribute>() != null)
+            endpoint?.Metadata.GetMetadata<AllowUnverifiedPhoneAttribute>() != null)
         {
             return;
         }
@@ -70,7 +71,7 @@ public sealed class EmailVerifiedWriteFilter : IAsyncAuthorizationFilter
          * không thì người vừa nhập OTP sẽ bị chặn cho tới khi token hết hạn.
          */
         if (string.Equals(
-                user.FindFirstValue(UserClaimTypes.EmailVerified),
+                user.FindFirstValue(UserClaimTypes.PhoneVerified),
                 "true",
                 StringComparison.OrdinalIgnoreCase))
         {
@@ -98,8 +99,8 @@ public sealed class EmailVerifiedWriteFilter : IAsyncAuthorizationFilter
         context.Result = new ObjectResult(new ApiResponse<object?>
         {
             Status = StatusCodes.Status403Forbidden,
-            Msg = "Bạn cần xác thực email trước khi thực hiện thao tác này.",
-            Data = new { code = AuthResultCode.EmailNotVerified }
+            Msg = "Bạn cần xác thực số điện thoại trước khi thực hiện thao tác này.",
+            Data = new { code = BusinessErrorCode.PhoneNotVerified }
         })
         {
             StatusCode = StatusCodes.Status403Forbidden

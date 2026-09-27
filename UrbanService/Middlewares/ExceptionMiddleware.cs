@@ -32,11 +32,15 @@ namespace UrbanService.Middlewares
                 context.Response.StatusCode = status;
                 context.Response.ContentType = "application/json";
 
+                // Lỗi nghiệp vụ mang mã máy đọc được để client rẽ nhánh giao diện,
+                // thay vì phải so khớp câu tiếng Việt vốn có thể đổi bất cứ lúc nào.
                 var payload = new ApiResponse<object?>
                 {
                     Status = status,
                     Msg = msg,
-                    Data = null
+                    Data = ex is BusinessRuleException coded
+                        ? new { code = coded.Code }
+                        : null
                 };
 
                 var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
@@ -67,6 +71,9 @@ namespace UrbanService.Middlewares
 
             if (ex is UnauthorizedAccessException)
                 return (401, "Unauthorized.");
+
+            if (ex is BusinessRuleException businessRule)
+                return (businessRule.StatusCode, businessRule.Message);
 
             if (ex is ForbiddenAccessException)
                 return (403, ex.Message);
