@@ -183,17 +183,19 @@ mới, thay vì báo trùng email; tài khoản đã xác thực hoặc đã b�
 `Email đã được sử dụng.` Đăng nhập Google lấy luôn trạng
 thái xác thực email từ Google nên không phải nhập OTP lại.
 
-Phản ánh từ Messenger và Zalo đi qua tài khoản dịch vụ dùng chung nên không áp ràng
-buộc này.
+Phản ánh từ Messenger chỉ được tạo sau khi người gửi liên kết Messenger với một
+tài khoản `SERVICEUSER` đã xác thực và có số điện thoại. Bot gửi liên kết dùng một
+lần tới trang frontend; frontend đăng nhập rồi gọi
+`POST /api/user/messenger-links/confirm` để hoàn tất liên kết.
 
-Messenger cần `PageAccessToken`, `VerifyToken`, `AppSecret`, `SubmissionUserId`
-và `GraphApiVersion`. Ảnh minh chứng tùy chọn được giới hạn bởi
+Messenger cần `PageAccessToken`, `VerifyToken`, `AppSecret`,
+`AccountLinkBaseUrl`, `AccountLinkTokenMinutes` và `GraphApiVersion`. Ảnh minh chứng tùy chọn được giới hạn bởi
 `MaxImagesPerFeedback` (mặc định 5), `MaxImageBytes` (mặc định 5 MiB) và chỉ tải
 từ các hậu tố HTTPS trong `AllowedMediaHostSuffixes` (mặc định
 `fbcdn.net,fbsbx.com`). Cần cấu hình thêm `Cloudinary:CloudName`,
 `Cloudinary:ApiKey` và `Cloudinary:ApiSecret` để upload ảnh khi xác nhận.
-`SubmissionUserId` phải thuộc một `SERVICEUSER` đang hoạt động. Webhook cần cấu
-hình trên Meta:
+`AccountLinkBaseUrl` phải trỏ tới trang frontend nhận query parameter `token`.
+Webhook cần cấu hình trên Meta:
 
 ```text
 https://YOUR_DOMAIN/api/integrations/messenger/webhook

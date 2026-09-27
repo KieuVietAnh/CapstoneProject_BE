@@ -55,7 +55,8 @@ services:
       Messenger__PageAccessToken: ${MESSENGER_PAGE_ACCESS_TOKEN}
       Messenger__VerifyToken: ${MESSENGER_VERIFY_TOKEN}
       Messenger__AppSecret: ${MESSENGER_APP_SECRET}
-      Messenger__SubmissionUserId: ${MESSENGER_SUBMISSION_USER_ID}
+      Messenger__AccountLinkBaseUrl: ${MESSENGER_ACCOUNT_LINK_BASE_URL}
+      Messenger__AccountLinkTokenMinutes: ${MESSENGER_ACCOUNT_LINK_TOKEN_MINUTES:-10}
       Messenger__GraphApiVersion: ${MESSENGER_GRAPH_API_VERSION:-v25.0}
       Messenger__AllowedMediaHostSuffixes: ${MESSENGER_ALLOWED_MEDIA_HOST_SUFFIXES:-fbcdn.net,fbsbx.com}
       Messenger__MaxImagesPerFeedback: ${MESSENGER_MAX_IMAGES_PER_FEEDBACK:-5}

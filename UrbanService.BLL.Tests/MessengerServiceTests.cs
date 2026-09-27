@@ -432,6 +432,45 @@ public class MessengerServiceTests
             Arg.Is<IReadOnlyCollection<UploadedFeedbackAttachmentDto>>(items => items.Count == 0));
     }
 
+    [Fact]
+    public async Task Confirmation_WithoutLinkedAccount_PreservesDraftAndSendsLink()
+    {
+        var conversation = CompleteDraftConversation("AwaitingConfirmation");
+        var unitOfWork = UnitOfWorkWithConversation(conversation);
+        var feedbackService = Substitute.For<IFeedbackService>();
+        var accountLinkService = Substitute.For<IMessengerAccountLinkService>();
+        accountLinkService.GetLinkedUserIdAsync(
+                conversation.PageId,
+                conversation.SenderPsid,
+                Arg.Any<CancellationToken>())
+            .Returns((Guid?)null);
+        accountLinkService.CreateLinkTokenAsync(
+                conversation.PageId,
+                conversation.SenderPsid,
+                Arg.Any<CancellationToken>())
+            .Returns("one-time-token");
+        var handler = new RecordingHttpMessageHandler();
+        var service = CreateService(
+            BaseConfiguration(),
+            unitOfWork,
+            new HttpClient(handler),
+            feedbackService,
+            messengerAccountLinkService: accountLinkService);
+
+        await service.ProcessWebhookAsync(TextWebhook(
+            "confirm-unlinked",
+            "Xác nhận",
+            "XAC NHAN"));
+
+        Assert.Equal("AwaitingConfirmation", conversation.State);
+        await feedbackService.DidNotReceiveWithAnyArgs().CreateAsync(
+            default,
+            default!,
+            default!);
+        var text = GetOutgoingText(Assert.Single(handler.RequestBodies));
+        Assert.Contains("https://urbanservice.test/messenger/link?token=one-time-token", text);
+    }
+
     [Theory]
     [InlineData("http-status")]
     [InlineData("mime")]
@@ -892,11 +931,26 @@ public class MessengerServiceTests
         IUnitOfWork? unitOfWork = null,
         HttpClient? httpClient = null,
         IFeedbackService? feedbackService = null,
-        ICloudinaryService? cloudinaryService = null)
+        ICloudinaryService? cloudinaryService = null,
+        IMessengerAccountLinkService? messengerAccountLinkService = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(values)
             .Build();
+
+        if (messengerAccountLinkService == null)
+        {
+            messengerAccountLinkService = Substitute.For<IMessengerAccountLinkService>();
+            if (values.TryGetValue("Messenger:SubmissionUserId", out var configuredUserId) &&
+                Guid.TryParse(configuredUserId, out var userId))
+            {
+                messengerAccountLinkService.GetLinkedUserIdAsync(
+                        Arg.Any<string>(),
+                        Arg.Any<string>(),
+                        Arg.Any<CancellationToken>())
+                    .Returns((Guid?)userId);
+            }
+        }
 
         return new MessengerService(
             httpClient ?? new HttpClient(new RecordingHttpMessageHandler()),
@@ -904,6 +958,7 @@ public class MessengerServiceTests
             unitOfWork ?? Substitute.For<IUnitOfWork>(),
             feedbackService ?? Substitute.For<IFeedbackService>(),
             cloudinaryService ?? Substitute.For<ICloudinaryService>(),
+            messengerAccountLinkService,
             NullLogger<MessengerService>.Instance);
     }
 
@@ -1026,7 +1081,8 @@ public class MessengerServiceTests
         return new Dictionary<string, string?>
         {
             ["Messenger:PageAccessToken"] = "page-token",
-            ["Messenger:AllowedMediaHostSuffixes"] = "fbcdn.net,fbsbx.com"
+            ["Messenger:AllowedMediaHostSuffixes"] = "fbcdn.net,fbsbx.com",
+            ["Messenger:AccountLinkBaseUrl"] = "https://urbanservice.test/messenger/link"
         };
     }
 

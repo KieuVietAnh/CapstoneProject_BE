@@ -53,6 +53,7 @@ public class MessengerService : IMessengerService
     private readonly IUnitOfWork _uow;
     private readonly IFeedbackService _feedbackService;
     private readonly ICloudinaryService _cloudinaryService;
+    private readonly IMessengerAccountLinkService _messengerAccountLinkService;
     private readonly ILogger<MessengerService> _logger;
 
     public MessengerService(
@@ -61,6 +62,7 @@ public class MessengerService : IMessengerService
         IUnitOfWork uow,
         IFeedbackService feedbackService,
         ICloudinaryService cloudinaryService,
+        IMessengerAccountLinkService messengerAccountLinkService,
         ILogger<MessengerService> logger)
     {
         _httpClient = httpClient;
@@ -68,6 +70,7 @@ public class MessengerService : IMessengerService
         _uow = uow;
         _feedbackService = feedbackService;
         _cloudinaryService = cloudinaryService;
+        _messengerAccountLinkService = messengerAccountLinkService;
         _logger = logger;
     }
 
@@ -319,6 +322,15 @@ public class MessengerService : IMessengerService
         if (TryGetFeedbackHistoryPage(command, out var pageNumber))
         {
             await SendFeedbackHistoryAsync(conversation, pageNumber, cancellationToken);
+            return;
+        }
+
+        if (command is "LINK_ACCOUNT" or "LIEN KET TAI KHOAN")
+        {
+            await SendAccountLinkAsync(
+                conversation,
+                returnToConfirmation: false,
+                cancellationToken);
             return;
         }
 
@@ -710,6 +722,19 @@ public class MessengerService : IMessengerService
             return;
         }
 
+        var linkedUserId = await _messengerAccountLinkService.GetLinkedUserIdAsync(
+            conversation.PageId,
+            conversation.SenderPsid,
+            cancellationToken);
+        if (!linkedUserId.HasValue)
+        {
+            await SendAccountLinkAsync(
+                conversation,
+                returnToConfirmation: true,
+                cancellationToken);
+            return;
+        }
+
         FeedbackDetailDto? feedback = null;
         try
         {
@@ -717,7 +742,6 @@ public class MessengerService : IMessengerService
             conversation.UpdatedAt = DateTime.UtcNow;
             await _uow.SaveAsync();
 
-            var submissionUserId = await GetSubmissionUserIdAsync(cancellationToken);
             var attachmentRepository = _uow.GetRepository<MessengerFeedbackDraftAttachment>();
             var draftAttachments = await attachmentRepository.Entities
                 .Where(item => item.ConversationId == conversation.ConversationId)
@@ -728,7 +752,7 @@ public class MessengerService : IMessengerService
                 draftAttachments,
                 cancellationToken);
             feedback = await _feedbackService.CreateAsync(
-                submissionUserId,
+                linkedUserId.Value,
                 new FeedbackCreateRequest
                 {
                     AreaId = conversation.AreaId.Value,
@@ -903,9 +927,70 @@ public class MessengerService : IMessengerService
             [
                 new MessengerQuickReplyOption("Gửi phản ánh", "START_FEEDBACK"),
                 new MessengerQuickReplyOption("Phản ánh đã gửi", "VIEW_FEEDBACKS:1"),
+                new MessengerQuickReplyOption("Liên kết tài khoản", "LINK_ACCOUNT"),
                 new MessengerQuickReplyOption("Trợ giúp", "HELP")
             ],
             cancellationToken);
+    }
+
+    private async Task SendAccountLinkAsync(
+        MessengerFeedbackConversation conversation,
+        bool returnToConfirmation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var linkedUserId = await _messengerAccountLinkService.GetLinkedUserIdAsync(
+                conversation.PageId,
+                conversation.SenderPsid,
+                cancellationToken);
+            if (linkedUserId.HasValue)
+            {
+                await SendMainMenuAsync(
+                    conversation.SenderPsid,
+                    "Messenger này đã được liên kết với tài khoản UrbanService.",
+                    cancellationToken);
+                return;
+            }
+
+            var token = await _messengerAccountLinkService.CreateLinkTokenAsync(
+                conversation.PageId,
+                conversation.SenderPsid,
+                cancellationToken);
+            var linkUrl = BuildAccountLinkUrl(token);
+            var choices = returnToConfirmation
+                ? ConfirmationQuickReplies
+                : new[] { new MessengerQuickReplyOption("Menu", "MENU") };
+            var message = returnToConfirmation
+                ? "Để xác định người gửi, bạn cần liên kết Messenger với tài khoản UrbanService trước khi gửi phản ánh. " +
+                  $"Mở liên kết sau, đăng nhập và xác nhận: {linkUrl}\n\n" +
+                  "Sau khi liên kết thành công, quay lại đây và chọn Xác nhận."
+                : "Mở liên kết sau để đăng nhập và liên kết tài khoản UrbanService với Messenger: " +
+                  $"{linkUrl}\n\nLiên kết chỉ dùng một lần và sẽ hết hạn sớm.";
+
+            await SendQuickRepliesAsync(
+                conversation.SenderPsid,
+                message,
+                choices,
+                cancellationToken);
+        }
+        catch
+        {
+            conversation.LastMessageId = null;
+            conversation.UpdatedAt = DateTime.UtcNow;
+            try
+            {
+                await _uow.SaveAsync();
+            }
+            catch
+            {
+                _logger.LogError(
+                    "Failed to persist Messenger account-link recovery state for conversation {ConversationId}.",
+                    conversation.ConversationId);
+            }
+
+            throw;
+        }
     }
 
     private Task SendHelpAsync(string senderPsid, CancellationToken cancellationToken)
@@ -1260,27 +1345,19 @@ public class MessengerService : IMessengerService
             : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sourceMessageId)));
     }
 
-    private async Task<Guid> GetSubmissionUserIdAsync(CancellationToken cancellationToken)
+    private string BuildAccountLinkUrl(string token)
     {
-        var value = GetRequiredConfiguration("Messenger:SubmissionUserId");
-        if (!Guid.TryParse(value, out var userId))
+        var baseUrl = GetRequiredConfiguration("Messenger:AccountLinkBaseUrl");
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttps &&
+             (uri.Scheme != Uri.UriSchemeHttp || !uri.IsLoopback)))
         {
             throw new InvalidOperationException(
-                "Messenger:SubmissionUserId must be a valid SERVICEUSER id.");
+                "Messenger:AccountLinkBaseUrl must use HTTPS, except for a loopback development URL.");
         }
 
-        var isValidSubmissionUser = await _uow.GetRepository<User>().Entities
-            .AsNoTracking()
-            .AnyAsync(
-                user => user.UserId == userId &&
-                        user.IsActive &&
-                        user.Role.RoleName.ToUpper() == UserRole.SERVICEUSER,
-                cancellationToken);
-
-        return isValidSubmissionUser
-            ? userId
-            : throw new InvalidOperationException(
-                "Messenger:SubmissionUserId must reference an active SERVICEUSER account.");
+        var separator = baseUrl.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+        return $"{baseUrl}{separator}token={Uri.EscapeDataString(token)}";
     }
 
     private string GetRequiredConfiguration(string key)

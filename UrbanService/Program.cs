@@ -47,6 +47,7 @@ builder.Services.AddScoped<IManagerAreaAssignmentService, ManagerAreaAssignmentS
 builder.Services.AddScoped<IStaffAreaAssignmentService, StaffAreaAssignmentService>();
 builder.Services.AddScoped<IAreaAlertService, AreaAlertService>();
 builder.Services.AddScoped<IInteractionMessageService, InteractionMessageService>();
+builder.Services.AddScoped<IMessengerAccountLinkService, MessengerAccountLinkService>();
 builder.Services.AddHttpClient<IMessengerService, MessengerService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);

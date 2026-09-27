@@ -67,6 +67,10 @@ public partial class UrbanServiceDbContext : DbContext
 
     public virtual DbSet<MessengerFeedbackConversation> MessengerFeedbackConversations { get; set; }
 
+    public virtual DbSet<MessengerAccountLink> MessengerAccountLinks { get; set; }
+
+    public virtual DbSet<MessengerLinkToken> MessengerLinkTokens { get; set; }
+
     public virtual DbSet<MessengerFeedbackDraftAttachment> MessengerFeedbackDraftAttachments { get; set; }
 
     public virtual DbSet<MessengerFeedbackSubmission> MessengerFeedbackSubmissions { get; set; }
@@ -1162,6 +1166,73 @@ public partial class UrbanServiceDbContext : DbContext
                 .HasForeignKey(d => d.IncidentId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_notification_incident");
+        });
+
+        modelBuilder.Entity<MessengerAccountLink>(entity =>
+        {
+            entity.HasKey(e => e.LinkId).HasName("messenger_account_links_pkey");
+            entity.ToTable("messenger_account_links", table =>
+                table.HasCheckConstraint(
+                    "ck_messenger_account_links_active_revoked",
+                    "(is_active = TRUE AND revoked_at IS NULL) OR (is_active = FALSE AND revoked_at IS NOT NULL)"));
+
+            entity.Property(e => e.LinkId).HasColumnName("link_id");
+            entity.Property(e => e.PageId).HasMaxLength(100).HasColumnName("page_id");
+            entity.Property(e => e.SenderPsid).HasMaxLength(100).HasColumnName("sender_psid");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.LinkedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("linked_at");
+            entity.Property(e => e.RevokedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("revoked_at");
+
+            entity.HasIndex(e => new { e.PageId, e.SenderPsid })
+                .IsUnique()
+                .HasFilter("is_active = TRUE")
+                .HasDatabaseName("uq_messenger_account_links_active_page_sender");
+
+            entity.HasIndex(e => new { e.PageId, e.UserId })
+                .IsUnique()
+                .HasFilter("is_active = TRUE")
+                .HasDatabaseName("uq_messenger_account_links_active_page_user");
+
+            entity.HasOne(d => d.User)
+                .WithMany(p => p.MessengerAccountLinks)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("fk_messenger_account_link_user");
+        });
+
+        modelBuilder.Entity<MessengerLinkToken>(entity =>
+        {
+            entity.HasKey(e => e.LinkTokenId).HasName("messenger_link_tokens_pkey");
+            entity.ToTable("messenger_link_tokens");
+
+            entity.Property(e => e.LinkTokenId).HasColumnName("link_token_id");
+            entity.Property(e => e.PageId).HasMaxLength(100).HasColumnName("page_id");
+            entity.Property(e => e.SenderPsid).HasMaxLength(100).HasColumnName("sender_psid");
+            entity.Property(e => e.TokenHash).HasMaxLength(64).HasColumnName("token_hash");
+            entity.Property(e => e.ExpiresAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("expires_at");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.UsedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("used_at");
+            entity.Property(e => e.InvalidatedAt)
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("invalidated_at");
+
+            entity.HasIndex(e => e.TokenHash)
+                .IsUnique()
+                .HasDatabaseName("uq_messenger_link_tokens_hash");
+
+            entity.HasIndex(e => new { e.PageId, e.SenderPsid, e.ExpiresAt })
+                .HasDatabaseName("ix_messenger_link_tokens_page_sender_expires_at");
         });
 
         modelBuilder.Entity<MessengerFeedbackConversation>(entity =>

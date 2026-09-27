@@ -73,6 +73,8 @@ public partial class User
 
     public virtual ICollection<ManagerAreaAssignment> ManagerAreaAssignmentUpdatedByUsers { get; set; } = new List<ManagerAreaAssignment>();
 
+    public virtual ICollection<MessengerAccountLink> MessengerAccountLinks { get; set; } = new List<MessengerAccountLink>();
+
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
 
     public virtual ICollection<ProviderContactLog> ProviderContactLogs { get; set; } = new List<ProviderContactLog>();
