@@ -53,8 +53,8 @@ public sealed class PhoneVerifiedWriteFilter : IAsyncAuthorizationFilter
          * Chỉ áp cho tài khoản người dân. Tài khoản nội bộ do admin tạo và cờ
          * is_verified của chúng mặc định là false trong database, nên áp cho mọi
          * role sẽ khóa sạch thao tác ghi của staff, manager và admin ngay lúc
-         * deploy. Xác thực email vốn sinh ra để truy nguyên trách nhiệm người gửi
-         * phản ánh, không phải để kiểm soát nhân sự nội bộ.
+         * deploy. Xác thực số điện thoại vốn sinh ra để truy nguyên trách nhiệm
+         * người gửi phản ánh, không phải để kiểm soát nhân sự nội bộ.
          */
         if (!string.Equals(
                 user.FindFirstValue(ClaimTypes.Role),

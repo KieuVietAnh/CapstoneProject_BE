@@ -81,6 +81,7 @@ namespace UrbanService.Controllers
                     Email = result.Email,
                     FullName = result.FullName,
                     PhoneNumber = result.PhoneNumber,
+                    Role = result.Role,
                     IsVerified = result.IsVerified
                 }
             });
@@ -181,7 +182,7 @@ namespace UrbanService.Controllers
             return NoContent();
         }
 
-        /// <summary>Sửa thông tin đăng ký của tài khoản chưa xác thực email.</summary>
+        /// <summary>Sửa thông tin đăng ký của tài khoản chưa xác thực số điện thoại.</summary>
         /// <remarks>
         /// Yêu cầu JWT hợp lệ. Dùng khi người dùng gõ nhầm email lúc đăng ký: họ
         /// không nhận được OTP nên không tự xác thực được, mà đăng ký lại cũng
@@ -190,14 +191,13 @@ namespace UrbanService.Controllers
         /// Giữ nguyên email của chính tài khoản thì **không** báo trùng. Đổi sang
         /// email đang thuộc tài khoản khác thì trả `400`.
         ///
-        /// Khi email đổi, OTP cũ bị hủy ngay và một OTP mới được gửi tới email mới
-        /// trong cùng lời gọi này, nên client **không** cần gọi thêm
-        /// `email-verification/send-otp`.
+        /// Endpoint này **không** gửi OTP. Người dùng bấm gửi mã ở màn xác thực, nơi
+        /// hạn mức SMS được đếm. Số điện thoại là bắt buộc và được chuẩn hoá về E.164.
         ///
         /// Response trả JWT mới vì email nằm trong claim của token.
         /// </remarks>
         /// <response code="200">Cập nhật thành công, trả JWT mới.</response>
-        /// <response code="400">Email không hợp lệ, đã được dùng, hoặc tài khoản đã xác thực.</response>
+        /// <response code="400">Email hoặc số điện thoại không hợp lệ, hoặc tài khoản đã xác thực.</response>
         [HttpPatch("pending-account")]
         [Authorize]
         [AllowUnverifiedPhone]
