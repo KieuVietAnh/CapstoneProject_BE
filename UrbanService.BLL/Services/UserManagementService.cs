@@ -110,10 +110,18 @@ public class UserManagementService : IUserManagementService
             user.FullName = request.FullName.Trim();
         }
 
-        if (request.PhoneNumber != null)
-        {
-            user.PhoneNumber = NormalizeOptional(request.PhoneNumber);
-        }
+        /*
+         * Cố ý bỏ qua request.PhoneNumber.
+         *
+         * Số điện thoại nay là danh tính đã được xác thực bằng OTP. Cho sửa tự do ở
+         * hồ sơ thì một tài khoản đang mang cờ đã xác thực có thể trỏ sang một số
+         * chưa ai kiểm chứng, và cơ chế truy nguyên trách nhiệm người gửi phản ánh
+         * mất ý nghĩa. Muốn đổi số thì đi qua luồng xác thực OTP, nơi số mới được
+         * lấy từ token Firebase.
+         *
+         * Admin vẫn sửa được số qua UpdateUserAsync, đó là thao tác quản trị có
+         * người chịu trách nhiệm.
+         */
 
         if (request.Address != null)
         {

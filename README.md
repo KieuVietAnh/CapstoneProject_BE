@@ -203,9 +203,15 @@ không chứng minh số điện thoại, và tài khoản kiểu này còn chư
 rồi bỏ ngang, khi đó hồ sơ sẽ mang một số không ai chứng minh được còn số đăng ký ban
 đầu thì mất. Số chỉ được ghi đè ở bước `verify`, lấy từ token Firebase.
 
-Một số điện thoại chỉ thuộc về một tài khoản đã xác thực. Ràng buộc đặt ở tầng
-nghiệp vụ chứ không phải unique index, vì dữ liệu hiện có có thể đã trùng số mà
-migration lỗi thì container mới không khởi động được.
+Một số điện thoại chỉ gắn với một tài khoản. Đăng ký bằng số đã có tài khoản thì
+báo trùng, giống như email. Ràng buộc đặt ở tầng nghiệp vụ chứ không phải unique
+index, vì dữ liệu hiện có có thể đã trùng số mà migration lỗi thì container mới
+không khởi động được.
+
+Số điện thoại là **danh tính đã xác thực**, nên `PUT /api/profile` bỏ qua trường
+`phoneNumber`: cho sửa tự do ở hồ sơ thì một tài khoản đang mang cờ đã xác thực có
+thể trỏ sang số chưa ai kiểm chứng. Muốn đổi số thì đi qua luồng OTP, nơi số mới
+được lấy từ token Firebase. Admin vẫn sửa được số qua API quản trị người dùng.
 
 Luồng quên mật khẩu vẫn đi qua **email**, tách làm ba bước, OTP chỉ bị tiêu thụ ở
 bước cuối:
