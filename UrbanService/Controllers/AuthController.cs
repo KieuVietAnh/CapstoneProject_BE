@@ -102,13 +102,16 @@ namespace UrbanService.Controllers
             return Ok(result);
         }
 
-        /// <summary>Đăng nhập bằng tài khoản Google đã xác thực.</summary>
+        /// <summary>Đăng nhập bằng tài khoản Google.</summary>
         /// <remarks>
-        /// Frontend gửi Google ID token nhận từ Google Identity Services.
-        /// Backend xác minh token và chỉ đăng nhập khi email đã tồn tại trong
-        /// UrbanService, `isVerified = true` và tài khoản đang hoạt động.
+        /// Frontend gửi Google ID token nhận từ Google Identity Services. Backend
+        /// xác minh chữ ký, hạn dùng theo `GoogleAuth:ClientId` và claim
+        /// `email_verified`, rồi yêu cầu tài khoản đang hoạt động.
         ///
-        /// API không tự động tạo tài khoản mới.
+        /// Lần đăng nhập đầu tiên **có** tạo tài khoản mới, nhưng với
+        /// `isVerified = false`: Google chứng minh quyền sở hữu email, không phải
+        /// số điện thoại, mà cờ này nay mang nghĩa đã xác thực SĐT. Tài khoản kiểu
+        /// này phải qua luồng `phone-verification` trước khi ghi được gì.
         /// </remarks>
         [HttpPost("google-login")]
         [AllowAnonymous]
@@ -184,9 +187,9 @@ namespace UrbanService.Controllers
 
         /// <summary>Sửa thông tin đăng ký của tài khoản chưa xác thực số điện thoại.</summary>
         /// <remarks>
-        /// Yêu cầu JWT hợp lệ. Dùng khi người dùng gõ nhầm email lúc đăng ký: họ
-        /// không nhận được OTP nên không tự xác thực được, mà đăng ký lại cũng
-        /// không xong vì email cũ đã chiếm chỗ.
+        /// Yêu cầu JWT hợp lệ. Dùng khi người dùng gõ nhầm email hoặc số điện thoại
+        /// lúc đăng ký: gõ nhầm số thì OTP gửi tới máy người khác nên không tự xác
+        /// thực được, mà đăng ký lại cũng không xong vì email cũ đã chiếm chỗ.
         ///
         /// Giữ nguyên email của chính tài khoản thì **không** báo trùng. Đổi sang
         /// email đang thuộc tài khoản khác thì trả `400`.
