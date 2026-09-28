@@ -359,7 +359,7 @@ namespace UrbanService.BLL.Services
                     "OTP cho {PhoneNumber} dùng số test nên không tính vào hạn mức. " +
                     "Danh sách số test đang nạp được: {TestNumbers}",
                     phoneNumber,
-                    string.Join(", ", _phoneOtpOptions.TestNumbers));
+                    string.Join(", ", _phoneOtpOptions.AllTestNumbers()));
 
                 return new RequestPhoneOtpResultDto
                 {
@@ -373,7 +373,7 @@ namespace UrbanService.BLL.Services
                 "OTP cho {PhoneNumber} KHÔNG nằm trong danh sách số test nên sẽ tốn một tin " +
                 "nhắn thật. Danh sách số test đang nạp được: {TestNumbers}",
                 phoneNumber,
-                string.Join(", ", _phoneOtpOptions.TestNumbers));
+                string.Join(", ", _phoneOtpOptions.AllTestNumbers()));
 
             var today = VietnamToday();
             var otpRepo = _uow.GetRepository<PhoneOtpRequest>();
@@ -485,7 +485,7 @@ namespace UrbanService.BLL.Services
 
         private bool IsTestPhoneNumber(string phoneNumber)
         {
-            return _phoneOtpOptions.TestNumbers
+            return _phoneOtpOptions.AllTestNumbers()
                 .Select(PhoneNumberHelper.Normalize)
                 .Any(candidate => string.Equals(candidate, phoneNumber, StringComparison.Ordinal));
         }

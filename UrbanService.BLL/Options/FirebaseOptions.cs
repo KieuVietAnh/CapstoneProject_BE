@@ -41,6 +41,38 @@ public sealed class PhoneOtpOptions
     /// này nên chúng không tốn tiền và không bị tính vào hạn mức.
     /// </summary>
     public string[] TestNumbers { get; set; } = [];
+
+    /// <summary>
+    /// Cùng danh sách trên nhưng dưới dạng một chuỗi ngăn cách bằng dấu phẩy, để khai
+    /// được qua biến môi trường.
+    ///
+    /// Mảng trong appsettings chỉ ghi đè được bằng biến chỉ số kiểu
+    /// <c>PhoneOtp__TestNumbers__0</c>, rất khó dùng lúc deploy. Có thêm đường này thì
+    /// môi trường thật luôn khai được danh sách mà không phụ thuộc vào việc file
+    /// appsettings có tới được container hay không — và số test bị tính nhầm vào hạn
+    /// mức là mất tiền thật.
+    /// </summary>
+    public string? TestNumbersCsv { get; set; }
+
+    /// <summary>Gộp hai nguồn khai báo ở trên.</summary>
+    public IEnumerable<string> AllTestNumbers()
+    {
+        foreach (var number in TestNumbers)
+        {
+            yield return number;
+        }
+
+        if (string.IsNullOrWhiteSpace(TestNumbersCsv))
+        {
+            yield break;
+        }
+
+        foreach (var number in TestNumbersCsv.Split(
+            ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            yield return number;
+        }
+    }
 }
 
 /// <summary>Hạn mức gửi phản ánh, để một tài khoản không spam hệ thống tiếp nhận.</summary>
