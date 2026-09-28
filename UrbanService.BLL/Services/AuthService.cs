@@ -146,7 +146,25 @@ namespace UrbanService.BLL.Services
             }
 
             var userRepo = _uow.GetRepository<User>();
-            await EnsurePhoneNumberAvailableAsync(phoneNumber, excludedUserId: null);
+
+            /*
+             * Một số điện thoại chỉ gắn với một tài khoản. Trước đây chỗ này chỉ chặn
+             * khi số đã thuộc tài khoản ĐÃ xác thực, nên hai tài khoản chưa xác thực
+             * vẫn khai cùng một số và database đọng lại số trùng.
+             */
+            var phoneTaken = await userRepo.Entities
+                .AsNoTracking()
+                .AnyAsync(candidate =>
+                    candidate.IsActive &&
+                    candidate.PhoneNumber == phoneNumber);
+
+            if (phoneTaken)
+            {
+                throw new BusinessRuleException(
+                    BusinessErrorCode.PhoneAlreadyUsed,
+                    "Số điện thoại đã được sử dụng. Hãy đăng nhập, hoặc dùng chức năng quên mật khẩu.",
+                    ConflictStatusCode);
+            }
             var existingUser = await userRepo.FindAsync(
                 u => u.Email.ToLower() == email.ToLower(),
                 q => q.Include(u => u.Role));
@@ -337,6 +355,12 @@ namespace UrbanService.BLL.Services
              */
             if (IsTestPhoneNumber(phoneNumber))
             {
+                _logger.LogInformation(
+                    "OTP cho {PhoneNumber} dùng số test nên không tính vào hạn mức. " +
+                    "Danh sách số test đang nạp được: {TestNumbers}",
+                    phoneNumber,
+                    string.Join(", ", _phoneOtpOptions.TestNumbers));
+
                 return new RequestPhoneOtpResultDto
                 {
                     PhoneNumber = phoneNumber,
@@ -344,6 +368,12 @@ namespace UrbanService.BLL.Services
                     IsTestNumber = true
                 };
             }
+
+            _logger.LogInformation(
+                "OTP cho {PhoneNumber} KHÔNG nằm trong danh sách số test nên sẽ tốn một tin " +
+                "nhắn thật. Danh sách số test đang nạp được: {TestNumbers}",
+                phoneNumber,
+                string.Join(", ", _phoneOtpOptions.TestNumbers));
 
             var today = VietnamToday();
             var otpRepo = _uow.GetRepository<PhoneOtpRequest>();
