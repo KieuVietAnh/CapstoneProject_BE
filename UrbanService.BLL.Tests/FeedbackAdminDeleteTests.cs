@@ -7,6 +7,7 @@ using NSubstitute;
 using System.Text.Json;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Interfaces;
+using UrbanService.BLL.Options;
 using UrbanService.BLL.Services;
 using UrbanService.Controllers;
 using UrbanService.DAL.Data;
@@ -191,7 +192,8 @@ public class FeedbackAdminDeleteTests
             Substitute.For<INotificationService>(),
             Substitute.For<IAiFeedbackReviewQueue>(),
             Substitute.For<IAiFeedbackDuplicateService>(),
-            Substitute.For<IIncidentService>());
+            Substitute.For<IIncidentService>(),
+            Microsoft.Extensions.Options.Options.Create(new FeedbackLimitOptions()));
     }
 
     private static ManagementFeedbacksController CreateController(IFeedbackService feedbackService)

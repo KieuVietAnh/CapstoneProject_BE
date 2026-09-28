@@ -25,6 +25,12 @@ public partial class User
 
     public bool IsVerified { get; set; }
 
+    /// <summary>UID của tài khoản Firebase đã dùng để xác thực số điện thoại.</summary>
+    public string? FirebaseUid { get; set; }
+
+    /// <summary>Thời điểm xác thực số điện thoại thành công qua OTP.</summary>
+    public DateTime? PhoneVerifiedAt { get; set; }
+
     public string? RefreshToken { get; set; }
 
     public bool IsRefreshTokenRevoked { get; set; }

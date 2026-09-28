@@ -378,3 +378,7 @@ appsettings.Production.json
 
 # Local BMad user overrides
 _bmad/config.user.toml
+
+# Khoá riêng Firebase service account: chỉ để trên máy lập trình viên, môi trường
+# deploy đọc qua biến môi trường Firebase__ServiceAccountJson.
+firebase-service-account*.json

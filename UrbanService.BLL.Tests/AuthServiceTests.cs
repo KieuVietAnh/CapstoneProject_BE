@@ -8,6 +8,7 @@ using NSubstitute;
 using UrbanService.BLL.Common.Securities;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
+using UrbanService.BLL.Options;
 using UrbanService.BLL.Services;
 using UrbanService.Controllers;
 using UrbanService.DAL.Entities;
@@ -347,7 +348,9 @@ public class AuthServiceTests
                 Substitute.For<IJwtTokenGenerator>(),
                 EmailSender,
                 Cache,
-                Substitute.For<ILogger<AuthService>>());
+                Substitute.For<ILogger<AuthService>>(),
+                Substitute.For<IFirebasePhoneVerifier>(),
+                Microsoft.Extensions.Options.Options.Create(new PhoneOtpOptions()));
         }
 
         public List<User> Users { get; } = [];
