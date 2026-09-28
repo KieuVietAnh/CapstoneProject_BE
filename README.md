@@ -155,8 +155,16 @@ người gọi thẳng Firebase vẫn đốt tiền.
 | SMS OTP | 5 / ngày | Toàn hệ thống, giờ Việt Nam | `PhoneOtp:DailyLimit` |
 | Gửi phản ánh | 3 / ngày | Mỗi tài khoản, chỉ kênh Web | `FeedbackLimits:DailyPerUser` |
 
-Số khai trong `PhoneOtp:TestNumbers` là số test của Firebase Console: dùng mã cố
-định, không phát sinh SMS thật nên **không tính vào hạn mức**. Dùng chúng để demo.
+Số test của Firebase Console dùng mã cố định, không phát sinh SMS thật nên **không
+tính vào hạn mức**. Khai bằng một trong hai cách, hệ thống gộp cả hai:
+
+- `PhoneOtp:TestNumbers` — mảng trong `appsettings.json`, tiện lúc chạy máy cá nhân.
+- `PhoneOtp:TestNumbersCsv` — chuỗi ngăn cách bằng dấu phẩy, khai qua biến môi trường
+  `PHONE_OTP_TEST_NUMBERS`. Dùng cho môi trường deploy, vì mảng trong appsettings chỉ
+  ghi đè được bằng biến chỉ số kiểu `PhoneOtp__TestNumbers__0`, rất khó dùng.
+
+Danh sách này phải **khớp với Firebase Console**: một số có ở đây mà thiếu bên Console
+sẽ vừa gửi tin thật vừa không bị tính lượt.
 
 Xác thực **không** phải điều kiện để đăng nhập, mà là điều kiện để **ghi dữ liệu**.
 Người dùng chưa xác thực vẫn đăng nhập, xem bảng tin, bản đồ sự cố và nhận thông báo
