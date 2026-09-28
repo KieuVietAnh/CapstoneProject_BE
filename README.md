@@ -119,6 +119,7 @@ database thay cho `host.docker.internal`.
 | --- | --- |
 | Upload ảnh | `Cloudinary` |
 | Email | `Brevo` |
+| SMS OTP xác thực SĐT | `Firebase`, `PhoneOtp` |
 | Google login | `GoogleAuth` |
 | AI | `AI`, `OpenRouter` |
 | Messenger bot | `Messenger` |
@@ -127,18 +128,45 @@ database thay cho `host.docker.internal`.
 
 Xem tên biến môi trường Docker trong [docker-compose.yml](docker-compose.yml).
 
-Tài khoản xác thực bằng OTP gửi qua email, dùng chung cấu hình `Brevo` với luồng
-quên mật khẩu. OTP có hiệu lực 5 phút và có cooldown 60 giây giữa hai lần gửi.
+Tài khoản được xác thực bằng **OTP gửi qua SMS tới số điện thoại**, dùng Firebase
+Phone Authentication. Email vẫn bắt buộc khi đăng ký nhưng dành cho luồng quên mật
+khẩu, vì gửi email gần như không tốn gì trong khi mỗi tin SMS là chi phí thật.
 
-Xác thực email **không** phải điều kiện để đăng nhập, mà là điều kiện để ghi dữ
-liệu. Người dùng chưa xác thực vẫn đăng nhập, xem sự vụ và nhận thông báo bình
-thường; mọi thao tác ghi đều bị chặn với `403` và `code = EMAIL_NOT_VERIFIED`.
+Backend **không gửi SMS**. Firebase gửi từ phía client; backend xác minh Firebase ID
+token bằng Admin SDK rồi lấy số điện thoại **từ trong token đã kiểm tra chữ ký**,
+không tin số client gửi lên — nếu không thì gửi đại một số là qua cửa.
 
-Ràng buộc nằm ở `EmailVerifiedWriteFilter`, đăng ký toàn cục nên không endpoint ghi
+```text
+POST /api/auth/register                      -> tạo tài khoản, trả JWT (isVerified=false), KHÔNG gửi OTP
+POST /api/auth/google-login                  -> lần đầu tự tạo tài khoản, isVerified=false
+POST /api/auth/phone-verification/request-otp -> [Authorize] xin phép gửi SMS, kiểm tra hạn mức
+POST /api/auth/phone-verification/verify      -> [Authorize] gửi Firebase ID token, isVerified=true
+PATCH /api/auth/pending-account               -> [Authorize] sửa thông tin tài khoản chưa xác thực
+```
+
+`request-otp` không gửi gì cả: nó kiểm tra số hợp lệ, chưa thuộc tài khoản đã xác
+thực khác, và hôm nay còn hạn mức, rồi ghi một lượt vào `phone_otp_requests`. Client
+chỉ gọi `signInWithPhoneNumber` của Firebase **sau khi** endpoint này trả `200`. Hạn
+mức phải nằm ở backend vì API key Firebase của web là công khai; chặn ở frontend thì
+người gọi thẳng Firebase vẫn đốt tiền.
+
+| Hạn mức | Mặc định | Phạm vi | Cấu hình |
+| --- | --- | --- | --- |
+| SMS OTP | 5 / ngày | Toàn hệ thống, giờ Việt Nam | `PhoneOtp:DailyLimit` |
+| Gửi phản ánh | 3 / ngày | Mỗi tài khoản, chỉ kênh Web | `FeedbackLimits:DailyPerUser` |
+
+Số khai trong `PhoneOtp:TestNumbers` là số test của Firebase Console: dùng mã cố
+định, không phát sinh SMS thật nên **không tính vào hạn mức**. Dùng chúng để demo.
+
+Xác thực **không** phải điều kiện để đăng nhập, mà là điều kiện để **ghi dữ liệu**.
+Người dùng chưa xác thực vẫn đăng nhập, xem bảng tin, bản đồ sự cố và nhận thông báo
+bình thường; mọi thao tác ghi bị chặn với `403` và `data.code = PHONE_NOT_VERIFIED`.
+
+Ràng buộc nằm ở `PhoneVerifiedWriteFilter`, đăng ký toàn cục nên không endpoint ghi
 nào lọt lưới. Filter chỉ áp cho role `SERVICEUSER`: tài khoản nội bộ do admin tạo có
 `is_verified` mặc định `false`, áp cho mọi role sẽ khóa sạch thao tác của staff,
 manager và admin ngay lúc deploy. Các API hoàn tất đăng ký được đánh dấu
-`[AllowUnverifiedEmail]` nên vẫn gọi được, nếu không người dùng sẽ không có đường
+`[AllowUnverifiedPhone]` nên vẫn gọi được, nếu không người dùng sẽ không có đường
 nào để tự xác thực.
 
 Đăng nhập bằng tài khoản chưa xác thực vẫn trả `200` và vẫn có token, nhưng body
@@ -146,42 +174,38 @@ khác:
 
 ```jsonc
 {
-  "code": "EMAIL_NOT_VERIFIED",
-  "message": "Email chưa được xác thực.",
+  "code": "PHONE_NOT_VERIFIED",
+  "message": "Số điện thoại chưa được xác thực.",
   "token": "...",
   "refreshToken": "...",
-  "user": { "id": "...", "email": "...", "fullName": "...", "phoneNumber": "...", "isVerified": false }
+  "user": { "id": "...", "email": "...", "fullName": "...", "phoneNumber": "...", "role": "SERVICEUSER", "isVerified": false }
 }
 ```
 
-```text
-POST /api/auth/register                    -> tạo tài khoản, trả JWT (isVerified=false)
-POST /api/auth/google-login                -> lần đầu tự tạo tài khoản, isVerified theo Google
-POST /api/auth/email-verification/send-otp -> [Authorize] gửi OTP tới email tài khoản
-POST /api/auth/email-verification/verify   -> [Authorize] xác thực OTP, isVerified=true
-PATCH /api/auth/pending-account            -> [Authorize] sửa thông tin tài khoản chưa xác thực
-```
+`pending-account` dùng cho trường hợp gõ nhầm thông tin lúc đăng ký và muốn quay lại
+sửa. Giữ nguyên email hoặc số điện thoại của chính tài khoản thì không báo trùng;
+đổi sang giá trị của tài khoản khác thì trả `400`. Endpoint này không gửi OTP —
+người dùng bấm gửi mã ở màn xác thực, nơi hạn mức được đếm. Response trả JWT mới.
 
-`pending-account` dùng cho trường hợp gõ nhầm email lúc đăng ký. Giữ nguyên email
-của chính tài khoản thì không báo trùng; đổi sang email của tài khoản khác thì trả
-`400`. Khi email đổi, OTP cũ bị hủy và OTP mới được gửi ngay trong lời gọi đó, nên
-client không cần gọi thêm `email-verification/send-otp`. Response trả JWT mới vì
-email nằm trong claim của token.
+Đăng ký lại bằng email của một tài khoản **chưa xác thực** sẽ cập nhật tên, số điện
+thoại và mật khẩu rồi trả token mới, thay vì báo trùng email khiến người bỏ dở giữa
+chừng kẹt vĩnh viễn; tài khoản đã xác thực hoặc đã bị khóa thì vẫn báo
+`Email đã được sử dụng.` Đăng nhập Google tạo tài khoản với `isVerified = false`:
+Google chứng minh email chứ không chứng minh số điện thoại, và tài khoản kiểu này
+còn chưa có số nào.
 
-Luồng quên mật khẩu tách làm ba bước, OTP chỉ bị tiêu thụ ở bước cuối:
+Một số điện thoại chỉ thuộc về một tài khoản đã xác thực. Ràng buộc đặt ở tầng
+nghiệp vụ chứ không phải unique index, vì dữ liệu hiện có có thể đã trùng số mà
+migration lỗi thì container mới không khởi động được.
+
+Luồng quên mật khẩu vẫn đi qua **email**, tách làm ba bước, OTP chỉ bị tiêu thụ ở
+bước cuối:
 
 ```text
 POST /api/auth/forgot-password/send-otp   -> gửi OTP tới email, luôn trả 204
 POST /api/auth/forgot-password/verify-otp -> kiểm tra OTP, không tiêu thụ
 POST /api/auth/forgot-password/reset      -> đổi mật khẩu, tiêu thụ OTP, thu hồi refresh token
 ```
-
-Đăng ký bằng email và mật khẩu trả JWT ngay, người dùng tự gọi
-`email-verification/send-otp` khi cần xác thực. Đăng ký lại bằng email của một tài
-khoản **chưa xác thực** sẽ cập nhật tên, số điện thoại và mật khẩu rồi trả token
-mới, thay vì báo trùng email; tài khoản đã xác thực hoặc đã bị khóa thì vẫn báo
-`Email đã được sử dụng.` Đăng nhập Google lấy luôn trạng
-thái xác thực email từ Google nên không phải nhập OTP lại.
 
 Phản ánh từ Messenger chỉ được tạo sau khi người gửi liên kết Messenger với một
 tài khoản `SERVICEUSER` đã xác thực và có số điện thoại. Bot gửi liên kết dùng một

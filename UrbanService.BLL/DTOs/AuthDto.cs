@@ -94,6 +94,13 @@ namespace UrbanService.BLL.Dtos
         public string Email { get; set; } = "";
         public string? FullName { get; set; }
         public string? PhoneNumber { get; set; }
+
+        /// <summary>
+        /// Role thật của tài khoản. Thiếu trường này thì client mất role ngay sau khi
+        /// đăng nhập, không biết dựng menu nào hay đưa người dùng về trang nào.
+        /// </summary>
+        public string? Role { get; set; }
+
         public bool IsVerified { get; set; }
     }
 

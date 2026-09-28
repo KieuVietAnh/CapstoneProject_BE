@@ -215,14 +215,15 @@ namespace UrbanService.BLL.Services
                 q => q.Include(u => u.Role));
 
             /*
-             * Google đăng nhập lần đầu thì tạo luôn tài khoản. Xác thực của hệ
-             * thống là xác thực email, mà Google đã xác thực email rồi, nên lấy
-             * luôn payload.EmailVerified thay vì bắt người dùng nhập OTP cho
-             * chính email Google vừa chứng minh quyền sở hữu.
+             * Google đăng nhập lần đầu thì tạo luôn tài khoản, nhưng IsVerified vẫn
+             * là false: Google chứng minh quyền sở hữu email, không phải số điện
+             * thoại, mà cờ này nay mang nghĩa đã xác thực số điện thoại. Tài khoản
+             * kiểu này chưa có số nào cả, nên họ phải qua màn xác thực nhập số rồi
+             * nhận OTP trước khi gửi được phản ánh.
              */
             if (user == null)
             {
-                user = await CreateGoogleUserAsync(email, payload.Name, payload.EmailVerified);
+                user = await CreateGoogleUserAsync(email, payload.Name);
             }
 
             if (!user.IsActive)
@@ -777,8 +778,7 @@ namespace UrbanService.BLL.Services
         /// </summary>
         private async Task<User> CreateGoogleUserAsync(
             string email,
-            string? displayName,
-            bool emailVerified)
+            string? displayName)
         {
             var role = await GetOrCreateDefaultRoleAsync();
             var now = DateTime.UtcNow;
@@ -792,7 +792,7 @@ namespace UrbanService.BLL.Services
                     Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))),
                 PhoneNumber = null,
                 IsActive = true,
-                IsVerified = emailVerified,
+                IsVerified = false,
                 IsRefreshTokenRevoked = false,
                 CreatedAt = now,
                 UpdatedAt = now,
