@@ -187,12 +187,21 @@ sửa. Giữ nguyên email hoặc số điện thoại của chính tài khoản
 đổi sang giá trị của tài khoản khác thì trả `400`. Endpoint này không gửi OTP —
 người dùng bấm gửi mã ở màn xác thực, nơi hạn mức được đếm. Response trả JWT mới.
 
-Đăng ký lại bằng email của một tài khoản **chưa xác thực** sẽ cập nhật tên, số điện
-thoại và mật khẩu rồi trả token mới, thay vì báo trùng email khiến người bỏ dở giữa
-chừng kẹt vĩnh viễn; tài khoản đã xác thực hoặc đã bị khóa thì vẫn báo
-`Email đã được sử dụng.` Đăng nhập Google tạo tài khoản với `isVerified = false`:
-Google chứng minh email chứ không chứng minh số điện thoại, và tài khoản kiểu này
-còn chưa có số nào.
+Đăng nhập nhận **email hoặc số điện thoại** ở cùng một ô: chuỗi nào chuẩn hoá được
+về E.164 thì tra theo số, còn lại tra theo email.
+
+Email đã có tài khoản thì đăng ký luôn báo trùng, kể cả khi tài khoản đó chưa xác
+thực. Cho đăng ký đè lên tài khoản chưa xác thực sẽ mở đường chiếm tài khoản: ai
+biết email đó chỉ cần đăng ký lại là ghi đè được cả mật khẩu lẫn số điện thoại của
+người ta. Người bỏ dở giữa chừng quay lại bằng cách đăng nhập, hoặc dùng luồng quên
+mật khẩu qua email.
+
+Đăng nhập Google tạo tài khoản với `isVerified = false`: Google chứng minh email chứ
+không chứng minh số điện thoại, và tài khoản kiểu này còn chưa có số nào.
+
+`request-otp` **không** ghi số điện thoại vào hồ sơ. Người dùng có thể gõ một số khác
+rồi bỏ ngang, khi đó hồ sơ sẽ mang một số không ai chứng minh được còn số đăng ký ban
+đầu thì mất. Số chỉ được ghi đè ở bước `verify`, lấy từ token Firebase.
 
 Một số điện thoại chỉ thuộc về một tài khoản đã xác thực. Ràng buộc đặt ở tầng
 nghiệp vụ chứ không phải unique index, vì dữ liệu hiện có có thể đã trùng số mà

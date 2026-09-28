@@ -65,17 +65,42 @@ namespace UrbanService.BLL.Services
 
             if (string.IsNullOrWhiteSpace(login) || string.IsNullOrWhiteSpace(req.Password))
             {
-                throw new Exception("Email và mật khẩu là bắt buộc.");
+                throw new Exception("Email hoặc số điện thoại và mật khẩu là bắt buộc.");
             }
 
             var userRepo = _uow.GetRepository<User>();
-            var user = await userRepo.FindAsync(
-                u => u.Email.ToLower() == login.ToLower(),
-                q => q.Include(u => u.Role));
+
+            /*
+             * Người dùng đăng ký bằng cả email lẫn số điện thoại nên họ nhớ cái nào
+             * thì cho đăng nhập bằng cái đó. Chuỗi nào chuẩn hoá được về E.164 thì
+             * coi là số điện thoại, còn lại coi là email.
+             */
+            var phoneLogin = PhoneNumberHelper.Normalize(login);
+            User? user;
+
+            if (phoneLogin != null)
+            {
+                /*
+                 * Một số có thể còn sót ở vài tài khoản chưa xác thực, nên ưu tiên
+                 * tài khoản đã xác thực số đó — đó mới là chủ thật của nó.
+                 */
+                user = await userRepo.Entities
+                    .Include(candidate => candidate.Role)
+                    .Where(candidate => candidate.PhoneNumber == phoneLogin)
+                    .OrderByDescending(candidate => candidate.IsVerified)
+                    .FirstOrDefaultAsync();
+            }
+            else
+            {
+                user = await userRepo.FindAsync(
+                    u => u.Email.ToLower() == login.ToLower(),
+                    q => q.Include(u => u.Role));
+            }
 
             if (user == null || !PasswordHasher.Verify(req.Password, user.PasswordHash))
             {
-                throw new UnauthorizedAccessException("Email hoặc mật khẩu không đúng.");
+                throw new UnauthorizedAccessException(
+                    "Email hoặc số điện thoại không đúng, hoặc sai mật khẩu.");
             }
 
             if (!user.IsActive)
@@ -129,28 +154,21 @@ namespace UrbanService.BLL.Services
             if (existingUser != null)
             {
                 /*
-                 * Tài khoản đã xác thực thì email coi như có chủ, không cho ghi đè.
-                 * Tài khoản bị khóa cũng vậy: cho đăng ký lại sẽ thành đường mở lại
-                 * tài khoản đã bị chặn.
+                 * Email đã có tài khoản thì luôn báo trùng, kể cả khi tài khoản đó
+                 * chưa xác thực.
+                 *
+                 * Trước đây chỗ này cho đăng ký đè lên tài khoản chưa xác thực, để
+                 * người bỏ dở giữa chừng không bị kẹt. Nhưng nó mở ra đường chiếm
+                 * tài khoản: ai biết email của một tài khoản chưa xác thực chỉ cần
+                 * đăng ký lại bằng email đó là ghi đè được cả mật khẩu lẫn số điện
+                 * thoại của người ta.
+                 *
+                 * Người bỏ dở vẫn có hai đường quay lại mà không cần ghi đè: đăng
+                 * nhập bằng email hoặc số điện thoại với mật khẩu họ vừa đặt, hoặc
+                 * dùng luồng quên mật khẩu qua email.
                  */
-                if (existingUser.IsVerified || !existingUser.IsActive)
-                {
-                    throw new Exception("Email đã được sử dụng.");
-                }
-
-                /*
-                 * Chưa xác thực thì cho đăng ký lại đè lên, vì chưa ai chứng minh
-                 * quyền sở hữu email này. Không cho thì người bỏ dở giữa chừng sẽ
-                 * kẹt vĩnh viễn: họ không nhận được OTP để xác thực, mà email đã bị
-                 * chính tài khoản dở dang của họ chiếm chỗ.
-                 */
-                existingUser.FullName = fullName;
-                existingUser.PasswordHash = PasswordHasher.Hash(req.Password);
-                existingUser.PhoneNumber = phoneNumber;
-                existingUser.UpdatedAt = DateTime.UtcNow;
-                await _uow.SaveAsync();
-
-                return await IssueAuthResultAsync(existingUser);
+                throw new Exception(
+                    "Email đã được sử dụng. Hãy đăng nhập, hoặc dùng chức năng quên mật khẩu.");
             }
 
             var role = await GetOrCreateDefaultRoleAsync();
@@ -305,12 +323,12 @@ namespace UrbanService.BLL.Services
 
             await EnsurePhoneNumberAvailableAsync(phoneNumber, excludedUserId: userId);
 
-            if (!string.Equals(user.PhoneNumber, phoneNumber, StringComparison.Ordinal))
-            {
-                user.PhoneNumber = phoneNumber;
-                user.UpdatedAt = DateTime.UtcNow;
-                await _uow.SaveAsync();
-            }
+            /*
+             * Cố ý KHÔNG lưu số này vào hồ sơ ở đây. Người dùng có thể gõ một số
+             * khác rồi bỏ ngang, và khi đó hồ sơ sẽ mang một số mà không ai chứng
+             * minh được là của họ, còn số đăng ký ban đầu thì mất. Số chỉ được ghi
+             * đè ở bước verify, khi Firebase đã xác nhận họ cầm đúng chiếc SIM đó.
+             */
 
             /*
              * Số test khai trong Firebase Console dùng mã cố định và không phát sinh
