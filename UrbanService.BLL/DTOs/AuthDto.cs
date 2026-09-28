@@ -50,7 +50,12 @@ namespace UrbanService.BLL.Dtos
 
     public class LoginRequest
     {
+        /// <summary>
+        /// Email hoặc số điện thoại. Giữ tên field là Email để không phá client cũ;
+        /// chuỗi nào chuẩn hoá được về E.164 thì được tra theo số điện thoại.
+        /// </summary>
         public string Email { get; set; } = "";
+
         public string Password { get; set; } = "";
     }
 
