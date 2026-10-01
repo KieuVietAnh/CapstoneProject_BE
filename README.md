@@ -152,7 +152,7 @@ người gọi thẳng Firebase vẫn đốt tiền.
 
 | Hạn mức | Mặc định | Phạm vi | Cấu hình |
 | --- | --- | --- | --- |
-| SMS OTP | 5 / ngày | Toàn hệ thống, giờ Việt Nam | `PhoneOtp:DailyLimit` |
+| SMS OTP | 10 / ngày | Toàn hệ thống, giờ Việt Nam | `PhoneOtp:DailyLimit` |
 | Gửi phản ánh | 3 / ngày | Mỗi tài khoản, chỉ kênh Web | `FeedbackLimits:DailyPerUser` |
 
 Số test của Firebase Console dùng mã cố định, không phát sinh SMS thật nên **không
