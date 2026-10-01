@@ -11,7 +11,7 @@ services:
       # Nội dung JSON service account Firebase. Khoá riêng nên không commit vào repo.
       Firebase__ServiceAccountJson: ${FIREBASE_SERVICE_ACCOUNT_JSON}
       # Trần SMS OTP mỗi ngày cho toàn hệ thống. Mỗi tin là chi phí thật.
-      PhoneOtp__DailyLimit: ${PHONE_OTP_DAILY_LIMIT:-5}
+      PhoneOtp__DailyLimit: ${PHONE_OTP_DAILY_LIMIT:-10}
       # Số test khai trong Firebase Console: không phát SMS thật nên không tính lượt.
       # Khai ở đây để không phụ thuộc vào file appsettings trong image.
       PhoneOtp__TestNumbersCsv: ${PHONE_OTP_TEST_NUMBERS:-+84909999999,+84987654321,+84901234567,+84999999999}

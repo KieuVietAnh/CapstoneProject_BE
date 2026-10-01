@@ -34,7 +34,7 @@ public sealed class PhoneOtpOptions
     public const string SectionName = "PhoneOtp";
 
     /// <summary>Số SMS thật tối đa toàn hệ thống mỗi ngày, tính theo giờ Việt Nam.</summary>
-    public int DailyLimit { get; set; } = 5;
+    public int DailyLimit { get; set; } = 10;
 
     /// <summary>
     /// Số test khai trong Firebase Console. Firebase không gửi SMS thật cho những số
