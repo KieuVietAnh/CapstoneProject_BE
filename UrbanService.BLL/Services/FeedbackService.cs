@@ -3392,6 +3392,79 @@ public class FeedbackService : IFeedbackService
         }
     }
 
+    public async Task<IncidentResolutionReviewSummaryDto> GetIncidentResolutionReviewsAsync(
+        Guid incidentId,
+        Guid currentUserId)
+    {
+        await ManagementAccessRules.EnsureIncidentReadAccessAsync(_uow, incidentId, currentUserId);
+
+        /*
+         * Một sự vụ gộp nhiều phản ánh, mỗi phản ánh một chủ, và mỗi chủ đánh giá
+         * phần của mình. Nên số đánh giá tối đa bằng số phản ánh đang liên kết chứ
+         * không phải một.
+         */
+        var links = await _uow.GetRepository<IncidentReportLink>().Entities
+            .AsNoTracking()
+            .Where(link =>
+                link.IncidentId == incidentId &&
+                link.LinkStatus == IncidentLinkStatus.Active)
+            .Select(link => new
+            {
+                link.FeedbackId,
+                link.LinkRole,
+                link.Feedback.Title
+            })
+            .ToListAsync();
+
+        var feedbackIds = links.Select(link => link.FeedbackId).ToList();
+
+        var reviews = await _uow.GetRepository<FeedbackResolutionReview>().Entities
+            .AsNoTracking()
+            .Include(review => review.User)
+            .Where(review => feedbackIds.Contains(review.FeedbackId))
+            .OrderByDescending(review => review.CreatedAt)
+            .ToListAsync();
+
+        var items = reviews
+            .Select(review =>
+            {
+                var link = links.FirstOrDefault(item => item.FeedbackId == review.FeedbackId);
+                return new IncidentResolutionReviewItemDto
+                {
+                    ReviewId = review.ReviewId,
+                    FeedbackId = review.FeedbackId,
+                    UserId = review.UserId,
+                    UserName = review.User?.FullName,
+                    Rating = review.Rating ?? 0,
+                    IsSatisfied = review.IsSatisfied ?? false,
+                    Comment = review.Comment,
+                    CreatedAt = review.CreatedAt,
+                    FeedbackTitle = link?.Title,
+                    LinkRole = link?.LinkRole
+                };
+            })
+            .ToList();
+
+        // Chỉ tính trung bình trên đánh giá có điểm hợp lệ; dòng dữ liệu khuyết điểm
+        // mà vẫn gộp vào sẽ kéo trung bình xuống một cách sai lệch.
+        var ratedScores = items
+            .Where(item => item.Rating is >= 1 and <= 5)
+            .Select(item => (double)item.Rating)
+            .ToList();
+
+        return new IncidentResolutionReviewSummaryDto
+        {
+            IncidentId = incidentId,
+            EligibleReportCount = links.Count,
+            ReviewCount = items.Count,
+            SatisfiedCount = items.Count(item => item.IsSatisfied),
+            AverageRating = ratedScores.Count == 0
+                ? null
+                : Math.Round(ratedScores.Average(), 2),
+            Items = items
+        };
+    }
+
     public async Task<FeedbackResolutionReviewDto> CitizenReviewAsync(
     CitizenReviewRequest request)
     {

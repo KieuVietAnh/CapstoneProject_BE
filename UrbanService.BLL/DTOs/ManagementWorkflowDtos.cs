@@ -387,6 +387,38 @@ public class FeedbackResolutionReviewDto
     
 }
 
+/// <summary>
+/// Một đánh giá của người dân về kết quả xử lý, kèm phản ánh mà họ đã gửi.
+///
+/// Một sự vụ gộp nhiều phản ánh của nhiều người khác nhau, mỗi người đánh giá phần
+/// phản ánh của riêng mình, nên manager cần biết đánh giá này đến từ phản ánh nào.
+/// </summary>
+public class IncidentResolutionReviewItemDto : FeedbackResolutionReviewDto
+{
+    public string? FeedbackTitle { get; set; }
+
+    /// <summary>Vai trò của phản ánh trong sự vụ: Primary hay phản ánh gộp thêm.</summary>
+    public string? LinkRole { get; set; }
+}
+
+/// <summary>Toàn bộ đánh giá của một sự vụ, kèm vài số liệu tổng hợp sẵn.</summary>
+public class IncidentResolutionReviewSummaryDto
+{
+    public Guid IncidentId { get; set; }
+
+    /// <summary>Số phản ánh đang gộp trong sự vụ, tức số người có quyền đánh giá.</summary>
+    public int EligibleReportCount { get; set; }
+
+    public int ReviewCount { get; set; }
+
+    public int SatisfiedCount { get; set; }
+
+    /// <summary>Điểm trung bình, null khi chưa ai đánh giá.</summary>
+    public double? AverageRating { get; set; }
+
+    public IReadOnlyCollection<IncidentResolutionReviewItemDto> Items { get; set; } = [];
+}
+
 public class CitizenResolutionReviewRequest
 {
     public int Rating { get; set; }
