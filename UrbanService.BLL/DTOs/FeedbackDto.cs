@@ -1,3 +1,4 @@
+using UrbanService.BLL.DTOs;
 using UrbanService.BLL.DTOs.AI;
 
 namespace UrbanService.BLL.Dtos;
@@ -192,6 +193,14 @@ public class FeedbackDetailDto : FeedbackListItemDto
     public IReadOnlyCollection<FeedbackCommentDto> Comments { get; set; } = [];
 
     public IReadOnlyCollection<FeedbackStatusHistoryDto> StatusHistories { get; set; } = [];
+
+    /// <summary>
+    /// Đánh giá kết quả xử lý mà chính người gửi đã chấm, nếu có.
+    ///
+    /// Chỉ trả cho chủ phản ánh. Đây là ý kiến cá nhân kèm tên người chấm, không phải
+    /// thông tin của phản ánh, nên không đưa ra bảng tin công khai.
+    /// </summary>
+    public FeedbackResolutionReviewDto? ResolutionReview { get; set; }
 }
 
 public class FeedbackPotentialDuplicateDto

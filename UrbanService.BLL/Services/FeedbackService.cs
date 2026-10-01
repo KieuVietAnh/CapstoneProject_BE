@@ -1402,6 +1402,8 @@ public class FeedbackService : IFeedbackService
             .Include(f => f.FeedbackStatusHistories)
                 .ThenInclude(h => h.ChangedByUser)
             .Include(f => f.FeedbackSupports)
+            .Include(f => f.FeedbackResolutionReviews)
+                .ThenInclude(review => review.User)
             .Include(f => f.IncidentReportLinks)
                 .ThenInclude(link => link.Incident)
                     .ThenInclude(incident => incident.IncidentReportLinks)
@@ -1502,6 +1504,8 @@ public class FeedbackService : IFeedbackService
             .Include(f => f.FeedbackStatusHistories)
                 .ThenInclude(h => h.ChangedByUser)
             .Include(f => f.FeedbackSupports)
+            .Include(f => f.FeedbackResolutionReviews)
+                .ThenInclude(review => review.User)
             .Include(f => f.IncidentReportLinks)
                 .ThenInclude(link => link.Incident)
                     .ThenInclude(incident => incident.IncidentReportLinks)
@@ -1845,6 +1849,12 @@ public class FeedbackService : IFeedbackService
                 .OrderBy(c => c.CreatedAt)
                 .Select(MapComment)
                 .ToList(),
+            ResolutionReview = feedback.UserId == userId
+                ? feedback.FeedbackResolutionReviews
+                    .OrderByDescending(review => review.CreatedAt)
+                    .Select(MapResolutionReview)
+                    .FirstOrDefault()
+                : null,
             StatusHistories = feedback.FeedbackStatusHistories
                 .OrderByDescending(h => h.ChangedAt)
                 .Select(h => new FeedbackStatusHistoryDto
