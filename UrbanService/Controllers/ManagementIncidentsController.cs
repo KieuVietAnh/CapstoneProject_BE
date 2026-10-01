@@ -178,6 +178,23 @@ public sealed class ManagementIncidentsController : ControllerBase
             incidentId,
             GetCurrentUserId()));
 
+    /// <summary>Lấy đánh giá của người dân về kết quả xử lý Incident.</summary>
+    /// <remarks>
+    /// Một Incident gộp nhiều phản ánh của nhiều người, mỗi người đánh giá phần phản
+    /// ánh của mình, nên endpoint trả về danh sách chứ không phải một đánh giá.
+    ///
+    /// Kèm vài số liệu tổng hợp: số phản ánh đang gộp (tức số người có quyền đánh
+    /// giá), số đánh giá đã nhận, số người hài lòng và điểm trung bình.
+    /// </remarks>
+    [HttpGet("{incidentId:guid}/resolution-reviews")]
+    [ProducesResponseType(typeof(IncidentResolutionReviewSummaryDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetResolutionReviews(Guid incidentId)
+        => Ok(await _feedbackService.GetIncidentResolutionReviewsAsync(
+            incidentId,
+            GetCurrentUserId()));
+
     /// <summary>Staff gửi kết quả xử lý của Incident để Manager duyệt.</summary>
     [HttpPost("{incidentId:guid}/resolutions")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]

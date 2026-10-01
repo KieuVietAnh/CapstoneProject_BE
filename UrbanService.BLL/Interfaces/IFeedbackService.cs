@@ -146,6 +146,14 @@ public interface IFeedbackService
         Guid managerId,
         string reason);
 
+    /// <summary>
+    /// Lấy toàn bộ đánh giá của người dân cho một sự vụ, gộp từ mọi phản ánh đang
+    /// liên kết. Dùng cho màn quản lý sự vụ.
+    /// </summary>
+    Task<IncidentResolutionReviewSummaryDto> GetIncidentResolutionReviewsAsync(
+        Guid incidentId,
+        Guid currentUserId);
+
     Task<FeedbackResolutionReviewDto> CitizenReviewAsync(
         CitizenReviewRequest request);
 
