@@ -93,17 +93,42 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
 
             await _uow.GetRepository<AnalysisResult>().AddAsync(analysisResult);
 
-            feedback.CategoryId = detectedCategory?.CategoryId
-                ?? throw new Exception("AI review khong xac dinh duoc category hop le cho feedback.");
+            /*
+             * Đọc lại trạng thái từ database ngay trước khi ghi.
+             *
+             * Trạng thái kiểm ở đầu hàm được đọc trước khi gọi LLM, mà lời gọi đó có
+             * thể kéo dài hàng chục giây đến vài phút. Trong khoảng đó manager hoàn
+             * toàn có thể đã xác minh phản ánh. Đối tượng đang giữ trong bộ nhớ không
+             * biết điều đó — EF không tự làm mới — nên nếu cứ ghi theo nó thì phản ánh
+             * bị kéo ngược từ Verified về AiReviewed, trong khi sự vụ vừa tạo vẫn ở
+             * Verified. Hai bên lệch nhau và việc duyệt của manager biến mất.
+             *
+             * Phân tích vẫn được lưu lại: nó đã tốn một lượt gọi mô hình và vẫn có giá
+             * trị tham khảo. Chỉ những trường thuộc quyền quyết định của con người mới
+             * được giữ nguyên.
+             */
+            var currentStatus = await _uow.GetRepository<Feedback>().Entities
+                .AsNoTracking()
+                .Where(item => item.FeedbackId == feedback.FeedbackId)
+                .Select(item => item.Status)
+                .FirstOrDefaultAsync(cancellationToken);
 
-            feedback.Priority = NormalizeUrgencyAsPriority(parsed.UrgencyLevel)
-                ?? throw new Exception("AI review khong xac dinh duoc priority hop le cho feedback.");
+            var stillAwaitingAiReview = string.Equals(
+                currentStatus,
+                FeedbackStatus.Submitted,
+                StringComparison.OrdinalIgnoreCase);
 
-            feedback.Severity = analysisResult.SeverityLevel
-                ?? throw new Exception("AI review khong xac dinh duoc severity hop le cho feedback.");
-
-            if (!string.Equals(feedback.Status, FeedbackStatus.AiReviewed, StringComparison.OrdinalIgnoreCase))
+            if (stillAwaitingAiReview)
             {
+                feedback.CategoryId = detectedCategory?.CategoryId
+                    ?? throw new Exception("AI review khong xac dinh duoc category hop le cho feedback.");
+
+                feedback.Priority = NormalizeUrgencyAsPriority(parsed.UrgencyLevel)
+                    ?? throw new Exception("AI review khong xac dinh duoc priority hop le cho feedback.");
+
+                feedback.Severity = analysisResult.SeverityLevel
+                    ?? throw new Exception("AI review khong xac dinh duoc severity hop le cho feedback.");
+
                 var oldStatus = feedback.Status;
                 feedback.Status = FeedbackStatus.AiReviewed;
                 feedback.UpdatedAt = now;
@@ -117,6 +142,18 @@ public class AiFeedbackAnalysisService : IAiFeedbackAnalysisService
                     Note = $"Reviewed by AI using {_aiClient.ModelName}",
                     ChangedAt = now
                 });
+            }
+            else
+            {
+                /*
+                 * Không gán gì vào feedback ở nhánh này nên nó không có thay đổi nào
+                 * đang treo; SaveAsync bên dưới chỉ ghi AnalysisResult.
+                 */
+                _logger.LogInformation(
+                    "Feedback {FeedbackId} đã chuyển sang {CurrentStatus} trong lúc AI phân tích. " +
+                    "Chỉ lưu kết quả phân tích, giữ nguyên trạng thái và phân loại do người xử lý quyết định.",
+                    feedback.FeedbackId,
+                    currentStatus);
             }
 
             await _uow.SaveAsync();
