@@ -92,6 +92,17 @@ public class StaffFeedbackUpdateRequest : FeedbackUpdateRequest
     public string? StatusNote { get; set; }
 }
 
+public class VerifyFeedbackRequest
+{
+    public int CategoryId { get; set; }
+
+    /// <summary>Mức độ nghiêm trọng: Low, Medium, High hoặc Critical.</summary>
+    public string Severity { get; set; } = null!;
+
+    /// <summary>Mức độ ưu tiên: Low, Medium, High hoặc Urgent.</summary>
+    public string Priority { get; set; } = null!;
+}
+
 public class UpdateFeedbackStatusRequest
 {
     /// <summary>

@@ -55,6 +55,16 @@ public static class IncidentSeverity
     public static readonly IReadOnlyCollection<string> All = [Low, Medium, High, Critical];
 }
 
+public static class IncidentPriority
+{
+    public const string Low = "Low";
+    public const string Medium = "Medium";
+    public const string High = "High";
+    public const string Urgent = "Urgent";
+
+    public static readonly IReadOnlyCollection<string> All = [Low, Medium, High, Urgent];
+}
+
 public static class IncidentStatus
 {
     public const string New = "New";

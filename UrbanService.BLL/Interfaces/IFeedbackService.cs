@@ -57,7 +57,8 @@ public interface IFeedbackService
 
     Task VerifyFeedbackAsync(
         Guid feedbackId,
-        Guid staffUserId);
+        Guid staffUserId,
+        VerifyFeedbackRequest request);
 
     Task<IncidentProviderAssignmentDto> AssignIncidentProviderAsync(
         Guid incidentId,

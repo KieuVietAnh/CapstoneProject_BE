@@ -233,6 +233,7 @@ public class ManagementFeedbacksController : ControllerBase
     /// </summary>
     /// <remarks>
     /// Chỉ `INTERACTIONMANAGER`; phản ánh phải thỏa điều kiện workflow hiện tại.
+    /// Request bắt buộc có `categoryId`, `severity` và `priority` do Manager xác nhận.
     /// Nếu Report chưa thuộc Incident, thao tác này tạo Incident và chuyển cả hai sang `Verified`.
     /// </remarks>
     [HttpPut("{feedbackId:guid}/verify")]
@@ -242,11 +243,13 @@ public class ManagementFeedbacksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> VerifyFeedback(
-        Guid feedbackId)
+        Guid feedbackId,
+        [FromBody] VerifyFeedbackRequest request)
     {
         await _feedbackService.VerifyFeedbackAsync(
             feedbackId,
-            GetCurrentUserId());
+            GetCurrentUserId(),
+            request);
 
         return Ok(new
         {

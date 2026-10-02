@@ -2253,12 +2253,29 @@ public class FeedbackService : IFeedbackService
 
     public async Task VerifyFeedbackAsync(
     Guid feedbackId,
-    Guid managerUserId)
+    Guid managerUserId,
+    VerifyFeedbackRequest request)
     {
         await ManagementAccessRules.EnsureManagerFeedbackReviewAccessAsync(
             _uow,
             feedbackId,
             managerUserId);
+
+        if (request.CategoryId <= 0)
+        {
+            throw new Exception("Vui lòng chọn danh mục trước khi xác nhận phản ánh.");
+        }
+
+        await EnsureCategoryExistsAsync(request.CategoryId);
+
+        var priority = IncidentPriority.All.FirstOrDefault(value =>
+            string.Equals(value, request.Priority?.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?? throw new Exception("Priority chỉ nhận Low, Medium, High hoặc Urgent.");
+
+        var severity = IncidentSeverity.All.FirstOrDefault(value =>
+            string.Equals(value, request.Severity?.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?? throw new Exception("Severity chỉ nhận Low, Medium, High hoặc Critical.");
+
         var feedback = await GetFeedbackWithDetailsAsync(
             feedbackId,
             false);
@@ -2272,6 +2289,11 @@ public class FeedbackService : IFeedbackService
 
         await EnsureDuplicateMasterStatusInvariantAsync(feedback, FeedbackStatus.Verified);
         await EnsureDuplicateReviewCompletedBeforeWorkflowAsync(feedback, FeedbackStatus.Verified);
+
+        feedback.CategoryId = request.CategoryId;
+        feedback.Priority = priority;
+        feedback.Severity = severity;
+        feedback.UpdatedAt = DateTime.UtcNow;
 
         var history = await _incidentService.VerifyReportAsync(
             feedbackId,

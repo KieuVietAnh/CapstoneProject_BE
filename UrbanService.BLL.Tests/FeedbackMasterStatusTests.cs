@@ -197,16 +197,27 @@ public class FeedbackMasterStatusTests
     }
 
     [Fact]
-    public async Task Verify_UnlinkedReportDelegatesToIncidentServiceWithoutTouchingSla()
+    public async Task Verify_SubmittedReportAppliesRequiredManagerClassificationWithoutAiReview()
     {
         var context = new DuplicateTestContext();
         var feedback = DuplicateTestContext.Feedback(
             Guid.NewGuid(),
             DateTime.UtcNow,
             isMaster: true,
-            status: FeedbackStatus.AiReviewed);
+            status: FeedbackStatus.Submitted);
         context.Feedbacks.Add(feedback);
         var actorUserId = context.ManagerUserId;
+        var categoryRepository = Substitute.For<IGenericRepository<UrbanServiceCategory>>();
+        categoryRepository.Entities.Returns(new[]
+        {
+            new UrbanServiceCategory
+            {
+                CategoryId = 10,
+                CategoryName = "Road",
+                IsActive = true
+            }
+        }.AsAsyncQueryable());
+        context.UnitOfWork.GetRepository<UrbanServiceCategory>().Returns(categoryRepository);
         var incidentService = Substitute.For<IIncidentService>();
         incidentService.VerifyReportAsync(
                 feedback.FeedbackId,
@@ -217,7 +228,7 @@ public class FeedbackMasterStatusTests
             {
                 FeedbackId = feedback.FeedbackId,
                 ChangedByUserId = actorUserId,
-                OldStatus = FeedbackStatus.AiReviewed,
+                OldStatus = FeedbackStatus.Submitted,
                 NewStatus = FeedbackStatus.Verified,
                 Note = "Verified by staff",
                 ChangedAt = DateTime.UtcNow
@@ -227,7 +238,19 @@ public class FeedbackMasterStatusTests
         context.UnitOfWork.GetRepository<IncidentSla>().Returns(slaRepository);
         var service = CreateService(context, incidentService);
 
-        await service.VerifyFeedbackAsync(feedback.FeedbackId, actorUserId);
+        await service.VerifyFeedbackAsync(
+            feedback.FeedbackId,
+            actorUserId,
+            new VerifyFeedbackRequest
+            {
+                CategoryId = 10,
+                Priority = "High",
+                Severity = "Critical"
+            });
+
+        Assert.Equal(10, feedback.CategoryId);
+        Assert.Equal(IncidentPriority.High, feedback.Priority);
+        Assert.Equal(IncidentSeverity.Critical, feedback.Severity);
 
         await incidentService.Received(1).VerifyReportAsync(
             feedback.FeedbackId,
@@ -242,6 +265,55 @@ public class FeedbackMasterStatusTests
          */
         context.UnitOfWork.DidNotReceive().GetRepository<IncidentSla>();
         await context.UnitOfWork.DidNotReceive().SaveAsync();
+    }
+
+    [Theory]
+    [InlineData(0, "High", "Critical")]
+    [InlineData(10, "", "Critical")]
+    [InlineData(10, "High", "")]
+    public async Task Verify_RequiresCategoryPriorityAndSeverity(
+        int categoryId,
+        string priority,
+        string severity)
+    {
+        var context = new DuplicateTestContext();
+        var feedback = DuplicateTestContext.Feedback(
+            Guid.NewGuid(),
+            DateTime.UtcNow,
+            isMaster: true,
+            status: FeedbackStatus.Submitted);
+        context.Feedbacks.Add(feedback);
+
+        var categoryRepository = Substitute.For<IGenericRepository<UrbanServiceCategory>>();
+        categoryRepository.Entities.Returns(new[]
+        {
+            new UrbanServiceCategory
+            {
+                CategoryId = 10,
+                CategoryName = "Road",
+                IsActive = true
+            }
+        }.AsAsyncQueryable());
+        context.UnitOfWork.GetRepository<UrbanServiceCategory>().Returns(categoryRepository);
+
+        var incidentService = Substitute.For<IIncidentService>();
+        var service = CreateService(context, incidentService);
+
+        await Assert.ThrowsAsync<Exception>(() => service.VerifyFeedbackAsync(
+            feedback.FeedbackId,
+            context.ManagerUserId,
+            new VerifyFeedbackRequest
+            {
+                CategoryId = categoryId,
+                Priority = priority,
+                Severity = severity
+            }));
+
+        await incidentService.DidNotReceiveWithAnyArgs().VerifyReportAsync(
+            default,
+            default,
+            default,
+            default);
     }
 
     private static FeedbackService CreateService(
