@@ -2,6 +2,8 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
+using UrbanService.BLL.Common.Helpers;
+using UrbanService.BLL.Common.Securities;
 using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Interfaces;
 using UrbanService.DAL.Entities;
@@ -84,6 +86,139 @@ public class StaffAreaAssignmentService : IStaffAreaAssignmentService
             .ThenBy(assignment => assignment.User.FullName)
             .Select(AssignmentProjection)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<AreaDto>> GetManagedAreasAsync(
+        Guid actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await GetAuthorizedActorAsync(actorUserId, cancellationToken);
+        EnsureManagerActor(actor);
+
+        return await _uow.GetRepository<OperatingArea>().Entities
+            .AsNoTracking()
+            .Where(area => area.IsActive && actor.ManagerAreaIds.Contains(area.AreaId))
+            .OrderBy(area => area.ProvinceName)
+            .ThenBy(area => area.DistrictName)
+            .ThenBy(area => area.AreaName)
+            .Select(area => new AreaDto
+            {
+                AreaId = area.AreaId,
+                AreaName = area.AreaName,
+                AreaType = area.AreaType,
+                WardCode = area.WardCode,
+                DistrictName = area.DistrictName,
+                ProvinceName = area.ProvinceName,
+                CenterLatitude = area.CenterLatitude,
+                CenterLongitude = area.CenterLongitude,
+                BoundaryGeoJson = area.BoundaryGeoJson,
+                IsActive = area.IsActive,
+                StartedAt = area.StartedAt,
+                EndedAt = area.EndedAt,
+                CreatedAt = area.CreatedAt,
+                UpdatedAt = area.UpdatedAt
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<ManagedStaffAccountDto> CreateStaffAccountAsync(
+        Guid actorUserId,
+        ManagedStaffAccountCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await GetAuthorizedActorAsync(actorUserId, cancellationToken);
+        EnsureManagerActor(actor);
+        ValidateManagedStaffAccountRequest(request);
+        EnsureAreaAccess(actor, request.AreaId);
+        await EnsureAreaExistsAsync(request.AreaId, cancellationToken);
+        await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
+
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var normalizedPhone = NormalizeOptionalPhone(request.PhoneNumber);
+        var userRepository = _uow.GetRepository<User>();
+
+        var emailExists = await userRepository.Entities
+            .AsNoTracking()
+            .AnyAsync(user => user.Email.ToLower() == normalizedEmail, cancellationToken);
+        if (emailExists)
+        {
+            throw new Exception("Email đã được sử dụng.");
+        }
+
+        if (normalizedPhone != null)
+        {
+            var phoneExists = await userRepository.Entities
+                .AsNoTracking()
+                .AnyAsync(user => user.PhoneNumber == normalizedPhone, cancellationToken);
+            if (phoneExists)
+            {
+                throw new Exception("Số điện thoại đã được sử dụng.");
+            }
+        }
+
+        var staffRole = await _uow.GetRepository<Role>().Entities
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                role => role.RoleName.ToUpper() == UserRole.SYSTEMSTAFF,
+                cancellationToken)
+            ?? throw new Exception("Role SYSTEMSTAFF không tồn tại.");
+
+        var now = DateTime.UtcNow;
+        var user = new User
+        {
+            UserId = Guid.NewGuid(),
+            RoleId = staffRole.RoleId,
+            FullName = request.FullName.Trim(),
+            Email = normalizedEmail,
+            PasswordHash = PasswordHasher.Hash(request.Password),
+            PhoneNumber = normalizedPhone,
+            Address = NormalizeOptional(request.Address),
+            IsActive = true,
+            IsVerified = true,
+            IsRefreshTokenRevoked = false,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        var assignment = new StaffAreaAssignment
+        {
+            UserId = user.UserId,
+            User = user,
+            AreaId = request.AreaId,
+            CategoryId = request.CategoryId,
+            AssignedByUserId = actor.UserId,
+            IsPrimary = request.IsPrimary,
+            IsActive = true,
+            CreatedAt = now
+        };
+
+        _uow.BeginTransaction();
+        try
+        {
+            await userRepository.AddAsync(user);
+            await _uow.GetRepository<StaffAreaAssignment>().AddAsync(assignment);
+            await _uow.SaveAsync();
+            _uow.CommitTransaction();
+        }
+        catch
+        {
+            _uow.RollBack();
+            throw;
+        }
+
+        return new ManagedStaffAccountDto
+        {
+            UserId = user.UserId,
+            RoleName = UserRole.SYSTEMSTAFF,
+            FullName = user.FullName,
+            Email = user.Email,
+            PhoneNumber = user.PhoneNumber,
+            Address = user.Address,
+            IsActive = user.IsActive,
+            IsVerified = user.IsVerified,
+            Assignment = await GetAssignmentDtoAsync(
+                assignment.StaffAreaAssignmentId,
+                cancellationToken)
+        };
     }
 
     public async Task<StaffAreaAssignmentDto> CreateAsync(
@@ -239,6 +374,57 @@ public class StaffAreaAssignmentService : IStaffAreaAssignmentService
             throw new ForbiddenAccessException(
                 "Manager không phụ trách khu vực của phân công này.");
         }
+    }
+
+    private static void EnsureManagerActor(ManagementActorScope actor)
+    {
+        if (actor.RoleName != UserRole.INTERACTIONMANAGER)
+        {
+            throw new ForbiddenAccessException(
+                "Chỉ Interaction Manager được tạo tài khoản Staff trong khu vực phụ trách.");
+        }
+    }
+
+    private static void ValidateManagedStaffAccountRequest(
+        ManagedStaffAccountCreateRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.FullName))
+        {
+            throw new Exception("Họ tên nhân viên là bắt buộc.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Email))
+        {
+            throw new Exception("Email nhân viên là bắt buộc.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Password) ||
+            request.Password.Length < PasswordPolicy.MinLength)
+        {
+            throw new Exception(
+                $"Mật khẩu phải có ít nhất {PasswordPolicy.MinLength} ký tự.");
+        }
+
+        if (request.AreaId <= 0)
+        {
+            throw new Exception("AreaId không hợp lệ.");
+        }
+    }
+
+    private static string? NormalizeOptionalPhone(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return PhoneNumberHelper.Normalize(value)
+            ?? throw new Exception("Số điện thoại không hợp lệ. Ví dụ: 0901 234 567.");
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private async Task<StaffAreaAssignmentDto> GetAssignmentDtoAsync(

@@ -12,6 +12,15 @@ public interface IStaffAreaAssignmentService
         bool? isActive = null,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<AreaDto>> GetManagedAreasAsync(
+        Guid actorUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<ManagedStaffAccountDto> CreateStaffAccountAsync(
+        Guid actorUserId,
+        ManagedStaffAccountCreateRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<StaffAreaAssignmentDto> CreateAsync(
         Guid actorUserId,
         StaffAreaAssignmentCreateRequest request,

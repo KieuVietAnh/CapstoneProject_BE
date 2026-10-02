@@ -44,6 +44,36 @@ public class ManagementStaffAreaAssignmentsController : ControllerBase
             HttpContext.RequestAborted));
     }
 
+    /// <summary>Lấy các khu vực đang được phân cho Interaction Manager hiện tại.</summary>
+    /// <remarks>Chỉ `INTERACTIONMANAGER` được truy cập.</remarks>
+    [HttpGet("managed-areas")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<AreaDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetManagedAreas()
+    {
+        return Ok(await _staffAreaAssignmentService.GetManagedAreasAsync(
+            GetCurrentUserId(),
+            HttpContext.RequestAborted));
+    }
+
+    /// <summary>Tạo tài khoản SYSTEMSTAFF và phân công khu vực ban đầu.</summary>
+    /// <remarks>
+    /// Chỉ `INTERACTIONMANAGER` được thao tác và khu vực phải thuộc phạm vi Manager đang quản lý.
+    /// Tài khoản cùng phân công được tạo trong một transaction.
+    /// </remarks>
+    [HttpPost("staff-accounts")]
+    [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
+    [ProducesResponseType(typeof(ManagedStaffAccountDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CreateStaffAccount(
+        [FromBody] ManagedStaffAccountCreateRequest request)
+    {
+        return Ok(await _staffAreaAssignmentService.CreateStaffAccountAsync(
+            GetCurrentUserId(),
+            request,
+            HttpContext.RequestAborted));
+    }
+
     /// <summary>Tạo phân công khu vực và danh mục cho Staff.</summary>
     /// <remarks>
     /// `SYSTEMADMIN` thao tác toàn hệ thống. `INTERACTIONMANAGER` chỉ tạo trong khu vực đang quản lý.

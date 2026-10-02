@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Routing;
 using NSubstitute;
 using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
+using UrbanService.BLL.Common.Securities;
 using UrbanService.BLL.DTOs;
 using UrbanService.BLL.Services;
 using UrbanService.Controllers;
@@ -58,6 +59,102 @@ public sealed class StaffAreaAssignmentServiceTests
         Assert.False(updated.IsPrimary);
         Assert.False(deactivated.IsActive);
         await context.UnitOfWork.Received(3).SaveAsync();
+    }
+
+    [Fact]
+    public async Task ManagerWithinCoveredArea_CanCreateNewStaffAccountAndInitialAssignment()
+    {
+        var context = new StaffAreaAssignmentTestContext();
+        var manager = context.User(UserRole.INTERACTIONMANAGER, "Ward Manager");
+        var staffRole = context.Role(UserRole.SYSTEMSTAFF);
+        var area = context.Area("Ward One");
+        var category = context.Category("Roads");
+        context.ManagerCoverage(manager, area);
+        var service = new StaffAreaAssignmentService(context.UnitOfWork);
+
+        var managedAreas = await service.GetManagedAreasAsync(manager.UserId);
+        var created = await service.CreateStaffAccountAsync(
+            manager.UserId,
+            new ManagedStaffAccountCreateRequest
+            {
+                FullName = "New Staff",
+                Email = " New.Staff@Urban.Test ",
+                Password = "password-123",
+                PhoneNumber = "0901 234 567",
+                Address = " Ward office ",
+                AreaId = area.AreaId,
+                CategoryId = category.CategoryId,
+                IsPrimary = true
+            });
+
+        var user = Assert.Single(context.Users.Where(item => item.UserId == created.UserId));
+        Assert.Single(managedAreas);
+        Assert.Equal(area.AreaId, managedAreas.Single().AreaId);
+        Assert.Equal(staffRole.RoleId, user.RoleId);
+        Assert.Equal(UserRole.SYSTEMSTAFF, created.RoleName);
+        Assert.Equal("new.staff@urban.test", created.Email);
+        Assert.Equal("+84901234567", created.PhoneNumber);
+        Assert.Equal("Ward office", created.Address);
+        Assert.True(created.IsActive);
+        Assert.True(created.IsVerified);
+        Assert.True(PasswordHasher.Verify("password-123", user.PasswordHash));
+        Assert.Equal(area.AreaId, created.Assignment.AreaId);
+        Assert.Equal(category.CategoryId, created.Assignment.CategoryId);
+        Assert.Equal(manager.UserId, created.Assignment.AssignedByUserId);
+        Assert.True(created.Assignment.IsPrimary);
+        context.UnitOfWork.Received(1).BeginTransaction();
+        context.UnitOfWork.Received(1).CommitTransaction();
+        context.UnitOfWork.DidNotReceive().RollBack();
+        await context.UnitOfWork.Received(1).SaveAsync();
+    }
+
+    [Fact]
+    public async Task ManagerOutsideCoveredArea_CannotCreateNewStaffAccount()
+    {
+        var context = new StaffAreaAssignmentTestContext();
+        var manager = context.User(UserRole.INTERACTIONMANAGER, "Ward Manager");
+        context.Role(UserRole.SYSTEMSTAFF);
+        var coveredArea = context.Area("Covered Ward");
+        var otherArea = context.Area("Other Ward");
+        context.ManagerCoverage(manager, coveredArea);
+        var service = new StaffAreaAssignmentService(context.UnitOfWork);
+
+        await Assert.ThrowsAsync<ForbiddenAccessException>(() => service.CreateStaffAccountAsync(
+            manager.UserId,
+            new ManagedStaffAccountCreateRequest
+            {
+                FullName = "New Staff",
+                Email = "staff@urban.test",
+                Password = "password-123",
+                AreaId = otherArea.AreaId
+            }));
+
+        context.UnitOfWork.DidNotReceive().BeginTransaction();
+        await context.UserRepository.DidNotReceive().AddAsync(Arg.Any<User>());
+        await context.UnitOfWork.DidNotReceive().SaveAsync();
+    }
+
+    [Fact]
+    public async Task AdminCannotUseManagerStaffAccountCreationService()
+    {
+        var context = new StaffAreaAssignmentTestContext();
+        var admin = context.User(UserRole.SYSTEMADMIN, "System Admin");
+        context.Role(UserRole.SYSTEMSTAFF);
+        var area = context.Area("Ward One");
+        var service = new StaffAreaAssignmentService(context.UnitOfWork);
+
+        await Assert.ThrowsAsync<ForbiddenAccessException>(() => service.CreateStaffAccountAsync(
+            admin.UserId,
+            new ManagedStaffAccountCreateRequest
+            {
+                FullName = "New Staff",
+                Email = "staff@urban.test",
+                Password = "password-123",
+                AreaId = area.AreaId
+            }));
+
+        context.UnitOfWork.DidNotReceive().BeginTransaction();
+        await context.UnitOfWork.DidNotReceive().SaveAsync();
     }
 
     [Fact]
@@ -221,6 +318,18 @@ public sealed class StaffAreaAssignmentServiceTests
         AssertHttpMethod<HttpGetAttribute>(
             nameof(ManagementStaffAreaAssignmentsController.GetAssignments),
             expectedTemplate: null);
+        AssertHttpMethod<HttpGetAttribute>(
+            nameof(ManagementStaffAreaAssignmentsController.GetManagedAreas),
+            "managed-areas");
+        AssertActionRoles(
+            nameof(ManagementStaffAreaAssignmentsController.GetManagedAreas),
+            UserRole.INTERACTIONMANAGER);
+        AssertHttpMethod<HttpPostAttribute>(
+            nameof(ManagementStaffAreaAssignmentsController.CreateStaffAccount),
+            "staff-accounts");
+        AssertActionRoles(
+            nameof(ManagementStaffAreaAssignmentsController.CreateStaffAccount),
+            UserRole.INTERACTIONMANAGER);
         AssertHttpMethod<HttpPostAttribute>(
             nameof(ManagementStaffAreaAssignmentsController.CreateAssignment),
             expectedTemplate: null);
@@ -242,10 +351,20 @@ public sealed class StaffAreaAssignmentServiceTests
         Assert.Equal(expectedTemplate, attribute.Template);
     }
 
+    private static void AssertActionRoles(string actionName, string expectedRoles)
+    {
+        var action = typeof(ManagementStaffAreaAssignmentsController).GetMethod(actionName)!;
+        var authorize = Assert.Single(action
+            .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
+            .Cast<AuthorizeAttribute>());
+        Assert.Equal(expectedRoles, authorize.Roles);
+    }
+
     private sealed class StaffAreaAssignmentTestContext
     {
         private int _nextAssignmentId = 1;
         private int _nextAreaId = 1;
+        private int _nextCategoryId = 1;
         private int _nextManagerAssignmentId = 1;
         private int _nextRoleId = 1;
 
@@ -256,8 +375,16 @@ public sealed class StaffAreaAssignmentServiceTests
             ManagerAssignmentRepository.Entities.Returns(
                 _ => ManagerAssignments.AsAsyncQueryable());
             UserRepository.Entities.Returns(_ => Users.AsAsyncQueryable());
+            RoleRepository.Entities.Returns(_ => Roles.AsAsyncQueryable());
             AreaRepository.Entities.Returns(_ => Areas.AsAsyncQueryable());
             CategoryRepository.Entities.Returns(_ => Categories.AsAsyncQueryable());
+
+            UserRepository.AddAsync(Arg.Any<User>())
+                .Returns(call =>
+                {
+                    Users.Add(call.Arg<User>());
+                    return Task.CompletedTask;
+                });
 
             StaffAssignmentRepository.AddAsync(Arg.Any<StaffAreaAssignment>())
                 .Returns(call =>
@@ -278,6 +405,7 @@ public sealed class StaffAreaAssignmentServiceTests
             UnitOfWork.GetRepository<ManagerAreaAssignment>()
                 .Returns(ManagerAssignmentRepository);
             UnitOfWork.GetRepository<User>().Returns(UserRepository);
+            UnitOfWork.GetRepository<Role>().Returns(RoleRepository);
             UnitOfWork.GetRepository<OperatingArea>().Returns(AreaRepository);
             UnitOfWork.GetRepository<UrbanServiceCategory>().Returns(CategoryRepository);
             UnitOfWork.SaveAsync().Returns(_ =>
@@ -297,6 +425,8 @@ public sealed class StaffAreaAssignmentServiceTests
 
         public List<User> Users { get; } = [];
 
+        public List<Role> Roles { get; } = [];
+
         public List<OperatingArea> Areas { get; } = [];
 
         public List<UrbanServiceCategory> Categories { get; } = [];
@@ -312,6 +442,9 @@ public sealed class StaffAreaAssignmentServiceTests
         public IGenericRepository<User> UserRepository { get; } =
             Substitute.For<IGenericRepository<User>>();
 
+        public IGenericRepository<Role> RoleRepository { get; } =
+            Substitute.For<IGenericRepository<Role>>();
+
         public IGenericRepository<OperatingArea> AreaRepository { get; } =
             Substitute.For<IGenericRepository<OperatingArea>>();
 
@@ -320,12 +453,7 @@ public sealed class StaffAreaAssignmentServiceTests
 
         public User User(string roleName, string fullName)
         {
-            var role = new Role
-            {
-                RoleId = _nextRoleId++,
-                RoleName = roleName,
-                Description = $"{roleName} role"
-            };
+            var role = Role(roleName);
             var user = new User
             {
                 UserId = Guid.NewGuid(),
@@ -343,6 +471,25 @@ public sealed class StaffAreaAssignmentServiceTests
             return user;
         }
 
+        public Role Role(string roleName)
+        {
+            var existing = Roles.FirstOrDefault(role =>
+                role.RoleName.Equals(roleName, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            var role = new Role
+            {
+                RoleId = _nextRoleId++,
+                RoleName = roleName,
+                Description = $"{roleName} role"
+            };
+            Roles.Add(role);
+            return role;
+        }
+
         public OperatingArea Area(string name)
         {
             var area = new OperatingArea
@@ -356,6 +503,19 @@ public sealed class StaffAreaAssignmentServiceTests
             };
             Areas.Add(area);
             return area;
+        }
+
+        public UrbanServiceCategory Category(string name)
+        {
+            var category = new UrbanServiceCategory
+            {
+                CategoryId = _nextCategoryId++,
+                CategoryName = name,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            Categories.Add(category);
+            return category;
         }
 
         public void ManagerCoverage(User manager, OperatingArea area, bool isActive = true)

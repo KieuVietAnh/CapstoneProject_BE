@@ -695,3 +695,43 @@ public class StaffAreaAssignmentUpdateRequest
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
 }
+
+public class ManagedStaffAccountCreateRequest
+{
+    public string FullName { get; set; } = null!;
+
+    public string Email { get; set; } = null!;
+
+    public string Password { get; set; } = null!;
+
+    public string? PhoneNumber { get; set; }
+
+    public string? Address { get; set; }
+
+    public int AreaId { get; set; }
+
+    public int? CategoryId { get; set; }
+
+    public bool IsPrimary { get; set; }
+}
+
+public class ManagedStaffAccountDto
+{
+    public Guid UserId { get; set; }
+
+    public string RoleName { get; set; } = null!;
+
+    public string FullName { get; set; } = null!;
+
+    public string Email { get; set; } = null!;
+
+    public string? PhoneNumber { get; set; }
+
+    public string? Address { get; set; }
+
+    public bool IsActive { get; set; }
+
+    public bool IsVerified { get; set; }
+
+    public StaffAreaAssignmentDto Assignment { get; set; } = null!;
+}
