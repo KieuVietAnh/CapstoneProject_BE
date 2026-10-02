@@ -320,6 +320,8 @@ public class FeedbackWorkflowRbacTests
         private readonly List<ManagerAreaAssignment> _managerAreaAssignments = [];
         private readonly List<FeedbackProviderReport> _providerReports = [];
         private readonly List<FeedbackResolution> _resolutions = [];
+        // Luồng gửi kết quả đọc minh chứng đã lưu để bỏ qua URL trùng.
+        private readonly List<CompletionDocument> _completionDocuments = [];
         private int _nextRoleId = 1;
         private int _nextProviderReportId = 1;
 
@@ -332,6 +334,7 @@ public class FeedbackWorkflowRbacTests
             ConfigureRepository(_managerAreaAssignments);
             ConfigureRepository(_providerReports);
             ConfigureRepository(_resolutions);
+            ConfigureRepository(_completionDocuments);
 
             Service = new FeedbackService(
                 UnitOfWork,
