@@ -163,10 +163,13 @@ builder.Services.Configure<PhoneOtpOptions>(
     builder.Configuration.GetSection(PhoneOtpOptions.SectionName));
 builder.Services.Configure<FeedbackLimitOptions>(
     builder.Configuration.GetSection(FeedbackLimitOptions.SectionName));
+builder.Services.Configure<ProviderNotificationOptions>(
+    builder.Configuration.GetSection(ProviderNotificationOptions.SectionName));
 builder.Services.AddSingleton<IFirebasePhoneVerifier, FirebasePhoneVerifier>();
 
 builder.Services.AddScoped<IRealtimeNotificationSender, SignalRNotificationSender>();
 builder.Services.AddScoped<IRealtimeInteractionMessageSender, SignalRInteractionMessageSender>();
+builder.Services.AddScoped<IProviderAssignmentNotifier, ProviderAssignmentNotifier>();
 builder.Services.AddScoped<
     ISlaRealtimeSender,
     SignalRSlaRealtimeSender>();

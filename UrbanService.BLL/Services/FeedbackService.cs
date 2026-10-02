@@ -37,19 +37,27 @@ public class FeedbackService : IFeedbackService
     private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
 
 
+    /*
+     * Thông báo cho đơn vị xử lý là tùy chọn: unit test dựng service trực tiếp không
+     * cần hạ tầng email, và việc phân công vẫn phải chạy được khi chưa cấu hình.
+     */
+    private readonly IProviderAssignmentNotifier? _providerAssignmentNotifier;
+
     public FeedbackService(
     IUnitOfWork uow,
     INotificationService notificationService,
     IAiFeedbackReviewQueue aiFeedbackReviewQueue,
     IAiFeedbackDuplicateService aiFeedbackDuplicateService,
     IIncidentService incidentService,
-    IOptions<FeedbackLimitOptions> feedbackLimitOptions)
+    IOptions<FeedbackLimitOptions> feedbackLimitOptions,
+    IProviderAssignmentNotifier? providerAssignmentNotifier = null)
     {
         _uow = uow;
         _notificationService = notificationService;
         _aiFeedbackReviewQueue = aiFeedbackReviewQueue;
         _incidentService = incidentService;
         _feedbackLimitOptions = feedbackLimitOptions.Value;
+        _providerAssignmentNotifier = providerAssignmentNotifier;
     }
 
     public async Task ClearCompletionDocumentsAsync(
@@ -2313,6 +2321,8 @@ public class FeedbackService : IFeedbackService
             staffUserId);
         _uow.BeginTransaction();
 
+        int providerReportId;
+
         try
         {
             if (incident.Status != IncidentStatus.Assigned)
@@ -2385,14 +2395,29 @@ public class FeedbackService : IFeedbackService
             await _uow.SaveAsync();
 
             _uow.CommitTransaction();
-
-            return await GetProviderAssignmentDtoAsync(report.ProviderReportId);
+            providerReportId = report.ProviderReportId;
         }
         catch
         {
             _uow.RollBack();
             throw;
         }
+
+        /*
+         * Báo cho đơn vị xử lý sau khi phân công đã lưu chắc chắn.
+         *
+         * Để ngoài transaction vì gửi email là lời gọi mạng ra bên ngoài: giữ nó bên
+         * trong thì một hộp thư chậm cũng giữ khoá database, còn một lá thư hỏng thì
+         * cuốn ngược cả phân công đã hợp lệ.
+         */
+        if (_providerAssignmentNotifier is not null)
+        {
+            await _providerAssignmentNotifier.NotifyAssignmentAsync(
+                providerReportId,
+                staffUserId);
+        }
+
+        return await GetProviderAssignmentDtoAsync(providerReportId);
     }
 
     public async Task<IReadOnlyCollection<ProviderCandidateDto>> GetIncidentProviderCandidatesAsync(
