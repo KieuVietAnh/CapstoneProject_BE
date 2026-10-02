@@ -14,9 +14,18 @@ public class InteractionMessageService : IInteractionMessageService
 
     private readonly IUnitOfWork _uow;
 
-    public InteractionMessageService(IUnitOfWork uow)
+    private readonly IRealtimeInteractionMessageSender? _realtimeSender;
+
+    /*
+     * Kênh realtime là tùy chọn. Unit test dựng service trực tiếp không cần SignalR,
+     * và một hội thoại vẫn phải lưu được kể cả khi hạ tầng realtime chưa sẵn sàng.
+     */
+    public InteractionMessageService(
+        IUnitOfWork uow,
+        IRealtimeInteractionMessageSender? realtimeSender = null)
     {
         _uow = uow;
+        _realtimeSender = realtimeSender;
     }
 
     public async Task<IReadOnlyCollection<InteractionMessageDto>> GetTicketMessagesAsync(
@@ -54,6 +63,37 @@ public class InteractionMessageService : IInteractionMessageService
             .ThenBy(m => m.InteractionMessageId)
             .Select(m => ToDto(m))
             .ToListAsync();
+    }
+
+    public async Task<InteractionConversationAccessDto> EnsureConversationAccessAsync(
+        Guid currentUserId,
+        Guid feedbackId)
+    {
+        var currentUser = await GetActiveUserAsync(currentUserId);
+        var feedback = await GetFeedbackAsync(feedbackId);
+
+        var isResidentOwner = feedback.UserId == currentUserId;
+        var canViewInternal = IsManagementActor(currentUser);
+
+        if (canViewInternal)
+        {
+            await ManagementAccessRules.EnsureFeedbackReadAccessAsync(
+                _uow,
+                feedbackId,
+                currentUserId);
+        }
+
+        if (!isResidentOwner && !canViewInternal)
+        {
+            throw new ForbiddenAccessException("Bạn không có quyền xem trao đổi của ticket này.");
+        }
+
+        return new InteractionConversationAccessDto
+        {
+            FeedbackId = feedbackId,
+            IsResidentOwner = isResidentOwner,
+            CanViewInternal = canViewInternal
+        };
     }
 
     public async Task<InteractionMessageDto> SendMessageAsync(
@@ -100,7 +140,9 @@ public class InteractionMessageService : IInteractionMessageService
         await _uow.GetRepository<InteractionMessage>().AddAsync(message);
         await _uow.SaveAsync();
 
-        return await GetMessageDtoAsync(message.InteractionMessageId);
+        var dto = await GetMessageDtoAsync(message.InteractionMessageId);
+        await PublishAsync(feedbackId, dto);
+        return dto;
     }
 
     public async Task<InteractionMessageDto> AddSystemMessageAsync(
@@ -136,7 +178,33 @@ public class InteractionMessageService : IInteractionMessageService
         await _uow.GetRepository<InteractionMessage>().AddAsync(message);
         await _uow.SaveAsync();
 
-        return await GetMessageDtoAsync(message.InteractionMessageId);
+        var dto = await GetMessageDtoAsync(message.InteractionMessageId);
+        await PublishAsync(feedbackId, dto);
+        return dto;
+    }
+
+    /*
+     * Phát tin nhắn sau khi đã lưu thành công.
+     *
+     * Lỗi của kênh realtime không được làm hỏng lời gọi API: client vừa gửi đã nhận
+     * tin nhắn qua response HTTP, còn phía bên kia vẫn còn nhịp tải lại dự phòng.
+     * Nuốt lỗi ở đây đổi lấy việc hội thoại không bao giờ mất tin vì rớt WebSocket.
+     */
+    private async Task PublishAsync(Guid feedbackId, InteractionMessageDto message)
+    {
+        if (_realtimeSender is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _realtimeSender.SendTicketMessageAsync(feedbackId, message);
+        }
+        catch
+        {
+            // Bỏ qua: tin nhắn đã nằm trong database và client sẽ đồng bộ ở lần tải sau.
+        }
     }
 
     private async Task<User> GetActiveUserAsync(Guid userId)

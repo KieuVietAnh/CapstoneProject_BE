@@ -3070,13 +3070,43 @@ public class FeedbackService : IFeedbackService
              * Giữ đoạn này để tương thích nếu client khác
              * vẫn còn gửi ImageUrls trực tiếp.
              *
-             * FE workspace hiện tại gửi imageUrls = []
-             * vì đã upload qua completion-documents riêng.
+             * Các client hiện tại upload ảnh qua endpoint
+             * completion-documents rồi gửi lại chính những URL
+             * đó trong ImageUrls, nên nếu ghi thẳng thì mỗi ảnh
+             * sinh hai bản ghi và Manager thấy minh chứng nhân
+             * đôi. Vì vậy phải bỏ qua URL đã có sẵn.
              */
+            var existingDocumentUrls = await _uow
+                .GetRepository<CompletionDocument>()
+                .Entities
+                .AsNoTracking()
+                .Where(document =>
+                    document.ProviderReportId == report.ProviderReportId)
+                .Select(document => document.FileUrl)
+                .ToListAsync();
+
+            var knownDocumentUrls = new HashSet<string>(
+                existingDocumentUrls.Where(url => !string.IsNullOrWhiteSpace(url))!,
+                StringComparer.OrdinalIgnoreCase);
+
             foreach (var image in request.ImageUrls ?? [])
             {
                 if (string.IsNullOrWhiteSpace(
                         image))
+                {
+                    continue;
+                }
+
+                var normalizedImageUrl =
+                    image.Trim();
+
+                /*
+                 * HashSet.Add trả về false khi URL đã có, nên nó
+                 * chặn được cả trùng với bản ghi cũ lẫn trùng
+                 * trong chính danh sách vừa gửi lên.
+                 */
+                if (!knownDocumentUrls.Add(
+                        normalizedImageUrl))
                 {
                     continue;
                 }
@@ -3098,7 +3128,7 @@ public class FeedbackService : IFeedbackService
                                 staffUserId,
 
                             FileUrl =
-                                image.Trim(),
+                                normalizedImageUrl,
 
                             FileType =
                                 "image",

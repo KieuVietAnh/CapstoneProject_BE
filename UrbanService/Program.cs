@@ -166,6 +166,7 @@ builder.Services.Configure<FeedbackLimitOptions>(
 builder.Services.AddSingleton<IFirebasePhoneVerifier, FirebasePhoneVerifier>();
 
 builder.Services.AddScoped<IRealtimeNotificationSender, SignalRNotificationSender>();
+builder.Services.AddScoped<IRealtimeInteractionMessageSender, SignalRInteractionMessageSender>();
 builder.Services.AddScoped<
     ISlaRealtimeSender,
     SignalRSlaRealtimeSender>();
@@ -302,6 +303,8 @@ app.MapHub<NotificationHub>("/hubs/notifications")
     .DisableRateLimiting();
 app.MapHub<SlaHub>(
     "/hubs/sla")
+    .DisableRateLimiting();
+app.MapHub<InteractionMessageHub>("/hubs/ticket-messages")
     .DisableRateLimiting();
 app.MapHealthChecks("/health")
     .DisableRateLimiting();
