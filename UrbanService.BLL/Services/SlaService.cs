@@ -157,12 +157,16 @@ public class SlaService : ISlaService
 
         var calculationTime = now;
 
+        // Giữ ở ngoài khối if để còn dùng lại khi dựng DTO bên dưới.
+        SlaPauseHistory? openPause = null;
+
         if (sla.Status == SlaStatus.Paused)
         {
-            var openPause = await _unitOfWork
+            openPause = await _unitOfWork
                 .GetRepository<SlaPauseHistory>()
                 .Entities
                 .AsNoTracking()
+                .Include(x => x.PausedByUser)
                 .Where(x =>
                     x.IncidentSlaId ==
                     sla.IncidentSlaId &&
@@ -374,6 +378,19 @@ public class SlaService : ISlaService
 
             IsResolutionWarning =
                 isResolutionWarning,
+
+
+            PauseReasonCode =
+                openPause?.ReasonCode,
+
+            PauseReasonNote =
+                openPause?.ReasonNote,
+
+            PausedAt =
+                openPause?.PausedAt,
+
+            PausedByUserName =
+                openPause?.PausedByUser?.FullName,
 
 
             IsResponseBreached =
