@@ -118,3 +118,26 @@ public static class IncidentStatus
             Terminal.Contains(status);
     }
 }
+
+/// <summary>
+/// Cách liên hệ ghi trong nhật ký liên hệ với đơn vị xử lý.
+///
+/// Giá trị khớp với nhãn mà giao diện Staff đang hiển thị, để dòng do hệ thống ghi
+/// và dòng do nhân viên tự nhập trông giống nhau.
+/// </summary>
+public static class ProviderContactMethod
+{
+    public const string Email = "Email";
+    public const string Phone = "Phone";
+}
+
+/// <summary>Kết quả của một lần liên hệ với đơn vị xử lý.</summary>
+public static class ProviderContactResult
+{
+    public const string Sent = "Đã gửi";
+
+    /// <summary>Hệ thống không thử gửi được, thường vì đơn vị chưa khai báo email.</summary>
+    public const string NotSent = "Chưa gửi được";
+
+    public const string Failed = "Gửi thất bại";
+}

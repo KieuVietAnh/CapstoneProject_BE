@@ -60,4 +60,24 @@ public class SlaStatusDto
 
 
     public bool IsResolutionBreached { get; set; }
+
+
+    /*
+     * Bối cảnh tạm dừng.
+     *
+     * Chỉ trạng thái "Paused" thôi thì người xử lý thấy đồng hồ đứng im mà không
+     * hiểu vì sao, dễ tưởng hệ thống lỗi hoặc tưởng mình được thư thả. Mấy field dưới
+     * cho họ biết ai dừng, vì lý do gì và từ lúc nào, mà không phải mở màn quản lý.
+     * Null khi SLA đang chạy.
+     */
+    public string? PauseReasonCode { get; set; }
+
+
+    public string? PauseReasonNote { get; set; }
+
+
+    public DateTime? PausedAt { get; set; }
+
+
+    public string? PausedByUserName { get; set; }
 }
