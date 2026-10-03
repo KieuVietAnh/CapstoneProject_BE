@@ -3231,7 +3231,9 @@ public class FeedbackService : IFeedbackService
                 title,
                 message,
                 NotificationType.TicketUpdated,
-                $"/management/incidents/{incident.IncidentId}",
+                // Thông báo này là lời mời duyệt, nên phải mở thẳng màn duyệt
+                // kết quả xử lý thay vì màn quản lý sự vụ chung.
+                $"/manager/approvals/{incident.IncidentId}",
                 incident.IncidentId,
                 "Incident",
                 incident.IncidentId.ToString());
@@ -3451,7 +3453,9 @@ public class FeedbackService : IFeedbackService
                 title,
                 message,
                 notificationType,
-                $"/management/incidents/{incident.IncidentId}",
+                // Staff cần xem ngay kết quả vừa được duyệt hoặc bị trả lại,
+                // nên mở đúng tab kết quả xử lý của sự vụ.
+                $"/staff/incidents/{incident.IncidentId}?tab=resolution",
                 incident.IncidentId,
                 "Incident",
                 incident.IncidentId.ToString());
