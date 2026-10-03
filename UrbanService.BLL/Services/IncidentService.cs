@@ -600,6 +600,86 @@ public sealed class IncidentService : IIncidentService
         return await GetIncidentDetailCoreAsync(incidentId, cancellationToken);
     }
 
+    public async Task DeleteByManagementAsync(
+        Guid incidentId,
+        CancellationToken cancellationToken = default)
+    {
+        var incidentRepository = _uow.GetRepository<Incident>();
+        var rootIncident = await incidentRepository.Entities
+            .FirstOrDefaultAsync(incident => incident.IncidentId == incidentId, cancellationToken)
+            ?? throw new Exception("Không tìm thấy sự vụ.");
+
+        var incidentsToDelete = new List<Incident> { rootIncident };
+        var incidentIds = new HashSet<Guid> { incidentId };
+        var parentIds = new HashSet<Guid> { incidentId };
+
+        while (parentIds.Count > 0)
+        {
+            var mergedIncidents = await incidentRepository.Entities
+                .Where(incident =>
+                    incident.MergedIntoIncidentId.HasValue &&
+                    parentIds.Contains(incident.MergedIntoIncidentId.Value) &&
+                    !incidentIds.Contains(incident.IncidentId))
+                .ToListAsync(cancellationToken);
+
+            if (mergedIncidents.Count == 0)
+            {
+                break;
+            }
+
+            parentIds = mergedIncidents
+                .Select(incident => incident.IncidentId)
+                .ToHashSet();
+            incidentIds.UnionWith(parentIds);
+            incidentsToDelete.AddRange(mergedIncidents);
+        }
+
+        var completionDocumentRepository = _uow.GetRepository<CompletionDocument>();
+        var completionDocuments = await completionDocumentRepository.Entities
+            .Where(document => incidentIds.Contains(document.IncidentId))
+            .ToListAsync(cancellationToken);
+
+        var resolutionRepository = _uow.GetRepository<FeedbackResolution>();
+        var resolutions = await resolutionRepository.Entities
+            .Where(resolution => incidentIds.Contains(resolution.IncidentId))
+            .ToListAsync(cancellationToken);
+
+        var providerReportRepository = _uow.GetRepository<FeedbackProviderReport>();
+        var providerReports = await providerReportRepository.Entities
+            .Where(report => incidentIds.Contains(report.IncidentId))
+            .ToListAsync(cancellationToken);
+
+        var notificationRepository = _uow.GetRepository<Notification>();
+        var notifications = await notificationRepository.Entities
+            .Where(notification =>
+                notification.IncidentId.HasValue &&
+                incidentIds.Contains(notification.IncidentId.Value))
+            .ToListAsync(cancellationToken);
+
+        if (completionDocuments.Count > 0)
+        {
+            completionDocumentRepository.DeleteRange(completionDocuments);
+        }
+
+        if (resolutions.Count > 0)
+        {
+            resolutionRepository.DeleteRange(resolutions);
+        }
+
+        if (providerReports.Count > 0)
+        {
+            providerReportRepository.DeleteRange(providerReports);
+        }
+
+        if (notifications.Count > 0)
+        {
+            notificationRepository.DeleteRange(notifications);
+        }
+
+        incidentRepository.DeleteRange(incidentsToDelete);
+        await _uow.SaveAsync();
+    }
+
     private async Task<IncidentDetailDto> GetIncidentDetailCoreAsync(
         Guid incidentId,
         CancellationToken cancellationToken = default)

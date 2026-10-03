@@ -36,6 +36,10 @@ public interface IIncidentService
         Guid actorUserId,
         CancellationToken cancellationToken = default);
 
+    Task DeleteByManagementAsync(
+        Guid incidentId,
+        CancellationToken cancellationToken = default);
+
     Task<IncidentDetailDto> LinkReportAsync(
         Guid incidentId,
         LinkIncidentReportRequest request,

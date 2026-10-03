@@ -51,6 +51,22 @@ public sealed class ManagementIncidentsController : ControllerBase
             HttpContext.RequestAborted));
     }
 
+    /// <summary>Xóa sự vụ và toàn bộ dữ liệu phụ thuộc.</summary>
+    /// <remarks>Chỉ `SYSTEMADMIN` được phép xóa sự vụ. Các phản ánh gốc được giữ lại.</remarks>
+    [HttpDelete("{incidentId:guid}")]
+    [Authorize(Roles = UserRole.SYSTEMADMIN)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> DeleteIncident(Guid incidentId)
+    {
+        await _incidentService.DeleteByManagementAsync(
+            incidentId,
+            HttpContext.RequestAborted);
+        return NoContent();
+    }
+
     /// <summary>Liên kết một Feedback/Report chưa có active link vào Incident.</summary>
     [HttpPost("{incidentId:guid}/reports")]
     [Authorize(Roles = UserRole.INTERACTIONMANAGER)]
