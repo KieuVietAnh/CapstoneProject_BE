@@ -16,13 +16,16 @@ public sealed class ManagementIncidentsController : ControllerBase
 {
     private readonly IIncidentService _incidentService;
     private readonly IFeedbackService _feedbackService;
+    private readonly ICloudinaryService _cloudinaryService;
 
     public ManagementIncidentsController(
         IIncidentService incidentService,
-        IFeedbackService feedbackService)
+        IFeedbackService feedbackService,
+        ICloudinaryService cloudinaryService)
     {
         _incidentService = incidentService;
         _feedbackService = feedbackService;
+        _cloudinaryService = cloudinaryService;
     }
 
     /// <summary>Lấy queue Incident cho management.</summary>
@@ -143,6 +146,52 @@ public sealed class ManagementIncidentsController : ControllerBase
             GetCurrentUserId(),
             request?.Note,
             HttpContext.RequestAborted));
+
+    /// <summary>Minh chứng xử lý của Incident do Staff tự xử lý.</summary>
+    /// <remarks>Chỉ áp dụng cho sự vụ chưa có đơn vị bên thứ ba.</remarks>
+    [HttpGet("{incidentId:guid}/completion-documents")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CompletionDocumentDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetIncidentCompletionDocuments(Guid incidentId)
+        => Ok(await _feedbackService.GetIncidentCompletionDocumentsAsync(
+            incidentId,
+            GetCurrentUserId()));
+
+    /// <summary>Staff tải minh chứng cho Incident mình tự xử lý.</summary>
+    /// <remarks>
+    /// Dùng khi sự vụ không qua đơn vị bên thứ ba. Sự vụ đã có đơn vị thì minh chứng
+    /// phải đi qua endpoint của phân công để còn biết ảnh thuộc trách nhiệm của ai.
+    /// </remarks>
+    [HttpPost("{incidentId:guid}/completion-documents")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(typeof(IReadOnlyCollection<CompletionDocumentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> AddIncidentCompletionDocuments(
+        Guid incidentId,
+        [FromForm] IncidentCompletionDocumentUploadRequest form)
+    {
+        var documents = await UploadIncidentFilesAsync(form.Files, "urban-service/completion-documents");
+        return Ok(await _feedbackService.AddIncidentCompletionDocumentsAsync(
+            incidentId,
+            GetCurrentUserId(),
+            documents,
+            form.Description));
+    }
+
+    /// <summary>Xóa toàn bộ minh chứng cũ của Incident tự xử lý.</summary>
+    /// <remarks>Chỉ dùng khi sự vụ đang ở trạng thái cần xử lý lại.</remarks>
+    [HttpDelete("{incidentId:guid}/completion-documents")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ClearIncidentCompletionDocuments(Guid incidentId)
+    {
+        await _feedbackService.ClearIncidentCompletionDocumentsAsync(
+            incidentId,
+            GetCurrentUserId());
+        return NoContent();
+    }
 
     /// <summary>Lấy đơn vị xử lý phù hợp với khu vực và danh mục của Incident.</summary>
     [HttpGet("{incidentId:guid}/provider-candidates")]
@@ -289,6 +338,37 @@ public sealed class ManagementIncidentsController : ControllerBase
             GetCurrentUserId(),
             HttpContext.RequestAborted));
 
+    private async Task<IReadOnlyCollection<UploadedFeedbackAttachmentDto>> UploadIncidentFilesAsync(
+        IReadOnlyCollection<IFormFile>? files,
+        string folder)
+    {
+        if (files == null || files.Count == 0)
+        {
+            throw new Exception("Files la bat buoc.");
+        }
+
+        var attachments = new List<UploadedFeedbackAttachmentDto>();
+
+        foreach (var file in files.Where(item => item.Length > 0))
+        {
+            await using var stream = file.OpenReadStream();
+            var uploadResult = await _cloudinaryService.UploadAsync(
+                stream,
+                file.FileName,
+                file.ContentType,
+                folder,
+                HttpContext.RequestAborted);
+
+            attachments.Add(new UploadedFeedbackAttachmentDto
+            {
+                FileUrl = uploadResult.FileUrl,
+                FileType = uploadResult.FileType
+            });
+        }
+
+        return attachments;
+    }
+
     private Guid GetCurrentUserId()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -299,4 +379,12 @@ public sealed class ManagementIncidentsController : ControllerBase
 
         return parsedUserId;
     }
+}
+
+/// <summary>Minh chứng tải lên cho sự vụ Staff tự xử lý.</summary>
+public class IncidentCompletionDocumentUploadRequest
+{
+    public string? Description { get; set; }
+
+    public List<IFormFile>? Files { get; set; }
 }

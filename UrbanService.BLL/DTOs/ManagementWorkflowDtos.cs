@@ -298,11 +298,16 @@ public class CompletionDocumentDto
 {
     public int CompletionDocumentId { get; set; }
 
-    public int ProviderAssignmentId { get; set; }
+    /// <summary>
+    /// Null khi minh chứng thuộc sự vụ do Staff tự xử lý, không qua đơn vị bên thứ
+    /// ba. Minh chứng của luồng có đơn vị vẫn giữ nguyên giá trị như trước.
+    /// </summary>
+    public int? ProviderAssignmentId { get; set; }
 
     public Guid IncidentId { get; set; }
 
-    public int CoordinatorId { get; set; }
+    /// <summary>Null cùng lúc với <see cref="ProviderAssignmentId"/>.</summary>
+    public int? CoordinatorId { get; set; }
 
     public string? ProviderName { get; set; }
 

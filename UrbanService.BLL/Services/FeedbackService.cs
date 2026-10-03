@@ -2053,8 +2053,20 @@ public class FeedbackService : IFeedbackService
                 },
             ReviewedAt = resolution.ReviewedAt,
 
+            /*
+             * Đọc minh chứng qua Incident thay vì qua ProviderReport.
+             *
+             * Sự vụ tự xử lý không có provider report nên không đi được nhánh kia;
+             * còn lọc theo ProviderReportId của chính resolution thì luồng có đơn vị
+             * vẫn ra đúng tập cũ, và luồng tự xử lý khớp với các bản ghi để trống.
+             *
+             * Dùng một nhánh duy nhất còn tránh được việc phải Include hai collection
+             * trong cùng một truy vấn AsNoTracking, vốn làm mỗi minh chứng bị nhân lên
+             * theo số dòng của collection kia.
+             */
             CompletionDocuments =
-                resolution.ProviderReport?.CompletionDocuments?
+                resolution.Incident?.CompletionDocuments?
+                    .Where(document => document.ProviderReportId == resolution.ProviderReportId)
                     .OrderByDescending(x => x.ReceivedAt)
                     .Select(MapCompletionDocument)
                     .ToList()
@@ -2710,6 +2722,119 @@ public class FeedbackService : IFeedbackService
         return await GetCompletionDocumentsCoreAsync(providerAssignmentId);
     }
 
+    public async Task<IReadOnlyCollection<CompletionDocumentDto>> AddIncidentCompletionDocumentsAsync(
+        Guid incidentId,
+        Guid currentUserId,
+        IReadOnlyCollection<UploadedFeedbackAttachmentDto> documents,
+        string? description)
+    {
+        var incident = await ManagementAccessRules.EnsureStaffIncidentOperationAsync(
+            _uow,
+            incidentId,
+            currentUserId);
+
+        /*
+         * Đã có đơn vị bên thứ ba thì minh chứng phải gắn vào phân công đó, nếu
+         * không nghiệm thu sẽ không biết ảnh nào thuộc trách nhiệm của ai.
+         */
+        var hasProviderAssignment = await _uow.GetRepository<FeedbackProviderReport>().Entities
+            .AsNoTracking()
+            .AnyAsync(report => report.IncidentId == incidentId);
+
+        if (hasProviderAssignment)
+        {
+            throw new ConflictException(
+                "Sự vụ có đơn vị xử lý. Minh chứng phải tải lên theo phân công đơn vị.");
+        }
+
+        if (!string.Equals(incident.Status, IncidentStatus.InProgress, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(incident.Status, IncidentStatus.NeedRework, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception(
+                "Chỉ được tải minh chứng khi sự vụ đang xử lý hoặc làm lại.");
+        }
+
+        var now = DateTime.UtcNow;
+
+        foreach (var document in documents)
+        {
+            await _uow.GetRepository<CompletionDocument>().AddAsync(new CompletionDocument
+            {
+                ProviderReportId = null,
+                IncidentId = incidentId,
+                CoordinatorId = null,
+                UploadedByUserId = currentUserId,
+                FileUrl = document.FileUrl,
+                FileType = document.FileType,
+                Description = NormalizeOptional(description),
+                ReceivedAt = now
+            });
+        }
+
+        await _uow.SaveAsync();
+        return await GetIncidentCompletionDocumentsCoreAsync(incidentId);
+    }
+
+    public async Task<IReadOnlyCollection<CompletionDocumentDto>> GetIncidentCompletionDocumentsAsync(
+        Guid incidentId,
+        Guid currentUserId)
+    {
+        await ManagementAccessRules.EnsureIncidentReadAccessAsync(_uow, incidentId, currentUserId);
+        return await GetIncidentCompletionDocumentsCoreAsync(incidentId);
+    }
+
+    public async Task ClearIncidentCompletionDocumentsAsync(
+        Guid incidentId,
+        Guid currentUserId)
+    {
+        var incident = await ManagementAccessRules.EnsureStaffIncidentOperationAsync(
+            _uow,
+            incidentId,
+            currentUserId);
+
+        /*
+         * Chỉ cho xóa khi Manager đã trả lại để làm lại. Ngoài lúc đó, minh chứng là
+         * căn cứ nghiệm thu nên không được biến mất.
+         */
+        if (!string.Equals(incident.Status, IncidentStatus.NeedRework, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception(
+                "Chỉ xóa được minh chứng cũ khi sự vụ đang ở trạng thái cần xử lý lại.");
+        }
+
+        var documents = await _uow.GetRepository<CompletionDocument>().Entities
+            .Where(document =>
+                document.IncidentId == incidentId &&
+                document.ProviderReportId == null)
+            .ToListAsync();
+
+        foreach (var document in documents)
+        {
+            _uow.GetRepository<CompletionDocument>().Delete(document);
+        }
+
+        await _uow.SaveAsync();
+    }
+
+    /*
+     * Chỉ lấy minh chứng không thuộc phân công nào. Sự vụ tự xử lý không có đơn vị
+     * nên mọi minh chứng của nó đều nằm ở nhóm này.
+     */
+    private async Task<IReadOnlyCollection<CompletionDocumentDto>> GetIncidentCompletionDocumentsCoreAsync(
+        Guid incidentId)
+    {
+        var documents = await _uow.GetRepository<CompletionDocument>().Entities
+            .AsNoTracking()
+            .Include(d => d.UploadedByUser)
+            .Where(d => d.IncidentId == incidentId && d.ProviderReportId == null)
+            .OrderByDescending(d => d.ReceivedAt)
+            .ToListAsync();
+
+        return documents
+            .Select(MapCompletionDocument)
+            .ToList();
+    }
+
     public async Task<IReadOnlyCollection<CompletionDocumentDto>> GetCompletionDocumentsAsync(
         int providerAssignmentId,
         Guid currentUserId)
@@ -2770,10 +2895,10 @@ public class FeedbackService : IFeedbackService
         var resolutions = await _uow.GetRepository<FeedbackResolution>().Entities
             .AsNoTracking()
             .Include(r => r.Incident)
+                .ThenInclude(incident => incident.CompletionDocuments)
+                    .ThenInclude(document => document.Coordinator)
             .Include(r => r.CreatedByStaffUser)
             .Include(r => r.ReviewedByManager)
-            .Include(r => r.ProviderReport)
-                .ThenInclude(r => r!.CompletionDocuments)
             .Where(r => r.IncidentId == incidentId)
             .OrderByDescending(r => r.ResolvedAt)
             .ToListAsync();
@@ -2799,10 +2924,10 @@ public class FeedbackService : IFeedbackService
     {
         var query = _uow.GetRepository<FeedbackResolution>().Entities
             .Include(r => r.Incident)
+                .ThenInclude(incident => incident.CompletionDocuments)
+                    .ThenInclude(document => document.Coordinator)
             .Include(r => r.CreatedByStaffUser)
             .Include(r => r.ReviewedByManager)
-            .Include(r => r.ProviderReport)
-                .ThenInclude(r => r!.CompletionDocuments)
             .Where(r => r.IncidentId == incidentId);
 
         if (asNoTracking)
@@ -2838,10 +2963,10 @@ public class FeedbackService : IFeedbackService
         var resolution = await _uow.GetRepository<FeedbackResolution>().Entities
             .AsNoTracking()
             .Include(r => r.Incident)
+                .ThenInclude(incident => incident.CompletionDocuments)
+                    .ThenInclude(document => document.Coordinator)
             .Include(r => r.CreatedByStaffUser)
             .Include(r => r.ReviewedByManager)
-            .Include(r => r.ProviderReport)
-                .ThenInclude(r => r!.CompletionDocuments)
             .FirstOrDefaultAsync(r => r.ResolutionId == resolutionId)
             ?? throw new Exception("Khong tim thay resolution.");
 
@@ -2958,6 +3083,30 @@ public class FeedbackService : IFeedbackService
         {
             throw new Exception(
                 "Provider report must be InProgress before submitting resolution.");
+        }
+
+        /*
+         * Bắt buộc có minh chứng, kể cả khi Staff tự xử lý.
+         *
+         * Manager duyệt kết quả dựa trên ảnh hiện trường; không có thì việc duyệt
+         * chỉ còn là tin lời khai. Chặn ở đây chứ không chỉ ở giao diện, vì ai gọi
+         * thẳng API cũng phải chịu cùng một luật.
+         *
+         * Lọc theo đúng phạm vi của resolution: luồng có đơn vị đọc minh chứng của
+         * phân công đó, luồng tự xử lý đọc các bản ghi để trống khóa phân công.
+         */
+        var scopedProviderReportId = report?.ProviderReportId;
+
+        var hasEvidence = await _uow.GetRepository<CompletionDocument>().Entities
+            .AsNoTracking()
+            .AnyAsync(document =>
+                document.IncidentId == incidentId &&
+                document.ProviderReportId == scopedProviderReportId);
+
+        if (!hasEvidence)
+        {
+            throw new Exception(
+                "Cần ít nhất một minh chứng xử lý trước khi gửi kết quả.");
         }
 
         var now =

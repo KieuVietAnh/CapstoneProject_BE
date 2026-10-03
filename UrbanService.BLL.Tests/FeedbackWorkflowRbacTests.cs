@@ -322,6 +322,7 @@ public class FeedbackWorkflowRbacTests
         private readonly List<FeedbackResolution> _resolutions = [];
         // Luồng gửi kết quả đọc minh chứng đã lưu để bỏ qua URL trùng.
         private readonly List<CompletionDocument> _completionDocuments = [];
+        private int _nextCompletionDocumentId = 1;
         private int _nextRoleId = 1;
         private int _nextProviderReportId = 1;
 
@@ -509,6 +510,28 @@ public class FeedbackWorkflowRbacTests
             };
             incident.ProviderAssignments.Add(report);
             _providerReports.Add(report);
+
+            /*
+             * Gửi kết quả xử lý bắt buộc phải có minh chứng, nên mọi kịch bản dựng
+             * sẵn một phân công đơn vị cũng cần ít nhất một tệp đi kèm.
+             */
+            var document = new CompletionDocument
+            {
+                CompletionDocumentId = _nextCompletionDocumentId++,
+                ProviderReportId = report.ProviderReportId,
+                ProviderReport = report,
+                IncidentId = incident.IncidentId,
+                Incident = incident,
+                CoordinatorId = report.CoordinatorId,
+                UploadedByUserId = reportedByUserId,
+                FileUrl = $"https://example.invalid/evidence-{report.ProviderReportId}.jpg",
+                FileType = "image/jpeg",
+                ReceivedAt = DateTime.UtcNow
+            };
+            report.CompletionDocuments.Add(document);
+            incident.CompletionDocuments.Add(document);
+            _completionDocuments.Add(document);
+
             return report;
         }
 

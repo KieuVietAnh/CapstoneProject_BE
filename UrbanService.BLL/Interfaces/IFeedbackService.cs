@@ -87,6 +87,26 @@ public interface IFeedbackService
         int providerAssignmentId,
         Guid currentUserId);
 
+    /// <summary>
+    /// Minh chứng của sự vụ do Staff tự xử lý, không qua đơn vị bên thứ ba.
+    ///
+    /// Các hàm theo providerAssignmentId không dùng được cho luồng này vì không có
+    /// phân công nào để làm khóa, nên phải định danh bằng chính sự vụ.
+    /// </summary>
+    Task<IReadOnlyCollection<CompletionDocumentDto>> AddIncidentCompletionDocumentsAsync(
+        Guid incidentId,
+        Guid currentUserId,
+        IReadOnlyCollection<UploadedFeedbackAttachmentDto> documents,
+        string? description);
+
+    Task<IReadOnlyCollection<CompletionDocumentDto>> GetIncidentCompletionDocumentsAsync(
+        Guid incidentId,
+        Guid currentUserId);
+
+    Task ClearIncidentCompletionDocumentsAsync(
+        Guid incidentId,
+        Guid currentUserId);
+
     Task<IReadOnlyCollection<CompletionDocumentDto>> AddCompletionDocumentsAsync(
         int providerAssignmentId,
         Guid currentUserId,
