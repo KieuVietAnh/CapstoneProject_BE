@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using UrbanService.BLL.Common;
 using UrbanService.BLL.Common.Constraint;
 using UrbanService.BLL.Dtos;
 using UrbanService.BLL.Interfaces;
@@ -1793,6 +1794,55 @@ public sealed class IncidentService : IIncidentService
             ?? throw new Exception("Trạng thái Feedback đã đồng bộ với Incident.");
 
         return MapFeedbackStatusHistory(history);
+    }
+
+    public async Task<IncidentDetailDto> StartDirectProcessingAsync(
+        Guid incidentId,
+        Guid staffUserId,
+        string? note,
+        CancellationToken cancellationToken = default)
+    {
+        var incident = await ManagementAccessRules.EnsureStaffIncidentOperationAsync(
+            _uow,
+            incidentId,
+            staffUserId,
+            cancellationToken);
+
+        if (!string.Equals(
+                incident.Status,
+                IncidentStatus.Assigned,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception(
+                "Chỉ sự vụ đang ở trạng thái Assigned mới bắt đầu tự xử lý được.");
+        }
+
+        /*
+         * Đã có đơn vị bên thứ ba thì tiến độ phải đi theo trạng thái của phân công
+         * đó, không phải do Staff tự bật. Hai lối đi cùng đẩy sự vụ sang InProgress
+         * mà chạy song song thì lịch sử trạng thái không còn nói đúng ai làm gì.
+         */
+        var hasProviderAssignment = await _uow.GetRepository<FeedbackProviderReport>().Entities
+            .AsNoTracking()
+            .AnyAsync(report => report.IncidentId == incidentId, cancellationToken);
+
+        if (hasProviderAssignment)
+        {
+            throw new ConflictException(
+                "Sự vụ đã có đơn vị xử lý. Tiến độ phải cập nhật qua phân công đơn vị.");
+        }
+
+        var result = await UpdateStatusCoreAsync(
+            incidentId,
+            new UpdateIncidentStatusRequest
+            {
+                Status = IncidentStatus.InProgress,
+                Note = NormalizeOptional(note) ?? "Staff xác nhận tự xử lý sự vụ."
+            },
+            staffUserId,
+            cancellationToken);
+
+        return result.Detail;
     }
 
     public async Task UpdateStatusFromProviderAssignmentAsync(

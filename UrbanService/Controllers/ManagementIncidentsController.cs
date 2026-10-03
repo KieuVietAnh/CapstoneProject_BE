@@ -120,6 +120,30 @@ public sealed class ManagementIncidentsController : ControllerBase
             GetCurrentUserId(),
             HttpContext.RequestAborted));
 
+    /// <summary>Staff xác nhận tự xử lý Incident, không qua đơn vị bên thứ ba.</summary>
+    /// <remarks>
+    /// Chỉ Staff đang được phân công, và chỉ khi Incident ở trạng thái `Assigned`
+    /// và chưa có đơn vị xử lý nào. Chuyển Incident sang `InProgress`.
+    ///
+    /// Không dùng endpoint trạng thái chung vì endpoint đó chỉ dành cho Manager và
+    /// chỉ nhận `Rejected` hoặc `Cancelled`.
+    /// </remarks>
+    [HttpPost("{incidentId:guid}/start-processing")]
+    [Authorize(Roles = UserRole.SYSTEMSTAFF)]
+    [ProducesResponseType(typeof(IncidentDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> StartProcessing(
+        Guid incidentId,
+        [FromBody] StartIncidentProcessingRequest? request)
+        => Ok(await _incidentService.StartDirectProcessingAsync(
+            incidentId,
+            GetCurrentUserId(),
+            request?.Note,
+            HttpContext.RequestAborted));
+
     /// <summary>Lấy đơn vị xử lý phù hợp với khu vực và danh mục của Incident.</summary>
     [HttpGet("{incidentId:guid}/provider-candidates")]
     [Authorize(Roles = UserRole.SYSTEMSTAFF)]

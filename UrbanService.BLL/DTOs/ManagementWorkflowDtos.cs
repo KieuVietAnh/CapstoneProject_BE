@@ -419,6 +419,15 @@ public class IncidentResolutionReviewSummaryDto
     public IReadOnlyCollection<IncidentResolutionReviewItemDto> Items { get; set; } = [];
 }
 
+/// <summary>
+/// Staff xác nhận tự xử lý sự vụ, không qua đơn vị bên thứ ba.
+/// </summary>
+public class StartIncidentProcessingRequest
+{
+    /// <summary>Ghi chú kèm theo lần chuyển trạng thái, lưu vào lịch sử.</summary>
+    public string? Note { get; set; }
+}
+
 public class CitizenResolutionReviewRequest
 {
     public int Rating { get; set; }

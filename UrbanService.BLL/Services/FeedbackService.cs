@@ -2925,12 +2925,23 @@ public class FeedbackService : IFeedbackService
                 "Feedback must be InProgress or NeedRework before submitting resolution.");
         }
 
+        /*
+         * Sự vụ có thể do Staff tự xử lý, không qua đơn vị bên thứ ba. Khi đó không
+         * có provider report nào và FeedbackResolution.ProviderReportId để trống —
+         * cột này vốn đã nullable. Bắt buộc phải có provider ở đây sẽ chặn hẳn luồng
+         * tự xử lý ngay ở bước gửi kết quả.
+         */
         var report = await _uow.GetRepository<FeedbackProviderReport>().Entities
-            .SingleOrDefaultAsync(x => x.IncidentId == incidentId)
-            ?? throw new Exception("Incident does not have a provider assignment.");
+            .SingleOrDefaultAsync(x => x.IncidentId == incidentId);
 
         if (request.ProviderAssignmentId.HasValue &&
-            request.ProviderAssignmentId.Value != report.ProviderReportId)
+            report is null)
+        {
+            throw new ConflictException("Incident does not have a provider assignment.");
+        }
+
+        if (request.ProviderAssignmentId.HasValue &&
+            request.ProviderAssignmentId.Value != report!.ProviderReportId)
         {
             throw new ConflictException("Provider assignment does not belong to this incident.");
         }
@@ -3052,7 +3063,7 @@ public class FeedbackService : IFeedbackService
                     IncidentId = incidentId,
 
                     ProviderReportId =
-                        report!.ProviderReportId,
+                        report?.ProviderReportId,
 
                     CreatedByStaffUserId =
                         staffUserId,
