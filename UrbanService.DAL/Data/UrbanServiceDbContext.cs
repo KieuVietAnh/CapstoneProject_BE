@@ -960,8 +960,13 @@ public partial class UrbanServiceDbContext : DbContext
             entity.Property(e => e.Description).HasMaxLength(500).HasColumnName("description");
             entity.Property(e => e.ReceivedAt).HasDefaultValueSql("now()").HasColumnName("received_at");
 
+            /*
+             * Sự vụ do Staff tự xử lý không có đơn vị bên thứ ba, nên minh chứng
+             * của nó chỉ gắn với Incident. Hai khóa dưới đây vì vậy là tùy chọn.
+             */
             entity.HasOne(d => d.ProviderReport).WithMany(p => p.CompletionDocuments)
                 .HasForeignKey(d => d.ProviderReportId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_completion_document_report");
 
@@ -972,6 +977,7 @@ public partial class UrbanServiceDbContext : DbContext
 
             entity.HasOne(d => d.Coordinator).WithMany(p => p.CompletionDocuments)
                 .HasForeignKey(d => d.CoordinatorId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_completion_document_coordinator");
 

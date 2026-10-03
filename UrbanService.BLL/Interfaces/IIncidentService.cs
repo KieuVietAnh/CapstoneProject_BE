@@ -143,6 +143,20 @@ public interface IIncidentService
         Guid actorUserId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Staff tự xử lý sự vụ, chuyển Assigned sang InProgress mà không qua đơn vị
+    /// bên thứ ba.
+    ///
+    /// Tách khỏi endpoint trạng thái chung vì endpoint đó chỉ dùng để từ chối hoặc
+    /// hủy và chỉ Manager được gọi. Luồng tự xử lý là thao tác của chính Staff đang
+    /// được phân công nên cần một lối đi hẹp, kiểm đúng điều kiện của nó.
+    /// </summary>
+    Task<IncidentDetailDto> StartDirectProcessingAsync(
+        Guid incidentId,
+        Guid staffUserId,
+        string? note,
+        CancellationToken cancellationToken = default);
+
     Task UpdateStatusFromProviderAssignmentAsync(
         Guid incidentId,
         UpdateIncidentStatusRequest request,
